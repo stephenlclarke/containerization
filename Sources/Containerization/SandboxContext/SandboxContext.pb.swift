@@ -841,6 +841,15 @@ public struct Com_Apple_Containerization_Sandbox_V3_CopyRequest: Sendable {
   /// For COPY_OUT: follow the source path if it is a symbolic link.
   public var followSymlink: Bool = false
 
+  /// Preserve source UID/GID metadata for single-file copies.
+  public var preserveOwnership: Bool = false
+
+  /// Source UID for single-file COPY_IN when preserve_ownership is set.
+  public var uid: UInt32 = 0
+
+  /// Source GID for single-file COPY_IN when preserve_ownership is set.
+  public var gid: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public enum Direction: SwiftProtobuf.Enum, Swift.CaseIterable {
@@ -900,6 +909,15 @@ public struct Com_Apple_Containerization_Sandbox_V3_CopyResponse: Sendable {
 
   /// Non-empty if an error occurred.
   public var error: String = String()
+
+  /// For single-file COPY_OUT METADATA: source mode bits.
+  public var mode: UInt32 = 0
+
+  /// For single-file COPY_OUT METADATA: source UID.
+  public var uid: UInt32 = 0
+
+  /// For single-file COPY_OUT METADATA: source GID.
+  public var gid: UInt32 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2877,7 +2895,7 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: SwiftProtobuf
 
 extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CopyRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}direction\0\u{1}path\0\u{1}mode\0\u{3}create_parents\0\u{3}vsock_port\0\u{3}is_archive\0\u{3}follow_symlink\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}direction\0\u{1}path\0\u{1}mode\0\u{3}create_parents\0\u{3}vsock_port\0\u{3}is_archive\0\u{3}follow_symlink\0\u{3}preserve_ownership\0\u{1}uid\0\u{1}gid\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2892,6 +2910,9 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Messa
       case 5: try { try decoder.decodeSingularUInt32Field(value: &self.vsockPort) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.isArchive) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.followSymlink) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.preserveOwnership) }()
+      case 9: try { try decoder.decodeSingularUInt32Field(value: &self.uid) }()
+      case 10: try { try decoder.decodeSingularUInt32Field(value: &self.gid) }()
       default: break
       }
     }
@@ -2919,6 +2940,15 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Messa
     if self.followSymlink != false {
       try visitor.visitSingularBoolField(value: self.followSymlink, fieldNumber: 7)
     }
+    if self.preserveOwnership != false {
+      try visitor.visitSingularBoolField(value: self.preserveOwnership, fieldNumber: 8)
+    }
+    if self.uid != 0 {
+      try visitor.visitSingularUInt32Field(value: self.uid, fieldNumber: 9)
+    }
+    if self.gid != 0 {
+      try visitor.visitSingularUInt32Field(value: self.gid, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2930,6 +2960,9 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Messa
     if lhs.vsockPort != rhs.vsockPort {return false}
     if lhs.isArchive != rhs.isArchive {return false}
     if lhs.followSymlink != rhs.followSymlink {return false}
+    if lhs.preserveOwnership != rhs.preserveOwnership {return false}
+    if lhs.uid != rhs.uid {return false}
+    if lhs.gid != rhs.gid {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -2941,7 +2974,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest.Direction: SwiftProt
 
 extension Com_Apple_Containerization_Sandbox_V3_CopyResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CopyResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}status\0\u{3}is_archive\0\u{3}total_size\0\u{1}error\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}status\0\u{3}is_archive\0\u{3}total_size\0\u{1}error\0\u{1}mode\0\u{1}uid\0\u{1}gid\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2953,6 +2986,9 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyResponse: SwiftProtobuf.Mess
       case 2: try { try decoder.decodeSingularBoolField(value: &self.isArchive) }()
       case 3: try { try decoder.decodeSingularUInt64Field(value: &self.totalSize) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.error) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.mode) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.uid) }()
+      case 7: try { try decoder.decodeSingularUInt32Field(value: &self.gid) }()
       default: break
       }
     }
@@ -2971,6 +3007,15 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyResponse: SwiftProtobuf.Mess
     if !self.error.isEmpty {
       try visitor.visitSingularStringField(value: self.error, fieldNumber: 4)
     }
+    if self.mode != 0 {
+      try visitor.visitSingularUInt32Field(value: self.mode, fieldNumber: 5)
+    }
+    if self.uid != 0 {
+      try visitor.visitSingularUInt32Field(value: self.uid, fieldNumber: 6)
+    }
+    if self.gid != 0 {
+      try visitor.visitSingularUInt32Field(value: self.gid, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2979,6 +3024,9 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyResponse: SwiftProtobuf.Mess
     if lhs.isArchive != rhs.isArchive {return false}
     if lhs.totalSize != rhs.totalSize {return false}
     if lhs.error != rhs.error {return false}
+    if lhs.mode != rhs.mode {return false}
+    if lhs.uid != rhs.uid {return false}
+    if lhs.gid != rhs.gid {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

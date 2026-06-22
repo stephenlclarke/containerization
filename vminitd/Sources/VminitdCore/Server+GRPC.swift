@@ -445,6 +445,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 "vsockPort": "\(vsockPort)",
                 "isArchive": "\(request.isArchive)",
                 "followSymlink": "\(request.followSymlink)",
+                "preserveOwnership": "\(request.preserveOwnership)",
                 "mode": "\(request.mode)",
                 "createParents": "\(request.createParents)",
             ])
@@ -497,7 +498,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             defer { try? sock.close() }
 
             guard isArchive else {
-                let mode = request.mode > 0 ? mode_t(request.mode) : mode_t(0o644)
+                let mode = request.mode > 0 ? mode_t(request.mode & 0o777) : mode_t(0o644)
                 let fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, mode)
                 guard fd != -1 else {
                     throw RPCError(
@@ -529,6 +530,20 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                             )
                         }
                         written += w
+                    }
+                }
+                if request.preserveOwnership {
+                    guard fchown(fd, uid_t(request.uid), gid_t(request.gid)) == 0 else {
+                        throw RPCError(
+                            code: .internalError,
+                            message: "copy: failed to preserve ownership for '\(path)': \(swiftErrno("fchown"))"
+                        )
+                    }
+                    guard fchmod(fd, mode) == 0 else {
+                        throw RPCError(
+                            code: .internalError,
+                            message: "copy: failed to preserve mode for '\(path)': \(swiftErrno("fchmod"))"
+                        )
                     }
                 }
                 return []
@@ -566,13 +581,27 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         }
         let isArchive = isDirectory.boolValue
 
-        // Determine total size for single files.
+        // Determine metadata for single files.
         var totalSize: UInt64 = 0
+        var mode: UInt32 = 0
+        var uid: UInt32 = 0
+        var gid: UInt32 = 0
         if !isArchive {
-            let attrs = try FileManager.default.attributesOfItem(atPath: path)
-            if let size = attrs[.size] as? UInt64 {
-                totalSize = size
+            #if canImport(Musl)
+            var s = Musl.stat()
+            #elseif canImport(Glibc)
+            var s = Glibc.stat()
+            #endif
+            guard _stat(path, &s) == 0 else {
+                throw RPCError(
+                    code: .internalError,
+                    message: "copy: failed to stat '\(path)': \(swiftErrno("stat"))"
+                )
             }
+            totalSize = UInt64(s.st_size)
+            mode = s.st_mode
+            uid = s.st_uid
+            gid = s.st_gid
         }
 
         // Send metadata response BEFORE connecting to vsock, so host knows what to expect.
@@ -581,6 +610,9 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 $0.status = .metadata
                 $0.isArchive = isArchive
                 $0.totalSize = totalSize
+                $0.mode = mode
+                $0.uid = uid
+                $0.gid = gid
             })
 
         // Connect to the host's vsock port and dispatch blocking I/O onto the thread pool.

@@ -252,6 +252,12 @@ message CopyRequest {
   bool is_archive = 6;
   // For COPY_OUT: follow the source path if it is a symbolic link.
   bool follow_symlink = 7;
+  // Preserve source UID/GID metadata for single-file copies.
+  bool preserve_ownership = 8;
+  // Source UID for single-file COPY_IN when preserve_ownership is set.
+  uint32 uid = 9;
+  // Source GID for single-file COPY_IN when preserve_ownership is set.
+  uint32 gid = 10;
 }
 
 message CopyResponse {
@@ -269,6 +275,12 @@ message CopyResponse {
   uint64 total_size = 3;
   // Non-empty if an error occurred.
   string error = 4;
+  // For single-file COPY_OUT METADATA: source mode bits.
+  uint32 mode = 5;
+  // For single-file COPY_OUT METADATA: source UID.
+  uint32 uid = 6;
+  // For single-file COPY_OUT METADATA: source GID.
+  uint32 gid = 7;
 }
 
 message StatRequest { string path = 1; }

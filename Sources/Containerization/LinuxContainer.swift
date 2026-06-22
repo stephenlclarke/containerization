@@ -1098,6 +1098,7 @@ extension LinuxContainer {
         mode: UInt32 = 0o644,
         createParents: Bool = true,
         followSymlink: Bool = false,
+        preserveOwnership: Bool = false,
         chunkSize: Int = defaultCopyChunkSize
     ) async throws {
         try await self.state.withLock {
@@ -1109,6 +1110,11 @@ extension LinuxContainer {
                 throw ContainerizationError(.notFound, message: "copyIn: source not found '\(source.path)'")
             }
             let isArchive = isDirectory.boolValue
+            let sourceStat =
+                preserveOwnership && !isArchive
+                ? try Self.fileStatus(path: transferSource.path, operation: "copyIn")
+                : nil
+            let fileMode = sourceStat.map { UInt32($0.st_mode) } ?? mode
 
             let guestPath: URL = try await state.vm.withAgent { agent in
                 guard let vminitd = agent as? Vminitd else {
@@ -1136,9 +1142,12 @@ extension LinuxContainer {
                             direction: .copyIn,
                             guestPath: guestPath,
                             vsockPort: port,
-                            mode: mode,
+                            mode: fileMode,
                             createParents: createParents,
-                            isArchive: isArchive
+                            isArchive: isArchive,
+                            preserveOwnership: sourceStat != nil,
+                            uid: sourceStat.map { UInt32($0.st_uid) } ?? 0,
+                            gid: sourceStat.map { UInt32($0.st_gid) } ?? 0
                         )
                     }
                 }
@@ -1257,6 +1266,7 @@ extension LinuxContainer {
         to destination: URL,
         createParents: Bool = true,
         followSymlink: Bool = false,
+        preserveOwnership: Bool = false,
         chunkSize: Int = defaultCopyChunkSize
     ) async throws {
         try await self.state.withLock {
@@ -1346,6 +1356,9 @@ extension LinuxContainer {
                                             written += w
                                         }
                                     }
+                                    if preserveOwnership {
+                                        self.applyCopyOutAttributes(metadata, to: destFd)
+                                    }
                                 }
                                 continuation.resume()
                             } catch {
@@ -1357,6 +1370,35 @@ extension LinuxContainer {
 
                 try await group.waitForAll()
             }
+        }
+    }
+
+    private static func fileStatus(path: String, operation: String) throws -> stat {
+        var info = stat()
+        guard stat(path, &info) == 0 else {
+            throw ContainerizationError(
+                .internalError,
+                message: "\(operation): failed to stat '\(path)': \(String(cString: strerror(errno)))"
+            )
+        }
+        return info
+    }
+
+    private func applyCopyOutAttributes(_ metadata: Vminitd.CopyMetadata, to fd: Int32) {
+        if fchown(fd, uid_t(metadata.uid), gid_t(metadata.gid)) != 0 {
+            logger?.debug(
+                "copyOut: unable to preserve ownership",
+                metadata: ["error": "\(String(cString: strerror(errno)))"]
+            )
+        }
+        guard metadata.mode != 0 else {
+            return
+        }
+        if fchmod(fd, mode_t(metadata.mode & 0o777)) != 0 {
+            logger?.debug(
+                "copyOut: unable to preserve mode",
+                metadata: ["error": "\(String(cString: strerror(errno)))"]
+            )
         }
     }
 }

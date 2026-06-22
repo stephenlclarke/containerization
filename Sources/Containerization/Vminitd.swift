@@ -484,6 +484,12 @@ extension Vminitd {
         public let isArchive: Bool
         /// Total size in bytes (0 if unknown, e.g. for archives).
         public let totalSize: UInt64
+        /// Source mode bits for single-file copies.
+        public let mode: UInt32
+        /// Source UID for single-file copies.
+        public let uid: UInt32
+        /// Source GID for single-file copies.
+        public let gid: UInt32
     }
 
     /// Stat a path in the guest filesystem and return its metadata.
@@ -537,6 +543,9 @@ extension Vminitd {
         createParents: Bool = false,
         isArchive: Bool = false,
         followSymlink: Bool = false,
+        preserveOwnership: Bool = false,
+        uid: UInt32 = 0,
+        gid: UInt32 = 0,
         onMetadata: @Sendable @escaping (CopyMetadata) -> Void = { _ in }
     ) async throws {
         let request = Com_Apple_Containerization_Sandbox_V3_CopyRequest.with {
@@ -547,6 +556,9 @@ extension Vminitd {
             $0.vsockPort = vsockPort
             $0.isArchive = isArchive
             $0.followSymlink = followSymlink
+            $0.preserveOwnership = preserveOwnership
+            $0.uid = uid
+            $0.gid = gid
         }
 
         try await client.copy(
@@ -558,7 +570,14 @@ extension Vminitd {
                     }
                     switch response.status {
                     case .metadata:
-                        onMetadata(CopyMetadata(isArchive: response.isArchive, totalSize: response.totalSize))
+                        onMetadata(
+                            CopyMetadata(
+                                isArchive: response.isArchive,
+                                totalSize: response.totalSize,
+                                mode: response.mode,
+                                uid: response.uid,
+                                gid: response.gid
+                            ))
                     case .complete:
                         break
                     case .UNRECOGNIZED(let value):

@@ -18,12 +18,15 @@ import Containerization
 import Testing
 
 struct CopyRequestTests {
-    @Test func copyRequestRoundTripsFollowSymlink() throws {
+    @Test func copyRequestRoundTripsCopyOptions() throws {
         let request = Com_Apple_Containerization_Sandbox_V3_CopyRequest.with {
             $0.direction = .copyOut
             $0.path = "/run/container/example/rootfs/tmp/link"
             $0.vsockPort = 42
             $0.followSymlink = true
+            $0.preserveOwnership = true
+            $0.uid = 501
+            $0.gid = 20
         }
 
         let bytes: [UInt8] = try request.serializedBytes()
@@ -33,5 +36,27 @@ struct CopyRequestTests {
         #expect(decoded.path == "/run/container/example/rootfs/tmp/link")
         #expect(decoded.vsockPort == 42)
         #expect(decoded.followSymlink)
+        #expect(decoded.preserveOwnership)
+        #expect(decoded.uid == 501)
+        #expect(decoded.gid == 20)
+    }
+
+    @Test func copyResponseRoundTripsSingleFileMetadata() throws {
+        let response = Com_Apple_Containerization_Sandbox_V3_CopyResponse.with {
+            $0.status = .metadata
+            $0.totalSize = 128
+            $0.mode = 0o100640
+            $0.uid = 1000
+            $0.gid = 1001
+        }
+
+        let bytes: [UInt8] = try response.serializedBytes()
+        let decoded = try Com_Apple_Containerization_Sandbox_V3_CopyResponse(serializedBytes: bytes)
+
+        #expect(decoded.status == Com_Apple_Containerization_Sandbox_V3_CopyResponse.Status.metadata)
+        #expect(decoded.totalSize == 128)
+        #expect(decoded.mode == 0o100640)
+        #expect(decoded.uid == 1000)
+        #expect(decoded.gid == 1001)
     }
 }
