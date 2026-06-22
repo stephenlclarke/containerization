@@ -878,6 +878,24 @@ extension LinuxContainer {
         }
     }
 
+    /// Pause the running container without terminating its processes.
+    public func pause() async throws {
+        try await self.state.withLock { state in
+            let startedState = try state.startedState("pause")
+            try await startedState.vm.pause()
+            state = .paused(.init(startedState))
+        }
+    }
+
+    /// Resume a paused container.
+    public func resume() async throws {
+        try await self.state.withLock { state in
+            let pausedState = try state.pausedState("resume")
+            try await pausedState.vm.resume()
+            state = .started(.init(pausedState))
+        }
+    }
+
     /// Wait for the container to exit. Returns the exit code.
     @discardableResult
     public func wait(timeoutInSeconds: Int64? = nil) async throws -> ExitStatus {
