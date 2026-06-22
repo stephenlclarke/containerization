@@ -177,6 +177,15 @@ extension Vminitd: VirtualMachineAgent {
         }
     }
 
+    /// Get process identifiers for a container.
+    public func containerProcesses(containerID: String) async throws -> [Int32] {
+        let response = try await client.containerProcesses(
+            .with {
+                $0.containerID = containerID
+            })
+        return response.pids
+    }
+
     /// Mount a filesystem in the sandbox's environment.
     public func mount(_ mount: ContainerizationOCI.Mount) async throws {
         _ = try await client.mount(

@@ -232,6 +232,10 @@ extension ManagedContainer {
         try self.cgroupManager.stats(categories)
     }
 
+    func processIdentifiers() throws -> [Int32] {
+        try self.cgroupManager.processIdentifiers()
+    }
+
     func getMemoryEvents() throws -> MemoryEvents {
         try self.cgroupManager.getMemoryEvents()
     }

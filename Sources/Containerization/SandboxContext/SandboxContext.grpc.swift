@@ -283,6 +283,19 @@ public enum Com_Apple_Containerization_Sandbox_V3_SandboxContext: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ContainerProcesses" metadata.
+        public enum ContainerProcesses: Sendable {
+            /// Request type for "ContainerProcesses".
+            public typealias Input = Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest
+            /// Response type for "ContainerProcesses".
+            public typealias Output = Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse
+            /// Descriptor for "ContainerProcesses".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "com.apple.containerization.sandbox.v3.SandboxContext"),
+                method: "ContainerProcesses",
+                type: .unary
+            )
+        }
         /// Namespace for "ProxyVsock" metadata.
         public enum ProxyVsock: Sendable {
             /// Request type for "ProxyVsock".
@@ -434,6 +447,7 @@ public enum Com_Apple_Containerization_Sandbox_V3_SandboxContext: Sendable {
             ResizeProcess.descriptor,
             CloseProcessStdin.descriptor,
             ContainerStatistics.descriptor,
+            ContainerProcesses.descriptor,
             ProxyVsock.descriptor,
             StopVsockProxy.descriptor,
             IpLinkSet.descriptor,
@@ -817,6 +831,24 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse>
+
+        /// Handle the "ContainerProcesses" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Get process identifiers for a container.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse` messages.
+        func containerProcesses(
+            request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>
 
         /// Handle the "ProxyVsock" method.
         ///
@@ -1356,6 +1388,24 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse>
 
+        /// Handle the "ContainerProcesses" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Get process identifiers for a container.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse` message.
+        func containerProcesses(
+            request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>
+
         /// Handle the "ProxyVsock" method.
         ///
         /// > Source IDL Documentation:
@@ -1893,6 +1943,24 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             context: GRPCCore.ServerContext
         ) async throws -> Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse
 
+        /// Handle the "ContainerProcesses" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Get process identifiers for a container.
+        ///
+        /// - Parameters:
+        ///   - request: A `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse` to respond with.
+        func containerProcesses(
+            request: Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse
+
         /// Handle the "ProxyVsock" method.
         ///
         /// > Source IDL Documentation:
@@ -2289,6 +2357,17 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.StreamingServiceP
             }
         )
         router.registerHandler(
+            forMethod: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ContainerProcesses.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>(),
+            handler: { request, context in
+                try await self.containerProcesses(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
             forMethod: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ProxyVsock.descriptor,
             deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest>(),
             serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse>(),
@@ -2607,6 +2686,17 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ServiceProtocol {
         context: GRPCCore.ServerContext
     ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse> {
         let response = try await self.containerStatistics(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func containerProcesses(
+        request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse> {
+        let response = try await self.containerProcesses(
             request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
@@ -2971,6 +3061,19 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServiceProt
     ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse> {
         return GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse>(
             message: try await self.containerStatistics(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func containerProcesses(
+        request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse> {
+        return GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>(
+            message: try await self.containerProcesses(
                 request: request.message,
                 context: context
             ),
@@ -3560,6 +3663,29 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ContainerProcesses" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Get process identifiers for a container.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func containerProcesses<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "ProxyVsock" method.
@@ -4460,6 +4586,40 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             )
         }
 
+        /// Call the "ContainerProcesses" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Get process identifiers for a container.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func containerProcesses<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ContainerProcesses.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "ProxyVsock" method.
         ///
         /// > Source IDL Documentation:
@@ -5352,6 +5512,35 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ContainerProcesses" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Get process identifiers for a container.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func containerProcesses<Result>(
+        request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.containerProcesses(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -6273,6 +6462,39 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
             metadata: metadata
         )
         return try await self.containerStatistics(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ContainerProcesses" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Get process identifiers for a container.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func containerProcesses<Result>(
+        _ message: Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.containerProcesses(
             request: request,
             options: options,
             onResponse: handleResponse

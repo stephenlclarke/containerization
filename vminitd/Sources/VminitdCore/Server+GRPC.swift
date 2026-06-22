@@ -1576,6 +1576,32 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         }
     }
 
+    public func containerProcesses(
+        request: Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse {
+        log.debug(
+            "containerProcesses",
+            metadata: [
+                "container_id": "\(request.containerID)"
+            ])
+
+        do {
+            let container = try await state.get(container: request.containerID)
+            let pids = try await container.processIdentifiers()
+            return .with {
+                $0.pids = pids
+            }
+        } catch {
+            log.error(
+                "containerProcesses",
+                metadata: [
+                    "error": "\(error)"
+                ])
+            throw RPCError(code: .internalError, message: "containerProcesses", cause: error)
+        }
+    }
+
     private func swiftErrno(_ msg: Logger.Message) -> POSIXError {
         let error = POSIXError(.init(rawValue: errno)!)
         log.error(

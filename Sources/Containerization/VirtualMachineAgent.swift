@@ -75,6 +75,7 @@ public protocol VirtualMachineAgent: Sendable {
 
     // Container statistics
     func containerStatistics(containerIDs: [String], categories: StatCategory) async throws -> [ContainerStatistics]
+    func containerProcesses(containerID: String) async throws -> [Int32]
 
 }
 
@@ -93,6 +94,10 @@ extension VirtualMachineAgent {
 
     public func containerStatistics(containerIDs: [String], categories: StatCategory) async throws -> [ContainerStatistics] {
         throw ContainerizationError(.unsupported, message: "containerStatistics")
+    }
+
+    public func containerProcesses(containerID: String) async throws -> [Int32] {
+        throw ContainerizationError(.unsupported, message: "containerProcesses")
     }
 
     public func sync() async throws {

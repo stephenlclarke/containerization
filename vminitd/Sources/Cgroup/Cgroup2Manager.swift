@@ -199,6 +199,28 @@ public struct Cgroup2Manager: Sendable {
         )
     }
 
+    package func processIdentifiers() throws -> [Int32] {
+        try Self.parseProcessIdentifiers(try readFileContent(fileName: Self.procsFile))
+    }
+
+    package static func parseProcessIdentifiers(_ content: String?) throws -> [Int32] {
+        guard let content, !content.isEmpty else {
+            return []
+        }
+
+        return
+            try content
+            .split(whereSeparator: \.isNewline)
+            .map { line in
+                let value = line.trimmingCharacters(in: .whitespaces)
+                guard let pid = Int32(value) else {
+                    throw ContainerizationError(.internalError, message: "invalid process identifier '\(value)' in cgroup.procs")
+                }
+                return pid
+            }
+            .sorted()
+    }
+
     public func applyResources(resources: ContainerizationOCI.LinuxResources) throws {
         self.logger?.debug(
             "applying cgroup resources",

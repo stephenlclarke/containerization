@@ -1056,6 +1056,17 @@ extension LinuxContainer {
         }
     }
 
+    /// Get process identifiers for all processes currently in the container.
+    public func processIdentifiers() async throws -> [Int32] {
+        try await self.state.withLock {
+            let state = try $0.startedState("processIdentifiers")
+
+            return try await state.vm.withAgent { agent in
+                try await agent.containerProcesses(containerID: self.id)
+            }
+        }
+    }
+
     private func relayUnixSocket(
         socket: UnixSocketConfiguration,
         relayManager: UnixSocketRelayManager,

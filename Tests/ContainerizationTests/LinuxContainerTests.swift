@@ -166,6 +166,27 @@ struct LinuxContainerTests {
             try await container.resume()
         }
     }
+
+    @Test func processIdentifiersAreReadFromTheAgent() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "processes-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init()
+        )
+
+        try await container.create()
+        try await container.start()
+
+        let vm = try #require(manager.vm)
+        vm.agent.processIdentifiers = [42, 7, 99]
+
+        let identifiers = try await container.processIdentifiers()
+
+        #expect(identifiers == [42, 7, 99])
+        #expect(vm.agent.processContainerID == "processes-test")
+    }
 }
 
 private struct StubVirtualMachineManager: VirtualMachineManager {
@@ -209,7 +230,7 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
     }
 
     private let storage = Mutex<State>(State())
-    private let agent = RecordingVirtualMachineAgent()
+    let agent = RecordingVirtualMachineAgent()
 
     let mounts: [String: [AttachedFilesystem]]
 
@@ -274,6 +295,26 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
 }
 
 private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecked Sendable {
+    private struct State {
+        var processIdentifiers: [Int32] = []
+        var processContainerID: String?
+    }
+
+    private let storage = Mutex<State>(State())
+
+    var processIdentifiers: [Int32] {
+        get {
+            storage.withLock { $0.processIdentifiers }
+        }
+        set {
+            storage.withLock { $0.processIdentifiers = newValue }
+        }
+    }
+
+    var processContainerID: String? {
+        storage.withLock { $0.processContainerID }
+    }
+
     func standardSetup() async throws {}
 
     func close() async throws {}
@@ -341,5 +382,12 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
 
     func containerStatistics(containerIDs: [String], categories: StatCategory) async throws -> [ContainerStatistics] {
         []
+    }
+
+    func containerProcesses(containerID: String) async throws -> [Int32] {
+        storage.withLock {
+            $0.processContainerID = containerID
+            return $0.processIdentifiers
+        }
     }
 }
