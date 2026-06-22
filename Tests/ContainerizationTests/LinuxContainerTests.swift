@@ -186,6 +186,13 @@ struct LinuxContainerTests {
 
         #expect(identifiers == [42, 7, 99])
         #expect(vm.agent.processContainerID == "processes-test")
+
+        try await container.pause()
+        vm.agent.processIdentifiers = [42, 99]
+
+        let pausedIdentifiers = try await container.processIdentifiers()
+
+        #expect(pausedIdentifiers == [42, 99])
     }
 }
 

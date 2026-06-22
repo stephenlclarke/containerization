@@ -1059,9 +1059,22 @@ extension LinuxContainer {
     /// Get process identifiers for all processes currently in the container.
     public func processIdentifiers() async throws -> [Int32] {
         try await self.state.withLock {
-            let state = try $0.startedState("processIdentifiers")
+            let vm: any VirtualMachineInstance =
+                switch $0 {
+                case .started(let state):
+                    state.vm
+                case .paused(let state):
+                    state.vm
+                case .errored(let err):
+                    throw err
+                default:
+                    throw ContainerizationError(
+                        .invalidState,
+                        message: "failed to processIdentifiers: container must be running or paused"
+                    )
+                }
 
-            return try await state.vm.withAgent { agent in
+            return try await vm.withAgent { agent in
                 try await agent.containerProcesses(containerID: self.id)
             }
         }
