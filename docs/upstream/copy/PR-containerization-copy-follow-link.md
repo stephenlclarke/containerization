@@ -1,3 +1,7 @@
+# Pull request: add copy follow-link runtime option
+
+<!-- markdownlint-disable MD013 -->
+
 ## Type of Change
 
 - [ ] Bug fix
@@ -13,6 +17,20 @@ References:
 
 - Docker `container cp --follow-link`: <https://docs.docker.com/reference/cli/docker/container/cp/>
 - Docker Compose `cp --follow-link`: <https://docs.docker.com/reference/cli/docker/compose/cp/>
+
+Existing upstream context:
+
+- `apple/containerization#463` added the single-file copy agent path.
+- `apple/containerization#571` added LinuxContainer directory copy support.
+- `apple/containerization#614` added the stat RPC used by later copy path-resolution work.
+- `apple/containerization#727` added path resolution for copy-in using stat.
+- No open upstream issue or PR found for copy source symlink dereference as of 2026-06-22.
+
+## Commit Tracking
+
+- Lower runtime code commit: `2747b9e` (`feat(copy): add follow-link runtime option`)
+- Container API/CLI code commit: `386622c` in `stephenlclarke/container` (`feat(copy): expose follow-link option`)
+- Compose mapping code commit: `1542880` in `stephenlclarke/container-compose` (`feat(cp): support follow-link copy option`)
 
 ## Implementation Details
 

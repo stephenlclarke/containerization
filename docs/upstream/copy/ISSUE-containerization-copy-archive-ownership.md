@@ -1,5 +1,7 @@
 # Feature request: preserve ownership metadata for archive-mode copy
 
+<!-- markdownlint-disable MD013 -->
+
 ## Feature or enhancement request details
 
 Docker exposes `docker cp -a, --archive` and Docker Compose exposes `docker compose cp -a, --archive` as archive mode that copies UID/GID information. `apple/container` can copy files through `containerization`, but the lower copy protocol does not currently carry ownership metadata for single-file raw transfers.
@@ -10,6 +12,15 @@ References:
 
 - Docker `container cp --archive`: <https://docs.docker.com/reference/cli/docker/container/cp/>
 - Docker Compose `cp --archive`: <https://docs.docker.com/reference/cli/docker/compose/cp/>
+
+Existing upstream context:
+
+- `apple/containerization#463` added the single-file copy agent path.
+- `apple/containerization#571` added LinuxContainer directory copy support.
+- `apple/containerization#614` added stat metadata support.
+- `apple/containerization#636` fixed UID/GID truncation to 16 bits.
+- `apple/containerization#727` added path resolution for copy-in using stat.
+- No open upstream issue or PR found for copy archive ownership preservation as of 2026-06-22.
 
 ## Proposed behavior
 

@@ -1,3 +1,7 @@
+# Pull request: preserve archive ownership metadata during copy
+
+<!-- markdownlint-disable MD013 -->
+
 ## Type of Change
 
 - [ ] Bug fix
@@ -13,6 +17,21 @@ References:
 
 - Docker `container cp --archive`: <https://docs.docker.com/reference/cli/docker/container/cp/>
 - Docker Compose `cp --archive`: <https://docs.docker.com/reference/cli/docker/compose/cp/>
+
+Existing upstream context:
+
+- `apple/containerization#463` added the single-file copy agent path.
+- `apple/containerization#571` added LinuxContainer directory copy support.
+- `apple/containerization#614` added stat metadata support.
+- `apple/containerization#636` fixed UID/GID truncation to 16 bits.
+- `apple/containerization#727` added path resolution for copy-in using stat.
+- No open upstream issue or PR found for copy archive ownership preservation as of 2026-06-22.
+
+## Commit Tracking
+
+- Lower runtime code commit: `d6e2a67` (`feat(copy): preserve archive ownership metadata`)
+- Container API/CLI code commit: `bd7a4e8` in `stephenlclarke/container` (`feat(copy): support archive ownership mode`)
+- Compose mapping code commit: `5d1c141` in `stephenlclarke/container-compose` (`feat(cp): support archive ownership mode`)
 
 ## Implementation Details
 
