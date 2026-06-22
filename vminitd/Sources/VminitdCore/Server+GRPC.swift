@@ -444,6 +444,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 "path": "\(path)",
                 "vsockPort": "\(vsockPort)",
                 "isArchive": "\(request.isArchive)",
+                "followSymlink": "\(request.followSymlink)",
                 "mode": "\(request.mode)",
                 "createParents": "\(request.createParents)",
             ])
@@ -558,7 +559,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         request: Com_Apple_Containerization_Sandbox_V3_CopyRequest,
         response: GRPCCore.RPCWriter<Com_Apple_Containerization_Sandbox_V3_CopyResponse>
     ) async throws {
-        let path = request.path
+        let path = try copyOutSourcePath(from: request.path, followSymlink: request.followSymlink)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
             throw RPCError(code: .notFound, message: "copy: path not found '\(path)'")
@@ -642,6 +643,44 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
         // Send completion response after vsock data transfer is done.
         try await response.write(.with { $0.status = .complete })
+    }
+
+    /// Resolves Docker-style `--follow-link` for the final COPY_OUT source path
+    /// without allowing absolute symlinks to escape the mounted rootfs.
+    private func copyOutSourcePath(from path: String, followSymlink: Bool) throws -> String {
+        guard followSymlink else {
+            return path
+        }
+
+        var statInfo = stat()
+        guard lstat(path, &statInfo) == 0 else {
+            throw RPCError(code: .notFound, message: "copy: path not found '\(path)'")
+        }
+        guard (statInfo.st_mode & S_IFMT) == S_IFLNK else {
+            return path
+        }
+
+        let target = try FileManager.default.destinationOfSymbolicLink(atPath: path)
+        let root = try copyRootPath(for: path)
+        let resolvedPath: String
+        if target.hasPrefix("/") {
+            resolvedPath = (root as NSString).appendingPathComponent(String(target.dropFirst()))
+        } else {
+            resolvedPath = ((path as NSString).deletingLastPathComponent as NSString).appendingPathComponent(target)
+        }
+
+        let normalized = (resolvedPath as NSString).standardizingPath
+        guard normalized == root || normalized.hasPrefix(root + "/") else {
+            throw RPCError(code: .invalidArgument, message: "copy: symlink target escapes container root '\(path)'")
+        }
+        return normalized
+    }
+
+    private func copyRootPath(for path: String) throws -> String {
+        guard let range = path.range(of: "/rootfs") else {
+            throw RPCError(code: .invalidArgument, message: "copy: source path is not under a container rootfs '\(path)'")
+        }
+        return String(path[..<range.upperBound])
     }
 
     public func mount(request: Com_Apple_Containerization_Sandbox_V3_MountRequest, context: GRPCCore.ServerContext)

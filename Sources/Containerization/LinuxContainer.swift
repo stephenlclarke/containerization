@@ -1097,13 +1097,15 @@ extension LinuxContainer {
         to destination: URL,
         mode: UInt32 = 0o644,
         createParents: Bool = true,
+        followSymlink: Bool = false,
         chunkSize: Int = defaultCopyChunkSize
     ) async throws {
         try await self.state.withLock {
             let state = try $0.startedState("copyIn")
 
+            let transferSource = followSymlink ? source.resolvingSymlinksInPath() : source
             var isDirectory: ObjCBool = false
-            guard FileManager.default.fileExists(atPath: source.path, isDirectory: &isDirectory) else {
+            guard FileManager.default.fileExists(atPath: transferSource.path, isDirectory: &isDirectory) else {
                 throw ContainerizationError(.notFound, message: "copyIn: source not found '\(source.path)'")
             }
             let isArchive = isDirectory.boolValue
@@ -1155,10 +1157,10 @@ extension LinuxContainer {
                                 if isArchive {
                                     let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: .gzip))
                                     try writer.open(fileDescriptor: conn.fileDescriptor)
-                                    try writer.archiveDirectory(source)
+                                    try writer.archiveDirectory(transferSource)
                                     try writer.finishEncoding()
                                 } else {
-                                    let srcFd = open(source.path, O_RDONLY)
+                                    let srcFd = open(transferSource.path, O_RDONLY)
                                     guard srcFd != -1 else {
                                         throw ContainerizationError(
                                             .internalError,
@@ -1254,6 +1256,7 @@ extension LinuxContainer {
         from source: URL,
         to destination: URL,
         createParents: Bool = true,
+        followSymlink: Bool = false,
         chunkSize: Int = defaultCopyChunkSize
     ) async throws {
         try await self.state.withLock {
@@ -1280,6 +1283,7 @@ extension LinuxContainer {
                             direction: .copyOut,
                             guestPath: guestPath,
                             vsockPort: port,
+                            followSymlink: followSymlink,
                             onMetadata: { meta in
                                 metadataCont.yield(meta)
                                 metadataCont.finish()

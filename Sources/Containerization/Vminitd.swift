@@ -536,6 +536,7 @@ extension Vminitd {
         mode: UInt32 = 0,
         createParents: Bool = false,
         isArchive: Bool = false,
+        followSymlink: Bool = false,
         onMetadata: @Sendable @escaping (CopyMetadata) -> Void = { _ in }
     ) async throws {
         let request = Com_Apple_Containerization_Sandbox_V3_CopyRequest.with {
@@ -545,6 +546,7 @@ extension Vminitd {
             $0.createParents = createParents
             $0.vsockPort = vsockPort
             $0.isArchive = isArchive
+            $0.followSymlink = followSymlink
         }
 
         try await client.copy(

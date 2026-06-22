@@ -838,6 +838,9 @@ public struct Com_Apple_Containerization_Sandbox_V3_CopyRequest: Sendable {
   /// For COPY_IN: indicates the data arriving on vsock is a tar+gzip archive.
   public var isArchive: Bool = false
 
+  /// For COPY_OUT: follow the source path if it is a symbolic link.
+  public var followSymlink: Bool = false
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public enum Direction: SwiftProtobuf.Enum, Swift.CaseIterable {
@@ -2874,7 +2877,7 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: SwiftProtobuf
 
 extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CopyRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}direction\0\u{1}path\0\u{1}mode\0\u{3}create_parents\0\u{3}vsock_port\0\u{3}is_archive\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}direction\0\u{1}path\0\u{1}mode\0\u{3}create_parents\0\u{3}vsock_port\0\u{3}is_archive\0\u{3}follow_symlink\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2888,6 +2891,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Messa
       case 4: try { try decoder.decodeSingularBoolField(value: &self.createParents) }()
       case 5: try { try decoder.decodeSingularUInt32Field(value: &self.vsockPort) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.isArchive) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.followSymlink) }()
       default: break
       }
     }
@@ -2912,6 +2916,9 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Messa
     if self.isArchive != false {
       try visitor.visitSingularBoolField(value: self.isArchive, fieldNumber: 6)
     }
+    if self.followSymlink != false {
+      try visitor.visitSingularBoolField(value: self.followSymlink, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2922,6 +2929,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Messa
     if lhs.createParents != rhs.createParents {return false}
     if lhs.vsockPort != rhs.vsockPort {return false}
     if lhs.isArchive != rhs.isArchive {return false}
+    if lhs.followSymlink != rhs.followSymlink {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
