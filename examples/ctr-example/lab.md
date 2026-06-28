@@ -1,8 +1,8 @@
-#
+# ctr-example Lab
 
-## Install and test the container tool:
+## Install and test the container tool
 
-See https://github.com/apple/container/releases
+For upstream package testing, see <https://github.com/apple/container/releases>. For the fork-backed preview stack, install the matching `stephenlclarke/tap` `container` lane documented in [`container-compose/INSTALL.md`](https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md).
 
 Once installed, start the service and follow prompts.
 
@@ -20,10 +20,10 @@ container run alpine uname
 
 Container starts after this will be fast!
 
-## Get the Containerization sources:
+## Get the Containerization sources
 
 ```bash
-$ git clone https://github.com/apple/containerization.git
+git clone https://github.com/stephenlclarke/containerization.git
 ```
 
 > [!IMPORTANT]
@@ -39,7 +39,7 @@ Read through the sources:
 
 ## Fetch the kernel
 
-Run 
+Run:
 
 ```bash
 cp "$(ls -t ~/Library/Application\ Support/com.apple.container/kernels/vmlinux-* | head -1)" ./vmlinux
@@ -48,8 +48,8 @@ cp "$(ls -t ~/Library/Application\ Support/com.apple.container/kernels/vmlinux-*
 ## Build and run the example
 
 ```bash
-$ cd examples/ctr-example
-$ make
+cd examples/ctr-example
+make
 ```
 
 ## Modify the project

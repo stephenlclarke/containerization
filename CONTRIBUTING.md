@@ -49,9 +49,9 @@ for the squashed commit. Think of it as the single, definitive description of yo
 
 Before merging, we'll review the pull request title and body to ensure it:
 
-* Clearly and concisely describes the changes.
-* Uses the imperative mood (for example, "Add feature," "Fix bug").
-* Provides enough context for future developers to understand the purpose of the change.
+- Clearly and concisely describes the changes.
+- Uses the imperative mood (for example, "Add feature," "Fix bug").
+- Provides enough context for future developers to understand the purpose of the change.
 
 The pull request description should be concise and accurately describe the *what* and *why* of your changes.
 
@@ -83,11 +83,13 @@ make update-licenses
 
 ### How do I pick something to work on?
 
-Take a look at the `good first issue` label in the [containerization](https://github.com/apple/containerization/contribute) or [container](https://github.com/apple/container/contribute) project. 
+Take a look at the `good first issue` label in the [containerization](https://github.com/apple/containerization/contribute) or [container](https://github.com/apple/container/contribute) project.
+
 Before you start working on an issue:
-* Check the comments, assignees, and any references to pull requests — make sure nobody else is actively working on it, or awaiting help or review.
-* If someone is assigned to the issue or volunteered to work on it, and there are no signs of progress or activity over at least the past month, don't hesitate to check in with them
-* Leave a comment that you have started working on it.
+
+- Check the comments, assignees, and any references to pull requests — make sure nobody else is actively working on it, or awaiting help or review.
+- If someone is assigned to the issue or volunteered to work on it, and there are no signs of progress or activity over at least the past month, don't hesitate to check in with them
+- Leave a comment that you have started working on it.
 
 ### Getting help
 
@@ -97,7 +99,7 @@ Don't be afraid to ask for help! When asking for help, provide as much informati
 
 It's possible that you ask someone a question in an issue/pull request and you don't get a response as quickly as you'd like. If you don't get a response within a week, it's okay to politely ping them using an `@` mention. If you don't get a response for 2-3 weeks in a row, please ping someone else.
 
-### I can't finish the contribution I started 
+### I can't finish the contribution I started
 
 Sometimes an issue ends up bigger, harder, or more time-consuming than expected — **and that’s completely fine.** Be sure to comment on the issue saying you’re stepping away, so that someone else is able to pick it up.
 
@@ -105,9 +107,9 @@ Sometimes an issue ends up bigger, harder, or more time-consuming than expected 
 
 We welcome thoughtful use of AI tools in your contributions to this repository. We ask that you adhere to these rules in order to preserve the project's integrity, clarity, and quality, and to respect maintainer bandwidth:
 
-* You should be able to explain and justify every line of code or documentation that was generated or assisted by AI. Your submission should reflect your own understanding and intent.
-* Use AI to augment, not totally replace, your reasoning or familiarity, especially for non-trivial parts of the system. 
-* Avoid dumping AI-generated walls of text that you cannot explain. Low-effort, unexplained submissions will be deprioritized to protect maintainer bandwidth.
+- You should be able to explain and justify every line of code or documentation that was generated or assisted by AI. Your submission should reflect your own understanding and intent.
+- Use AI to augment, not totally replace, your reasoning or familiarity, especially for non-trivial parts of the system.
+- Avoid dumping AI-generated walls of text that you cannot explain. Low-effort, unexplained submissions will be deprioritized to protect maintainer bandwidth.
 
 AI tools should be used to **enhance, not replace** the human elements that make OSS special: learning, collaboration, and community growth.
 

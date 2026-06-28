@@ -1,7 +1,9 @@
+<!-- markdownlint-disable MD033 -->
 <h1>
   <img alt="Containerization logo" src="./assets/Containerization-Logo.png" width="70" valign="middle">
   &nbsp;Containerization
 </h1>
+<!-- markdownlint-enable MD033 -->
 
 The Containerization package allows applications to use Linux containers.
 Containerization is written in [Swift](https://www.swift.org) and uses [Virtualization.framework](https://developer.apple.com/documentation/virtualization) on Apple silicon.
@@ -48,7 +50,7 @@ To build the Containerization package, you need:
 - macOS 26
 - Xcode 26
 
-Older versions of macOS are not supported. 
+Older versions of macOS are not supported.
 
 ## Example Usage
 
@@ -82,16 +84,17 @@ Containerization allows user provided kernels but tests functionality starting w
 
 If you wish to consume a pre-built kernel, make sure it has `VIRTIO` drivers compiled into the kernel (not merely as modules).
 
-The [Kata Containers](https://github.com/kata-containers/kata-containers) project provides a Linux kernel that is optimized for containers, with all required configuration options enabled. The [releases](https://github.com/kata-containers/kata-containers/releases/) page contains downloadable artifacts, and the image itself (`vmlinux.container`) can be found in the `/opt/kata/share/kata-containers/` directory. 
+The [Kata Containers](https://github.com/kata-containers/kata-containers) project provides a Linux kernel that is optimized for containers, with all required configuration options enabled. The [releases](https://github.com/kata-containers/kata-containers/releases/) page contains downloadable artifacts, and the image itself (`vmlinux.container`) can be found in the `/opt/kata/share/kata-containers/` directory.
 
 ## Prepare to build package
 
 Install the recommended version of Xcode.
 
 Set the active developer directory to the installed Xcode (replace `<PATH_TO_XCODE>`):
+
 ```bash
 sudo xcode-select -s <PATH_TO_XCODE>
-``` 
+```
 
 Install [Swiftly](https://github.com/swiftlang/swiftly), [Swift](https://www.swift.org), and [Static Linux SDK](https://www.swift.org/documentation/articles/static-linux-getting-started.html):
 
