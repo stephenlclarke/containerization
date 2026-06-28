@@ -9,6 +9,15 @@ Containerization is written in [Swift](https://www.swift.org) and uses [Virtuali
 > **Looking for command line binaries for running containers?**\
 > They are available in the dedicated [apple/container](https://github.com/apple/container) repository.
 
+Stephen Clarke's fork is the runtime library branch used by the fork-backed `container` and `container-compose` preview stack. The project spans four repositories:
+
+- [`container`](https://github.com/stephenlclarke/container): runtime CLI and API service; `main` consumes this repository's `main` branch, and `release` consumes this repository's `release` branch.
+- [`container-compose`](https://github.com/stephenlclarke/container-compose): Compose plugin that uses the same `containerization` lane as its matching `container` package.
+- [`containerization`](https://github.com/stephenlclarke/containerization): this Swift runtime package.
+- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): Go BuildKit bridge source for the builder image pinned by `container`.
+
+The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks this source repository on `main` for maintenance, but users install `container` and `container-compose` from prebuilt release-quality package assets rather than installing `containerization` directly.
+
 Containerization provides APIs to:
 
 - [Manage OCI images](./Sources/ContainerizationOCI/).
