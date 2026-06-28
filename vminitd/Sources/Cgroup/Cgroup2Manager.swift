@@ -27,6 +27,7 @@ import Glibc
 #endif
 
 import LCShim
+import ContainerizationError
 import ContainerizationOCI
 import ContainerizationOS
 import Foundation

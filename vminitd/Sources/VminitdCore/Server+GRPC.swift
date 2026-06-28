@@ -683,7 +683,11 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             return path
         }
 
-        var statInfo = stat()
+        #if canImport(Musl)
+        var statInfo = Musl.stat()
+        #elseif canImport(Glibc)
+        var statInfo = Glibc.stat()
+        #endif
         guard lstat(path, &statInfo) == 0 else {
             throw RPCError(code: .notFound, message: "copy: path not found '\(path)'")
         }
