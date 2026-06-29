@@ -155,6 +155,26 @@ extension Mount {
         case networkBlockDevice
     }
 
+    static func parseRuntimeOption(_ option: String) throws -> (key: String, value: String) {
+        let split = option.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+        guard split.count == 2 else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "invalid vmm option format: \(option)"
+            )
+        }
+
+        let key = String(split[0])
+        guard !key.isEmpty else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "vmm option key is required"
+            )
+        }
+
+        return (key, String(split[1]))
+    }
+
     private var storageAttachmentType: StorageAttachmentType {
         let nbdSchemes = ["nbd://", "nbds://", "nbd+unix://", "nbds+unix://"]
         if nbdSchemes.contains(where: { self.source.hasPrefix($0) }) {
@@ -191,13 +211,7 @@ extension VZDiskImageStorageDeviceAttachment {
         var cachingMode: VZDiskImageCachingMode = .cached
 
         for option in options {
-            let split = option.split(separator: "=")
-            if split.count != 2 {
-                continue
-            }
-
-            let key = String(split[0])
-            let value = String(split[1])
+            let (key, value) = try Mount.parseRuntimeOption(option)
 
             switch key {
             case "vzDiskImageCachingMode":
@@ -257,13 +271,7 @@ extension VZNetworkBlockDeviceStorageDeviceAttachment {
         var synchronizationMode: VZDiskSynchronizationMode = .full
 
         for option in options {
-            let split = option.split(separator: "=")
-            if split.count != 2 {
-                continue
-            }
-
-            let key = String(split[0])
-            let value = String(split[1])
+            let (key, value) = try Mount.parseRuntimeOption(option)
 
             switch key {
             case "vzTimeout":

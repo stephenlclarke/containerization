@@ -22,6 +22,24 @@ import Testing
 
 struct MountTests {
 
+    #if os(macOS)
+    @Test func parseRuntimeOptionPreservesEqualsInsideValue() throws {
+        let option = try Mount.parseRuntimeOption("vzCustom=left=right")
+
+        #expect(option.key == "vzCustom")
+        #expect(option.value == "left=right")
+    }
+
+    @Test func parseRuntimeOptionRejectsMalformedField() {
+        do {
+            _ = try Mount.parseRuntimeOption("vzTimeout")
+            Issue.record("Expected malformed runtime option to throw")
+        } catch {
+            #expect(String(describing: error).contains("invalid vmm option format"))
+        }
+    }
+    #endif
+
     @Test func mountShareCreatesVirtiofsMount() {
         let mount = Mount.share(
             source: "/host/shared",
