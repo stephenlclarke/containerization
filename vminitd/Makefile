@@ -37,18 +37,21 @@ SWIFT_CONFIGURATION := $(SWIFT_SDK_FLAGS) $(SWIFT_WARNING_CONFIG) -Xlinker -s --
 SWIFT_VERSION := 6.3.0
 SWIFT_SDK_URL := https://download.swift.org/swift-6.3-release/static-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz
 SWIFT_SDK_CHECKSUM := d2078b69bdeb5c31202c10e9d8a11d6f66f82938b51a4b75f032ccb35c4c286c
-SWIFT_SDK_PATH := /tmp/$(notdir $(SWIFT_SDK_URL))
+SWIFT_SDK_ARCHIVE := $(notdir $(SWIFT_SDK_URL))
+SWIFT_SDK_BUNDLE := $(basename $(basename $(SWIFT_SDK_ARCHIVE)))
+SWIFT_SDK_ID := $(basename $(SWIFT_SDK_BUNDLE))
+SWIFT_SDK_PATH := /tmp/$(SWIFT_SDK_ARCHIVE)
 
 SYSTEM_TYPE := $(shell uname -s)
 ifeq ($(SYSTEM_TYPE),Darwin)
 SWIFTLY_URL := https://download.swift.org/swiftly/darwin/swiftly.pkg
 SWIFTLY_FILENAME := $(notdir $(SWIFTLY_URL))
-SWIFTLY_BIN_DIR ?= ~/.swiftly/bin
-SWIFT := $(SWIFTLY_BIN_DIR)/swift
+SWIFTLY_BIN_DIR ?= $(HOME)/.swiftly/bin
+SWIFT ?= $(SWIFTLY_BIN_DIR)/swift
 else
 SWIFT ?= swift
 endif
-BUILD_BIN_DIR := $(shell $(SWIFT) build -c $(BUILD_CONFIGURATION) $(SWIFT_CONFIGURATION) --show-bin-path)
+BUILD_BIN_DIR = $(shell $(SWIFT) build -c $(BUILD_CONFIGURATION) $(SWIFT_CONFIGURATION) --show-bin-path)
 
 ifeq ($(SYSTEM_TYPE),Darwin)
 MACOS_VERSION := $(shell sw_vers -productVersion)
@@ -58,8 +61,22 @@ endif
 
 .DEFAULT_GOAL := all
 
+.PHONY: ensure-linux-sdk
+ensure-linux-sdk:
+ifneq ($(strip $(SWIFT_SDK_FLAGS)),)
+	@if ! $(SWIFT) sdk list 2>/dev/null | grep -q "$(SWIFT_SDK_ID)"; then \
+		"$(MAKE)" linux-sdk SWIFT="$(SWIFT)"; \
+	fi
+endif
+
+ifeq ($(SYSTEM_TYPE),Darwin)
+ALL_DEPS := swift ensure-linux-sdk
+else
+ALL_DEPS := ensure-linux-sdk
+endif
+
 .PHONY: all
-all: 
+all: $(ALL_DEPS)
 	@echo Building vminitd and vmexec...
 	@mkdir -p ./bin/
 	@rm -f ./bin/vminitd
@@ -86,8 +103,10 @@ swiftly:
 	
 .PHONY: swift
 swift: swiftly
-	@echo Installing Swift $(SWIFT_VERSION)...
-	@${SWIFTLY_BIN_DIR}/swiftly install $(SWIFT_VERSION)
+	@if ! ${SWIFTLY_BIN_DIR}/swiftly list | grep -q "Swift $(SWIFT_VERSION)"; then \
+		echo "Installing Swift $(SWIFT_VERSION)..."; \
+		${SWIFTLY_BIN_DIR}/swiftly install $(SWIFT_VERSION); \
+	fi
 
 .PHONY: linux-sdk
 linux-sdk:
