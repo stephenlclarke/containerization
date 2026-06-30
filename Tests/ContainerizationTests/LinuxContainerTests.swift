@@ -21,6 +21,7 @@ import Synchronization
 import Testing
 
 import struct ContainerizationOCI.ImageConfig
+import struct ContainerizationOCI.LinuxDeviceCgroup
 import enum ContainerizationOCI.LinuxNamespaceType
 import struct ContainerizationOCI.Mount
 import struct ContainerizationOCI.Spec
@@ -115,6 +116,34 @@ struct LinuxContainerTests {
         #expect(specBlockIO.throttleWriteBpsDevice.first?.rate == 2_097_152)
         #expect(specBlockIO.throttleReadIOPSDevice.first?.rate == 1_000)
         #expect(specBlockIO.throttleWriteIOPSDevice.first?.rate == 2_000)
+    }
+
+    @Test func runtimeSpecIncludesConfiguredDeviceCgroupRules() throws {
+        let deviceRules = [
+            LinuxDeviceCgroup(allow: true, type: "c", major: 1, minor: 3, access: "mr"),
+            LinuxDeviceCgroup(allow: true, type: "a", major: nil, minor: nil, access: "rwm"),
+        ]
+
+        let container = try LinuxContainer(
+            "device-cgroup-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), deviceCgroupRules: deviceRules)
+        )
+
+        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+
+        #expect(resources.devices.count == 2)
+        #expect(resources.devices[0].allow)
+        #expect(resources.devices[0].type == "c")
+        #expect(resources.devices[0].major == 1)
+        #expect(resources.devices[0].minor == 3)
+        #expect(resources.devices[0].access == "mr")
+        #expect(resources.devices[1].allow)
+        #expect(resources.devices[1].type == "a")
+        #expect(resources.devices[1].major == nil)
+        #expect(resources.devices[1].minor == nil)
+        #expect(resources.devices[1].access == "rwm")
     }
 
     @Test func runtimeSpecCanUseHostPIDNamespace() throws {

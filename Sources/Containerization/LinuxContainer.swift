@@ -59,6 +59,8 @@ public final class LinuxContainer: Container, Sendable {
         public var memoryInBytes: UInt64 = 1024.mib()
         /// Optional block I/O resource limits for the container cgroup.
         public var blockIO: LinuxBlockIO?
+        /// Optional device cgroup rules for the container.
+        public var deviceCgroupRules: [LinuxDeviceCgroup] = []
         /// The hostname for the container.
         public var hostname: String?
         /// The system control options for the container.
@@ -101,6 +103,7 @@ public final class LinuxContainer: Container, Sendable {
             cpus: Int = 4,
             memoryInBytes: UInt64 = 1024.mib(),
             blockIO: LinuxBlockIO? = nil,
+            deviceCgroupRules: [LinuxDeviceCgroup] = [],
             hostname: String? = nil,
             sysctl: [String: String] = [:],
             interfaces: [any Interface] = [],
@@ -120,6 +123,7 @@ public final class LinuxContainer: Container, Sendable {
             self.cpus = cpus
             self.memoryInBytes = memoryInBytes
             self.blockIO = blockIO
+            self.deviceCgroupRules = deviceCgroupRules
             self.hostname = hostname
             self.sysctl = sysctl
             self.interfaces = interfaces
@@ -413,6 +417,7 @@ public final class LinuxContainer: Container, Sendable {
         // CPU: quota/period model where period is 100ms (100,000µs) and quota is cpus * period
         // Memory: limit in bytes
         spec.linux?.resources = LinuxResources(
+            devices: config.deviceCgroupRules,
             memory: LinuxMemory(
                 limit: Int64(config.memoryInBytes)
             ),
