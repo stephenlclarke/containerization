@@ -21,6 +21,7 @@ import Synchronization
 import Testing
 
 import struct ContainerizationOCI.ImageConfig
+import enum ContainerizationOCI.LinuxNamespaceType
 import struct ContainerizationOCI.Mount
 import struct ContainerizationOCI.Spec
 
@@ -114,6 +115,33 @@ struct LinuxContainerTests {
         #expect(specBlockIO.throttleWriteBpsDevice.first?.rate == 2_097_152)
         #expect(specBlockIO.throttleReadIOPSDevice.first?.rate == 1_000)
         #expect(specBlockIO.throttleWriteIOPSDevice.first?.rate == 2_000)
+    }
+
+    @Test func runtimeSpecCanUseHostPIDNamespace() throws {
+        let isolatedContainer = try LinuxContainer(
+            "pid-isolated-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let hostPIDContainer = try LinuxContainer(
+            "pid-host-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), hostPIDNamespace: true)
+        )
+
+        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec().linux?.namespaces)
+        let hostPIDNamespaces = try #require(hostPIDContainer.generateRuntimeSpec().linux?.namespaces)
+
+        #expect(isolatedNamespaces.contains { $0.type == .pid })
+        #expect(!hostPIDNamespaces.contains { $0.type == .pid })
+        #expect(hostPIDNamespaces.map { $0.type } == [
+            LinuxNamespaceType.cgroup,
+            LinuxNamespaceType.ipc,
+            LinuxNamespaceType.mount,
+            LinuxNamespaceType.uts,
+        ])
     }
 
     @Test func pauseAndResumeTransitionRunningContainer() async throws {

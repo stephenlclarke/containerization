@@ -83,6 +83,9 @@ public final class LinuxContainer: Container, Sendable {
         /// Run the container with a minimal init process that handles signal
         /// forwarding and zombie reaping.
         public var useInit: Bool = false
+        /// Run the init process in the sandbox VM PID namespace instead of
+        /// creating a private container PID namespace.
+        public var hostPIDNamespace: Bool = false
         /// Additional CPU cores to allocate for the virtual machine on top
         /// of the container's configured `cpus` value.
         public var cpuOverhead: Int = 1
@@ -109,6 +112,7 @@ public final class LinuxContainer: Container, Sendable {
             bootLog: BootLog? = nil,
             ociRuntimePath: String? = nil,
             useInit: Bool = false,
+            hostPIDNamespace: Bool = false,
             cpuOverhead: Int = 1,
             memoryOverhead: UInt64 = 128.mib()
         ) {
@@ -127,6 +131,7 @@ public final class LinuxContainer: Container, Sendable {
             self.bootLog = bootLog
             self.ociRuntimePath = ociRuntimePath
             self.useInit = useInit
+            self.hostPIDNamespace = hostPIDNamespace
             self.cpuOverhead = cpuOverhead
             self.memoryOverhead = memoryOverhead
         }
@@ -418,13 +423,16 @@ public final class LinuxContainer: Container, Sendable {
             blockIO: config.blockIO?.toOCI()
         )
 
-        spec.linux?.namespaces = [
+        var namespaces = [
             LinuxNamespace(type: .cgroup),
             LinuxNamespace(type: .ipc),
             LinuxNamespace(type: .mount),
-            LinuxNamespace(type: .pid),
-            LinuxNamespace(type: .uts),
         ]
+        if !config.hostPIDNamespace {
+            namespaces.append(LinuxNamespace(type: .pid))
+        }
+        namespaces.append(LinuxNamespace(type: .uts))
+        spec.linux?.namespaces = namespaces
 
         return spec
     }
