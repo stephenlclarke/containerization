@@ -61,6 +61,8 @@ public final class LinuxContainer: Container, Sendable {
         public var blockIO: LinuxBlockIO?
         /// Optional device cgroup rules for the container.
         public var deviceCgroupRules: [LinuxDeviceCgroup] = []
+        /// Optional device nodes to create in the container spec.
+        public var devices: [LinuxDevice] = []
         /// The hostname for the container.
         public var hostname: String?
         /// The system control options for the container.
@@ -104,6 +106,7 @@ public final class LinuxContainer: Container, Sendable {
             memoryInBytes: UInt64 = 1024.mib(),
             blockIO: LinuxBlockIO? = nil,
             deviceCgroupRules: [LinuxDeviceCgroup] = [],
+            devices: [LinuxDevice] = [],
             hostname: String? = nil,
             sysctl: [String: String] = [:],
             interfaces: [any Interface] = [],
@@ -124,6 +127,7 @@ public final class LinuxContainer: Container, Sendable {
             self.memoryInBytes = memoryInBytes
             self.blockIO = blockIO
             self.deviceCgroupRules = deviceCgroupRules
+            self.devices = devices
             self.hostname = hostname
             self.sysctl = sysctl
             self.interfaces = interfaces
@@ -407,6 +411,7 @@ public final class LinuxContainer: Container, Sendable {
 
         // Linux toggles.
         spec.linux?.sysctl = config.sysctl
+        spec.linux?.devices = config.devices
 
         // If the rootfs was requested as read-only, set it in the OCI spec.
         // We let the OCI runtime remount as ro, instead of doing it originally.

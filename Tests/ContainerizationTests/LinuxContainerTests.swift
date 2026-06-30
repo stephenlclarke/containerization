@@ -21,6 +21,7 @@ import Synchronization
 import Testing
 
 import struct ContainerizationOCI.ImageConfig
+import struct ContainerizationOCI.LinuxDevice
 import struct ContainerizationOCI.LinuxDeviceCgroup
 import enum ContainerizationOCI.LinuxNamespaceType
 import struct ContainerizationOCI.Mount
@@ -144,6 +145,38 @@ struct LinuxContainerTests {
         #expect(resources.devices[1].major == nil)
         #expect(resources.devices[1].minor == nil)
         #expect(resources.devices[1].access == "rwm")
+    }
+
+    @Test func runtimeSpecIncludesConfiguredDeviceNodes() throws {
+        let devices = [
+            LinuxDevice(
+                path: "/dev/xnull",
+                type: "c",
+                major: 1,
+                minor: 3,
+                fileMode: 0o666,
+                uid: 0,
+                gid: 0
+            ),
+        ]
+
+        let container = try LinuxContainer(
+            "device-node-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), devices: devices)
+        )
+
+        let specDevices = try #require(container.generateRuntimeSpec().linux?.devices)
+
+        #expect(specDevices.count == 1)
+        #expect(specDevices[0].path == "/dev/xnull")
+        #expect(specDevices[0].type == "c")
+        #expect(specDevices[0].major == 1)
+        #expect(specDevices[0].minor == 3)
+        #expect(specDevices[0].fileMode == 0o666)
+        #expect(specDevices[0].uid == 0)
+        #expect(specDevices[0].gid == 0)
     }
 
     @Test func runtimeSpecCanUseHostPIDNamespace() throws {

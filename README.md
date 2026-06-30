@@ -28,6 +28,8 @@ Containerization provides APIs to:
 - [Interact with the Netlink socket family](./Sources/ContainerizationNetlink/).
 - [Create an optimized Linux kernel for fast boot times](./kernel/).
 - [Spawn lightweight virtual machines and manage the runtime environment](./Sources/Containerization/LinuxContainer.swift).
+- Configure OCI Linux runtime controls such as device cgroup rules and
+  pre-resolved device nodes for generated runtime specs.
 - [Spawn and interact with containerized processes](./Sources/Containerization/LinuxProcess.swift).
 - Use Rosetta 2 for running linux/amd64 containers on Apple silicon.
 
