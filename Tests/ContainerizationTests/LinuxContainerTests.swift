@@ -157,7 +157,7 @@ struct LinuxContainerTests {
                 fileMode: 0o666,
                 uid: 0,
                 gid: 0
-            ),
+            )
         ]
 
         let container = try LinuxContainer(
@@ -198,12 +198,13 @@ struct LinuxContainerTests {
 
         #expect(isolatedNamespaces.contains { $0.type == .pid })
         #expect(!hostPIDNamespaces.contains { $0.type == .pid })
-        #expect(hostPIDNamespaces.map { $0.type } == [
-            LinuxNamespaceType.cgroup,
-            LinuxNamespaceType.ipc,
-            LinuxNamespaceType.mount,
-            LinuxNamespaceType.uts,
-        ])
+        #expect(
+            hostPIDNamespaces.map { $0.type } == [
+                LinuxNamespaceType.cgroup,
+                LinuxNamespaceType.ipc,
+                LinuxNamespaceType.mount,
+                LinuxNamespaceType.uts,
+            ])
     }
 
     @Test func pauseAndResumeTransitionRunningContainer() async throws {
