@@ -61,6 +61,11 @@ endif
 
 .DEFAULT_GOAL := all
 
+# INSTALL_DIR is where built binaries land. Defaults to ./bin so the
+# in-tree aarch64 flow is unchanged. The dist-x86_64 cross-build
+# overrides this to keep its artifacts out of vminitd/bin/.
+INSTALL_DIR ?= ./bin
+
 .PHONY: ensure-linux-sdk
 ensure-linux-sdk:
 ifneq ($(strip $(SWIFT_SDK_FLAGS)),)
@@ -78,13 +83,13 @@ endif
 .PHONY: all
 all: $(ALL_DEPS)
 	@echo Building vminitd and vmexec...
-	@mkdir -p ./bin/
-	@rm -f ./bin/vminitd
-	@rm -f ./bin/vmexec
+	@mkdir -p $(INSTALL_DIR)
+	@rm -f $(INSTALL_DIR)/vminitd
+	@rm -f $(INSTALL_DIR)/vmexec
 	@$(SWIFT) --version
 	@$(SWIFT) build -c $(BUILD_CONFIGURATION) $(SWIFT_CONFIGURATION)
-	@install "$(BUILD_BIN_DIR)/vminitd" ./bin/
-	@install "$(BUILD_BIN_DIR)/vmexec" ./bin/
+	@install "$(BUILD_BIN_DIR)/vminitd" $(INSTALL_DIR)/
+	@install "$(BUILD_BIN_DIR)/vmexec" $(INSTALL_DIR)/
 
 .PHONY: cross-prep
 cross-prep: swift linux-sdk

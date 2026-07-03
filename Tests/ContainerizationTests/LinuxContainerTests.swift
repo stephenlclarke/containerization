@@ -16,6 +16,7 @@
 
 import ContainerizationError
 import ContainerizationExtras
+import ContainerizationOS
 import Foundation
 import Synchronization
 import Testing
@@ -74,6 +75,29 @@ struct LinuxContainerTests {
         let process = LinuxProcessConfiguration(from: imageConfig)
 
         #expect(process.arguments == ["/bin/sh", "-c", "echo 'hello'", "&&", "sleep 10"])
+    }
+
+    @Test func defaultCapabilitiesAreRestrictedOCISet() {
+        // Regression guard against shipping `.allCapabilities` as the default.
+        // A default container must not receive CAP_SYS_ADMIN, which would let it
+        // write /proc/sys/kernel/core_pattern and escape to guest-root. Cover both
+        // construction paths: the no-argument init and the memberwise init.
+        let viaProperty = LinuxProcessConfiguration()
+        let viaInit = LinuxProcessConfiguration(arguments: ["/bin/sh"])
+
+        for caps in [viaProperty.capabilities, viaInit.capabilities] {
+            for set in [caps.bounding, caps.effective, caps.permitted, caps.inheritable, caps.ambient] {
+                #expect(!set.contains(.sysAdmin), "default capabilities must not include CAP_SYS_ADMIN")
+            }
+        }
+
+        let expected = LinuxCapabilities.defaultOCICapabilities
+        #expect(viaProperty.capabilities.bounding == expected.bounding)
+        #expect(viaProperty.capabilities.effective == expected.effective)
+        #expect(viaProperty.capabilities.permitted == expected.permitted)
+        #expect(viaProperty.capabilities.inheritable == expected.inheritable)
+        #expect(viaProperty.capabilities.ambient == expected.ambient)
+        #expect(viaInit.capabilities.bounding == expected.bounding)
     }
 
     @Test func runtimeSpecIncludesConfiguredBlockIO() throws {
@@ -285,6 +309,7 @@ struct LinuxContainerTests {
 
         #expect(pausedIdentifiers == [42, 99])
     }
+
 }
 
 private struct StubVirtualMachineManager: VirtualMachineManager {
