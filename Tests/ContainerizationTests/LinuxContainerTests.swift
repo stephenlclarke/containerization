@@ -143,6 +143,19 @@ struct LinuxContainerTests {
         #expect(specBlockIO.throttleWriteIOPSDevice.first?.rate == 2_000)
     }
 
+    @Test func runtimeSpecIncludesConfiguredPidsLimit() throws {
+        let container = try LinuxContainer(
+            "pids-limit-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), pidsLimit: 128)
+        )
+
+        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+
+        #expect(resources.pids?.limit == 128)
+    }
+
     @Test func runtimeSpecIncludesConfiguredDeviceCgroupRules() throws {
         let deviceRules = [
             LinuxDeviceCgroup(allow: true, type: "c", major: 1, minor: 3, access: "mr"),

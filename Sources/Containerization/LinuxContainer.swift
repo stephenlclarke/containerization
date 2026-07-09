@@ -57,6 +57,8 @@ public final class LinuxContainer: Container, Sendable {
         public var cpus: Int = 4
         /// The memory in bytes to give to the container.
         public var memoryInBytes: UInt64 = 1024.mib()
+        /// Optional process count limit for the container cgroup.
+        public var pidsLimit: Int64?
         /// Optional block I/O resource limits for the container cgroup.
         public var blockIO: LinuxBlockIO?
         /// Optional device cgroup rules for the container.
@@ -104,6 +106,7 @@ public final class LinuxContainer: Container, Sendable {
             process: LinuxProcessConfiguration,
             cpus: Int = 4,
             memoryInBytes: UInt64 = 1024.mib(),
+            pidsLimit: Int64? = nil,
             blockIO: LinuxBlockIO? = nil,
             deviceCgroupRules: [LinuxDeviceCgroup] = [],
             devices: [LinuxDevice] = [],
@@ -125,6 +128,7 @@ public final class LinuxContainer: Container, Sendable {
             self.process = process
             self.cpus = cpus
             self.memoryInBytes = memoryInBytes
+            self.pidsLimit = pidsLimit
             self.blockIO = blockIO
             self.deviceCgroupRules = deviceCgroupRules
             self.devices = devices
@@ -430,6 +434,7 @@ public final class LinuxContainer: Container, Sendable {
                 quota: Int64(config.cpus * 100_000),
                 period: 100_000
             ),
+            pids: config.pidsLimit.map(LinuxPids.init(limit:)),
             blockIO: config.blockIO?.toOCI()
         )
 
