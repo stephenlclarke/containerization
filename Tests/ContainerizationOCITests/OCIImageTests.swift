@@ -23,12 +23,34 @@ import Testing
 
 struct OCITests {
     @Test func config() {
-        let config = ContainerizationOCI.ImageConfig()
+        let config = ContainerizationOCI.ImageConfig(
+            labels: ["com.example.role": "transformer"],
+            exposedPorts: ["8080/tcp": [:]]
+        )
         let rootfs = ContainerizationOCI.Rootfs(type: "foo", diffIDs: ["diff1", "diff2"])
         let history = ContainerizationOCI.History()
 
         let image = ContainerizationOCI.Image(architecture: "arm64", os: "linux", config: config, rootfs: rootfs, history: [history])
         #expect(image.rootfs.type == "foo")
+        #expect(image.config?.labels == ["com.example.role": "transformer"])
+        #expect(image.config?.exposedPorts == ["8080/tcp": [:]])
+    }
+
+    @Test func configDecodesDockerExposedPorts() throws {
+        let json = """
+                {
+                  "Labels": {"com.example.role": "transformer"},
+                  "ExposedPorts": {
+                    "80/tcp": {},
+                    "8443/udp": {}
+                  }
+                }
+            """
+
+        let config = try JSONDecoder().decode(ContainerizationOCI.ImageConfig.self, from: Data(json.utf8))
+
+        #expect(config.labels == ["com.example.role": "transformer"])
+        #expect(config.exposedPorts == ["80/tcp": [:], "8443/udp": [:]])
     }
 
     @Test func descriptor() {
