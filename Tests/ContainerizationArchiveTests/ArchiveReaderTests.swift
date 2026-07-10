@@ -178,6 +178,30 @@ struct ArchiveReaderTests {
         }
     }
 
+    @Test func reportRejectedPathsOnlyForIncludedMembers() throws {
+        let archiveURL = try createTestArchive(
+            name: "selected-rejected-members",
+            entries: [
+                ("../etc/ignored", .regular("ignored traversal"), nil),
+                ("templates/../../etc/rejected", .regular("selected traversal"), nil),
+                ("templates/service.yaml", .regular("kind: Service"), nil),
+            ]
+        )
+
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let extractDir = try createExtractionDirectory(name: "selected-rejected-members")
+        defer { try? FileManager.default.removeItem(at: extractDir.deletingLastPathComponent()) }
+
+        let reader = try ArchiveReader(format: .paxRestricted, filter: .none, file: archiveURL)
+        let rejectedPaths = try reader.extractContents(to: extractDir) { path in
+            path == "templates" || path.hasPrefix("templates/")
+        }
+
+        #expect(rejectedPaths == ["templates/../../etc/rejected"])
+        #expect(FileManager.default.fileExists(atPath: extractDir.appendingPathComponent("templates/service.yaml").path))
+    }
+
     // MARK: - Absolute Path Tests
 
     @Test func convertAbsolutePathToRelative() throws {
