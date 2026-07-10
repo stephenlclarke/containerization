@@ -129,6 +129,55 @@ struct ArchiveReaderTests {
         #expect(content == "root file")
     }
 
+    @Test func extractOnlyIncludedMembers() throws {
+        let archiveURL = try createTestArchive(
+            name: "selected-members",
+            entries: [
+                ("etc/config", .regular("ignored config"), nil),
+                ("templates/", .directory, nil),
+                ("templates/service.yaml", .regular("kind: Service"), nil),
+                ("templates/current", .symlink, "service.yaml"),
+                ("var/cache/data", .regular("ignored cache"), nil),
+            ])
+
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let extractDir = try createExtractionDirectory(name: "selected-members")
+        defer { try? FileManager.default.removeItem(at: extractDir.deletingLastPathComponent()) }
+
+        let reader = try ArchiveReader(format: .paxRestricted, filter: .none, file: archiveURL)
+        let rejectedPaths = try reader.extractContents(to: extractDir) { path in
+            path == "templates/" || path.hasPrefix("templates/")
+        }
+
+        #expect(rejectedPaths.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: extractDir.appendingPathComponent("templates/service.yaml").path))
+        #expect(
+            try FileManager.default.destinationOfSymbolicLink(
+                atPath: extractDir.appendingPathComponent("templates/current").path
+            ) == "service.yaml"
+        )
+        #expect(!FileManager.default.fileExists(atPath: extractDir.appendingPathComponent("etc/config").path))
+        #expect(!FileManager.default.fileExists(atPath: extractDir.appendingPathComponent("var/cache/data").path))
+    }
+
+    @Test func rejectArchiveWithoutIncludedMembers() throws {
+        let archiveURL = try createTestArchive(
+            name: "no-selected-members",
+            entries: [("etc/config", .regular("ignored config"), nil)]
+        )
+
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let extractDir = try createExtractionDirectory(name: "no-selected-members")
+        defer { try? FileManager.default.removeItem(at: extractDir.deletingLastPathComponent()) }
+
+        let reader = try ArchiveReader(format: .paxRestricted, filter: .none, file: archiveURL)
+        #expect(throws: ArchiveError.self) {
+            try reader.extractContents(to: extractDir) { $0.hasPrefix("templates/") }
+        }
+    }
+
     // MARK: - Absolute Path Tests
 
     @Test func convertAbsolutePathToRelative() throws {

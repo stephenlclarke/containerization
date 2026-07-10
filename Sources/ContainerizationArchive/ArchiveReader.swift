@@ -273,6 +273,16 @@ extension ArchiveReader {
     /// symbolic links, and uses a "last entry wins" replacement policy
     /// for an existing file at a path to be extracted.
     public func extractContents(to directory: URL) throws -> [String] {
+        try extractContents(to: directory, including: { _ in true })
+    }
+
+    /// Extracts archive members whose paths satisfy `shouldExtract` to the
+    /// provided directory. Rejected paths are reported only for selected
+    /// members. Throws when the archive contains no matching members.
+    public func extractContents(
+        to directory: URL,
+        including shouldExtract: (String) -> Bool
+    ) throws -> [String] {
         // Create the root directory with standard permissions
         // and create a FileDescriptor for secure path traversal.
         let fm = FileManager.default
@@ -285,9 +295,13 @@ extension ArchiveReader {
         var foundEntry = false
         var rejectedPaths = [String]()
         for (entry, dataReader) in self.makeStreamingIterator() {
-            guard let memberPath = (entry.path.map { FilePath($0) }) else {
+            guard let path = entry.path, shouldExtract(path) else {
+                try archive_read_data_skip(self.underlying).checkOk(
+                    elseThrow: ArchiveError.failedToExtractArchive("failed to skip archive member data")
+                )
                 continue
             }
+            let memberPath = FilePath(path)
             foundEntry = true
 
             // Try to extract the entry, catching path validation errors
