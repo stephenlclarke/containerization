@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build / Test / Format
 
-The project is built via `make`, not directly with `swift build`. Two Swift packages live in this repo: the root package (Containerization libraries + `cctl` + macOS-only integration binary) and `vminitd/` (the Linux guest init system, cross-compiled with the Static Linux SDK).
+The project is built via `make`, not directly with `swift build`. Two Swift packages live in this repo: the root package (Containerization libraries + `cctl` + the cross-platform integration binary) and `vminitd/` (the Linux guest init system, cross-compiled with the Static Linux SDK).
 
 - `make all` — build everything (`containerization` + `vminitd` + `init.ext4` rootfs in `bin/`). Default `BUILD_CONFIGURATION=debug`; pass `release` (or use `make release`) for optimized builds.
 - `make containerization` — build just the host-side Swift package (skips vminitd).
@@ -28,7 +28,12 @@ The project is built via `make`, not directly with `swift build`. Two Swift pack
 
 ## Architecture
 
-This is a **Swift library package** (not a CLI tool) that lets applications run Linux containers on Apple silicon by spawning a lightweight VM per container via `Virtualization.framework`. The corresponding end-user CLI lives in [`apple/container`](https://github.com/apple/container) and is **not** part of this repo. `cctl` here is a playground/example binary, not the shipping product.
+This is a **Swift library package** that lets applications run Linux containers
+in lightweight virtual machines. macOS uses `Virtualization.framework`; the
+Linux backend uses Cloud Hypervisor. The corresponding end-user macOS CLI lives
+in [`apple/container`](https://github.com/apple/container) and is **not** part
+of this repo. `cctl` is a playground and low-level Linux distribution utility,
+not the shipping macOS `container` CLI.
 
 ### The host ↔ guest split
 
@@ -44,7 +49,7 @@ The proto is the contract between the two halves. **The `.pb.swift` and `.grpc.s
 `Containerization` abstracts the VMM behind `VirtualMachineManager` / `VirtualMachineInstance`. Two backends ship in this repo, both inside the same `Containerization` target but gated by `#if`:
 
 - **macOS**: `VZVirtualMachineManager` / `VZVirtualMachineInstance` (`VZ*` files, `#if os(macOS)`). Drives `Virtualization.framework` directly.
-- **Linux**: `CHVirtualMachineManager` / `CHVirtualMachineInstance` (`CH*` files plus `CHProcess`, `VirtiofsdProcess`, `Vsock+Linux`, all `#if os(Linux)`). One `cloud-hypervisor` subprocess per VM, REST-on-UDS control plane via the standalone [`CloudHypervisor`](./Sources/CloudHypervisor) Swift package, virtio-blk / virtio-fs (one `virtiofsd` per share) / TAP / vsock for the data plane. Same `Vminitd` guest contract as VZ — only the host-side VMM differs.
+- **Linux**: `CHVirtualMachineManager` / `CHVirtualMachineInstance` (`CH*` files plus `CHProcess`, `VirtiofsdProcess`, `Vsock+Linux`, all `#if os(Linux)`). One `cloud-hypervisor` subprocess per VM, REST-on-UDS control plane via the [`CloudHypervisor`](./Sources/CloudHypervisor) Swift target, virtio-blk / virtio-fs (one `virtiofsd` per share) / TAP / vsock for the data plane. Same `Vminitd` guest contract as VZ — only the host-side VMM differs.
 
 The `CloudHypervisor` library is a thin NIO-based HTTP/1.1-over-UDS client targeting cloud-hypervisor's REST API. It compiles on both platforms (so it can be unit-tested on macOS without a real cloud-hypervisor binary), but is only consumed by the Linux backend at runtime.
 
@@ -69,7 +74,11 @@ These are independently consumable Swift modules. Keep their dependencies narrow
 - `ContainerizationIO` — small NIO-flavored stream/reader utilities.
 - `ContainerizationExtras`, `ContainerizationError`, `CShim` — shared helpers and a tiny C bridge.
 
-`Sources/Integration/` is the macOS-only `containerization-integration` binary (the integration test runner; it is not a `testTarget`, it's an `executableTarget` that's invoked by `make integration`). Unit `testTarget`s live under `Tests/`.
+`Sources/Integration/` is the cross-platform `containerization-integration`
+binary. Platform-gated suites exercise Virtualization.framework on macOS and
+Cloud Hypervisor on Linux. It is an `executableTarget` invoked by
+`make integration` or `make linux-integration`, not a `testTarget`; unit test
+targets live under `Tests/`.
 
 ### vminitd internals (`vminitd/Sources/`)
 
@@ -88,4 +97,8 @@ These are independently consumable Swift modules. Keep their dependencies narrow
 
 ## Requirements
 
-Apple silicon Mac, macOS 26, Xcode 26. Swift toolchain version is pinned in `.swift-version` (currently `6.3.0`) and installed via Swiftly during `make cross-prep`. Older macOS releases are not supported.
+Full macOS builds require an Apple silicon Mac, macOS 26, and Xcode 26. The
+Swift toolchain is pinned in `.swift-version` and installed with the Static
+Linux SDK during `make cross-prep`. Linux portability and x86_64 distribution
+work run through the Linux development container described above and in
+`docs/x86_64-build.md`. Older macOS releases are not supported.

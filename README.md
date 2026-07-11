@@ -11,14 +11,14 @@ Containerization is written in [Swift](https://www.swift.org) and uses [Virtuali
 > **Looking for command line binaries for running containers?**\
 > They are available in the dedicated [apple/container](https://github.com/apple/container) repository.
 
-stephenlclarke's fork is the runtime library branch used by the fork-backed `container` and `container-compose` preview stack. The project spans four repositories:
-
-- [`container`](https://github.com/stephenlclarke/container): runtime CLI and API service; `main` consumes this repository's `main` branch, and `release` consumes this repository's `release` branch.
-- [`container-compose`](https://github.com/stephenlclarke/container-compose): Compose plugin that uses the same `containerization` lane as its matching `container` package.
-- [`containerization`](https://github.com/stephenlclarke/containerization): this Swift runtime package.
-- [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): Go BuildKit bridge source for the builder image pinned by `container`.
-
-The aggregate Homebrew tap is [`homebrew-tap`](https://github.com/stephenlclarke/homebrew-tap). It tracks this source repository on `main` for maintenance, but users install `container` and `container-compose` from prebuilt release-quality package assets rather than installing `containerization` directly.
+The `stephenlclarke` fork is the runtime library pinned by the matched
+[`container`](https://github.com/stephenlclarke/container) and
+[`container-compose`](https://github.com/stephenlclarke/container-compose)
+packages. Users install the runtime/plugin stack rather than this library
+directly; the canonical repository roles, current pins, and release policy live
+in `container-compose`'s [README](https://github.com/stephenlclarke/container-compose#project-repositories),
+[STATUS.md](https://github.com/stephenlclarke/container-compose/blob/main/STATUS.md),
+and [BRANCHES.md](https://github.com/stephenlclarke/container-compose/blob/main/BRANCHES.md).
 
 Containerization provides APIs to:
 
@@ -62,13 +62,15 @@ The integration test suite (`make linux-integration`) runs inside an apple/conta
 
 ## Requirements
 
-To build the Containerization package, you need:
+The full macOS build and test baseline requires:
 
 - Mac with Apple silicon
 - macOS 26
 - Xcode 26
 
-Older versions of macOS are not supported.
+Older macOS versions are not supported. The Linux backend uses the Swift and
+host requirements described in [Backends](#backends); macOS-only targets remain
+outside that Linux test path.
 
 ## Example Usage
 
@@ -203,8 +205,6 @@ Contributions to Containerization are welcomed and encouraged. Please see [CONTR
 
 ## Project Status
 
-Version 0.1.0 is the first official release of Containerization. Earlier versions have no source stability guarantees.
-
-Because the Containerization library is under active development, source stability is only guaranteed within minor versions (for example, between 0.1.1 and 0.1.2). If you don't want potentially source-breaking package updates, you can specify your package dependency using .upToNextMinorVersion(from: "0.1.0") instead.
-
-Future minor versions of the package may introduce changes to these rules as needed.
+Containerization is under active development. Source stability is guaranteed
+within a minor release line; use SwiftPM's `upToNextMinor` requirement when a
+consumer must avoid potentially source-breaking minor upgrades.

@@ -16,7 +16,7 @@ $ sandboxy run claude
     /your/code -> /your/code
     /Users/you/.claude -> /root/.claude
 
-Welcome to Claude Code v2.1.76
+Welcome to Claude Code
 …………………………………………………………………………………………………………………………………………………………
 
      *                                       █████▓▓░
@@ -337,7 +337,7 @@ Global defaults can be overridden with a config file:
 {
     "dataDir": "/Volumes/fast/sandboxy",
     "kernel": "/path/to/vmlinux",
-    "initfsReference": "ghcr.io/apple/containerization/vminit:0.26.5",
+    "initfsReference": "ghcr.io/apple/containerization/vminit:0.37.0",
     "defaultCPUs": 8,
     "defaultMemory": "8g"
 }
