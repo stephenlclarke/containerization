@@ -102,6 +102,11 @@ let package = Package(
                 .copy("ImageTests/Resources/scratch_no_annotations.tar"),
             ]
         ),
+        .testTarget(
+            name: "VminitdCoreTests",
+            dependencies: ["VminitdCore"],
+            path: "Tests/VminitdCoreTests"
+        ),
         .target(
             name: "ContainerizationEXT4",
             dependencies: [

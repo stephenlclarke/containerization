@@ -164,7 +164,10 @@ extension ManagedContainer {
         stdio: HostStdio,
         process: ContainerizationOCI.Process
     ) throws {
-        log.debug("creating exec process with \(process)")
+        log.debug(
+            "creating exec process",
+            metadata: Self.execCreationLogMetadata(containerID: self.id, execID: id)
+        )
 
         // Write the process config to the bundle, and pass this on
         // over to ManagedProcess to deal with.
@@ -180,6 +183,11 @@ extension ManagedContainer {
             log: self.log
         )
         self.execs[id] = process
+    }
+
+    static func execCreationLogMetadata(containerID: String, execID: String) -> Logger.Metadata {
+        // OCI process descriptions include environment values and must never be logged.
+        ["containerID": "\(containerID)", "execID": "\(execID)"]
     }
 
     func start(execID: String) async throws -> Int32 {
