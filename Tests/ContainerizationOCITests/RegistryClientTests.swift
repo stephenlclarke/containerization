@@ -403,6 +403,109 @@ struct OCIClientTests: ~Copyable {
         #expect(requests.filter { $0.method == .PUT }.count == 1)
     }
 
+    @Test func blobPushRestartsWithFreshSessionAfterServerFailure() async throws {
+        let digest = "sha256:1234567890abcdef"
+        let payload = Data("registry-blob".utf8)
+        let nextSession = Mutex(0)
+        let server = try await StubHTTPServer(binding: .tcp) { request in
+            switch request.method {
+            case .HEAD:
+                return StubResponse.status(.notFound)
+            case .POST:
+                let session = nextSession.withLock { value in
+                    value += 1
+                    return value
+                }
+                var headers = HTTPHeaders()
+                headers.add(name: "Location", value: "/v2/example/blobs/uploads/session-\(session)")
+                return StubResponse(status: .accepted, headers: headers)
+            case .PUT where request.uri.contains("session-1"):
+                return StubResponse.status(.internalServerError)
+            case .PUT:
+                var headers = HTTPHeaders()
+                headers.add(name: "Docker-Content-Digest", value: digest)
+                return StubResponse(status: .created, headers: headers)
+            default:
+                return StubResponse.status(.badRequest)
+            }
+        }
+        defer { Task { try? await server.shutdown() } }
+        let port = try #require(server.port)
+
+        let client = RegistryClient(
+            host: "127.0.0.1",
+            scheme: "http",
+            port: port,
+            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
+        )
+        let descriptor = Descriptor(
+            mediaType: MediaTypes.imageLayer,
+            digest: digest,
+            size: Int64(payload.count)
+        )
+
+        try await client.push(
+            name: "example",
+            ref: "latest",
+            descriptor: descriptor,
+            streamGenerator: { Self.stream(payload) },
+            progress: nil
+        )
+
+        let requests = server.recordedRequests()
+        #expect(requests.filter { $0.method == .POST }.count == 2)
+        #expect(requests.filter { $0.method == .PUT }.count == 2)
+    }
+
+    @Test func blobPushDoesNotRestartForUnrelated416() async throws {
+        let digest = "sha256:abcdef1234567890"
+        let payload = Data("registry-blob".utf8)
+        let server = try await StubHTTPServer(binding: .tcp) { request in
+            switch request.method {
+            case .HEAD:
+                return StubResponse.status(.notFound)
+            case .POST:
+                var headers = HTTPHeaders()
+                headers.add(name: "Location", value: "/v2/example/blobs/uploads/session-1")
+                return StubResponse(status: .accepted, headers: headers)
+            case .PUT:
+                let body = Data(#"{"errors":[{"code":"RANGE_INVALID","message":"bad range"}]}"#.utf8)
+                return StubResponse.status(.rangeNotSatisfiable, body: body)
+            default:
+                return StubResponse.status(.badRequest)
+            }
+        }
+        defer { Task { try? await server.shutdown() } }
+        let port = try #require(server.port)
+
+        let client = RegistryClient(
+            host: "127.0.0.1",
+            scheme: "http",
+            port: port,
+            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
+        )
+        let descriptor = Descriptor(
+            mediaType: MediaTypes.imageLayer,
+            digest: digest,
+            size: Int64(payload.count)
+        )
+
+        let error = await #expect(throws: RegistryClient.Error.self) {
+            try await client.push(
+                name: "example",
+                ref: "latest",
+                descriptor: descriptor,
+                streamGenerator: { Self.stream(payload) },
+                progress: nil
+            )
+        }
+        #expect(error != nil)
+
+        let requests = server.recordedRequests()
+        #expect(requests.filter { $0.method == .POST }.count == 1)
+        #expect(requests.filter { $0.method == .PUT }.count == 1)
+    }
+
     // MARK: private functions
 
     static var hasRegistryCredentials: Bool {
