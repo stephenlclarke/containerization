@@ -1,6 +1,6 @@
 # Approved upstream PR ports
 
-This fork carries the approved upstream changes below so the Stephen-owned container stack can release against them before Apple merges and publishes equivalent commits. These notes are for future upstream submission or removal when the Apple changes land. Do not push these commits to Apple from this fork.
+This fork carries the approved upstream changes below so the stephenlclarke-owned container stack can release against them before Apple merges and publishes equivalent commits. These notes are for future upstream submission or removal when the Apple changes land. Do not push these commits to Apple from this fork.
 
 ## apple/containerization#753: send registry User-Agent
 

@@ -11,7 +11,7 @@ Containerization is written in [Swift](https://www.swift.org) and uses [Virtuali
 > **Looking for command line binaries for running containers?**\
 > They are available in the dedicated [apple/container](https://github.com/apple/container) repository.
 
-Stephen Clarke's fork is the runtime library branch used by the fork-backed `container` and `container-compose` preview stack. The project spans four repositories:
+stephenlclarke's fork is the runtime library branch used by the fork-backed `container` and `container-compose` preview stack. The project spans four repositories:
 
 - [`container`](https://github.com/stephenlclarke/container): runtime CLI and API service; `main` consumes this repository's `main` branch, and `release` consumes this repository's `release` branch.
 - [`container-compose`](https://github.com/stephenlclarke/container-compose): Compose plugin that uses the same `containerization` lane as its matching `container` package.
