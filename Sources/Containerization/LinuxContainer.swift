@@ -1436,23 +1436,35 @@ extension LinuxContainer {
             let listener = try state.vm.listen(port)
 
             let (metadataStream, metadataCont) = AsyncStream.makeStream(of: Vminitd.CopyMetadata.self)
+            defer {
+                metadataCont.finish()
+                try? listener.finish()
+            }
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    try await state.vm.withAgent { agent in
-                        guard let vminitd = agent as? Vminitd else {
-                            throw ContainerizationError(.unsupported, message: "copyOut requires Vminitd agent")
-                        }
-                        try await vminitd.copy(
-                            direction: .copyOut,
-                            guestPath: guestPath,
-                            vsockPort: port,
-                            followSymlink: followSymlink,
-                            onMetadata: { meta in
-                                metadataCont.yield(meta)
-                                metadataCont.finish()
+                    do {
+                        try await state.vm.withAgent { agent in
+                            guard let vminitd = agent as? Vminitd else {
+                                throw ContainerizationError(.unsupported, message: "copyOut requires Vminitd agent")
                             }
-                        )
+                            try await vminitd.copy(
+                                direction: .copyOut,
+                                guestPath: guestPath,
+                                vsockPort: port,
+                                followSymlink: followSymlink,
+                                onMetadata: { meta in
+                                    metadataCont.yield(meta)
+                                    metadataCont.finish()
+                                }
+                            )
+                        }
+                    } catch {
+                        // A guest-side validation error can arrive before either stream
+                        // yields. Finish both so the sibling task releases the state lock.
+                        metadataCont.finish()
+                        try? listener.finish()
+                        throw error
                     }
                 }
 
