@@ -39,6 +39,8 @@ extension RegistryClient {
     ///                     The caller is responsible for providing the `AsyncStream` where the data may come from
     ///                     a file on disk, data in memory, etc.
     ///    - progress: The progress handler to invoke as data is sent.
+    /// - Throws: A registry, authentication, stream, or transport error when the
+    ///   content cannot be uploaded or its returned digest does not match.
     public func push<T: Sendable & AsyncSequence>(
         name: String,
         ref tag: String,
@@ -103,48 +105,114 @@ extension RegistryClient {
             headers = [
                 ("Content-Type", mediaType)
             ]
-        } else {
-            // Start upload request for blobs.
-            components.path = "/v2/\(name)/blobs/uploads/"
-            try await request(components: components, method: .POST) { response in
-                switch response.status {
-                case .ok, .accepted, .noContent:
-                    break
-                case .created:
-                    throw ContainerizationError(.exists, message: "content already exists \(descriptor.digest)")
-                default:
-                    let url = components.url?.absoluteString ?? "unknown"
-                    let reason = await ErrorResponse.fromResponseBody(response.body)?.jsonString
-                    throw Error.invalidStatus(url: url, response.status, reason: reason)
-                }
-
-                // Get the location to upload the blob.
-                guard let location = response.headers.first(name: "Location") else {
-                    throw ContainerizationError(.invalidArgument, message: "missing required header Location")
-                }
-
-                guard let urlComponents = URLComponents(string: location) else {
-                    throw ContainerizationError(.invalidArgument, message: "invalid url \(location)")
-                }
-                var queryItems = urlComponents.queryItems ?? []
-                queryItems.append(URLQueryItem(name: "digest", value: descriptor.digest))
-                components.path = urlComponents.path
-                components.queryItems = queryItems
-                headers = [
-                    ("Content-Type", "application/octet-stream"),
-                    ("Content-Length", String(descriptor.size)),
-                ]
-            }
+            return try await upload(
+                components: components,
+                descriptor: descriptor,
+                headers: headers,
+                streamGenerator: streamGenerator,
+                retryPolicy: .client
+            )
         }
 
-        // We have to pass a body closure rather than a body to reset the stream when retrying.
+        return try await pushBlob(
+            name: name,
+            descriptor: descriptor,
+            streamGenerator: streamGenerator
+        )
+    }
+
+    private func pushBlob<T: Sendable & AsyncSequence>(
+        name: String,
+        descriptor: Descriptor,
+        streamGenerator: () throws -> T
+    ) async throws where T.Element == ByteBuffer {
+        var retryCount = 0
+
+        while true {
+            do {
+                let components = try await startBlobUpload(name: name, digest: descriptor.digest)
+                try await upload(
+                    components: components,
+                    descriptor: descriptor,
+                    headers: [
+                        ("Content-Type", "application/octet-stream"),
+                        ("Content-Length", String(descriptor.size)),
+                    ],
+                    streamGenerator: streamGenerator,
+                    retryPolicy: .disabled
+                )
+                return
+            } catch {
+                guard
+                    let retryOptions,
+                    retryCount < retryOptions.maxRetries,
+                    Self.shouldRestartBlobUpload(after: error)
+                else {
+                    throw error
+                }
+                retryCount += 1
+                try await Task.sleep(nanoseconds: retryOptions.retryInterval)
+            }
+        }
+    }
+
+    private func startBlobUpload(name: String, digest: String) async throws -> URLComponents {
+        var components = base
+        components.path = "/v2/\(name)/blobs/uploads/"
+
+        return try await request(
+            components: components,
+            method: .POST,
+            retryPolicy: .disabled
+        ) { response in
+            switch response.status {
+            case .ok, .accepted, .noContent:
+                break
+            case .created:
+                throw ContainerizationError(.exists, message: "content already exists \(digest)")
+            default:
+                let url = components.url?.absoluteString ?? "unknown"
+                let reason = await ErrorResponse.fromResponseBody(response.body)?.jsonString
+                throw Error.invalidStatus(url: url, response.status, reason: reason)
+            }
+
+            guard let location = response.headers.first(name: "Location") else {
+                throw ContainerizationError(.invalidArgument, message: "missing required header Location")
+            }
+            guard let locationComponents = URLComponents(string: location) else {
+                throw ContainerizationError(.invalidArgument, message: "invalid url \(location)")
+            }
+
+            var uploadComponents = base
+            uploadComponents.path = locationComponents.path
+            var queryItems = locationComponents.queryItems ?? []
+            queryItems.append(URLQueryItem(name: "digest", value: digest))
+            uploadComponents.queryItems = queryItems
+            return uploadComponents
+        }
+    }
+
+    private func upload<T: Sendable & AsyncSequence>(
+        components: URLComponents,
+        descriptor: Descriptor,
+        headers: [(String, String)],
+        streamGenerator: () throws -> T,
+        retryPolicy: RequestRetryPolicy
+    ) async throws where T.Element == ByteBuffer {
+        // Recreate the stream for authentication retries and permitted request retries.
         let bodyClosure = {
             let stream = try streamGenerator()
             let body = HTTPClientRequest.Body.stream(stream, length: .known(descriptor.size))
             return body
         }
 
-        return try await request(components: components, method: .PUT, bodyClosure: bodyClosure, headers: headers) { response in
+        return try await request(
+            components: components,
+            method: .PUT,
+            bodyClosure: bodyClosure,
+            headers: headers,
+            retryPolicy: retryPolicy
+        ) { response in
             switch response.status {
             case .ok, .created, .noContent:
                 break
@@ -159,6 +227,26 @@ extension RegistryClient {
                 throw ContainerizationError(.internalError, message: "digest mismatch \(descriptor.digest) != \(required)")
             }
         }
+    }
+
+    private static func shouldRestartBlobUpload(after error: any Swift.Error) -> Bool {
+        guard !Task.isCancelled, !(error is CancellationError) else {
+            return false
+        }
+        if let httpError = error as? HTTPClientError {
+            return httpError != .cancelled
+        }
+        guard let registryError = error as? RegistryClient.Error else {
+            return false
+        }
+        guard case .invalidStatus(_, let status, let reason) = registryError else {
+            return false
+        }
+        if status.code >= 500 {
+            return true
+        }
+        return status == .rangeNotSatisfiable
+            && reason?.contains("BLOB_UPLOAD_INVALID") == true
     }
 
     private func getManifestPath(tag: String, digest: String) -> [String] {

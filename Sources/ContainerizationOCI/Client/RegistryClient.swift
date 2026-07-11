@@ -45,6 +45,11 @@ public struct RetryOptions: Sendable {
     }
 }
 
+internal enum RequestRetryPolicy {
+    case client
+    case disabled
+}
+
 /// A client for interacting with OCI compliant container registries.
 public final class RegistryClient: ContentClient {
     private static let defaultRetryOptions = RetryOptions(
@@ -172,6 +177,7 @@ public final class RegistryClient: ContentClient {
         method: HTTPMethod = .GET,
         bodyClosure: () throws -> HTTPClientRequest.Body? = { nil },
         headers: [(String, String)]? = nil,
+        retryPolicy: RequestRetryPolicy = .client,
         closure: (HTTPClientResponse) async throws -> T
     ) async throws -> T {
         guard let path = components.url?.absoluteString else {
@@ -194,6 +200,7 @@ public final class RegistryClient: ContentClient {
 
         var retryCount = 0
         var response: HTTPClientResponse?
+        let activeRetryOptions = retryPolicy == .client ? self.retryOptions : nil
         while true {
             request.body = try bodyClosure()
             do {
@@ -240,7 +247,7 @@ public final class RegistryClient: ContentClient {
                     retryCount += 1
                     continue
                 }
-                guard let retryOptions = self.retryOptions else {
+                guard let retryOptions = activeRetryOptions else {
                     break
                 }
                 guard retryCount < retryOptions.maxRetries else {
@@ -268,7 +275,7 @@ public final class RegistryClient: ContentClient {
                     }
                 }
                 #endif
-                guard let retryOptions = self.retryOptions, retryCount < retryOptions.maxRetries else {
+                guard let retryOptions = activeRetryOptions, retryCount < retryOptions.maxRetries else {
                     throw error
                 }
                 retryCount += 1
