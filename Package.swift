@@ -104,7 +104,7 @@ let package = Package(
         ),
         .testTarget(
             name: "VminitdCoreTests",
-            dependencies: ["VminitdCore"],
+            dependencies: ["Cgroup", "VminitdCore"],
             path: "Tests/VminitdCoreTests"
         ),
         .target(
