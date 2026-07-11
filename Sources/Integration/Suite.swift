@@ -259,12 +259,16 @@ struct IntegrationSuite: AsyncParsableCommand {
         // a ~2GB rootfs and a ~512MB initfs, so without reaping the dev
         // container fills its CoW layer in ~10 tests.
         if self.maxConcurrency == 1 {
-            let preserve = fsPath.absolutePath()
+            // Foundation may return /private/var for directory entries even
+            // when temporaryDirectory produced the same path under /var.
+            let preserve = fsPath.resolvingSymlinksInPath().absolutePath()
             if let entries = try? FileManager.default.contentsOfDirectory(
                 at: Self.testDir,
                 includingPropertiesForKeys: nil
             ) {
-                for url in entries where url.absolutePath() != preserve {
+                for url in entries
+                where url.resolvingSymlinksInPath().absolutePath() != preserve
+                {
                     try? FileManager.default.removeItem(at: url)
                 }
             }
