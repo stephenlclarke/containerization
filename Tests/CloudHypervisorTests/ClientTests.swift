@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
+import HTTPTestSupport
 import NIOPosix
 import Testing
 

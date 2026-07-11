@@ -202,6 +202,7 @@ let package = Package(
                 "ContainerizationOCI",
                 "Containerization",
                 "ContainerizationIO",
+                "HTTPTestSupport",
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "Crypto", package: "swift-crypto"),
@@ -288,11 +289,22 @@ let package = Package(
             name: "CloudHypervisorTests",
             dependencies: [
                 "CloudHypervisor",
+                "HTTPTestSupport",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
             ]
+        ),
+        .target(
+            name: "HTTPTestSupport",
+            dependencies: [
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+            ],
+            path: "Tests/HTTPTestSupport"
         ),
         .target(
             name: "LCShim",
