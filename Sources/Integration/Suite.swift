@@ -266,9 +266,7 @@ struct IntegrationSuite: AsyncParsableCommand {
                 at: Self.testDir,
                 includingPropertiesForKeys: nil
             ) {
-                for url in entries
-                where url.resolvingSymlinksInPath().absolutePath() != preserve
-                {
+                for url in entries where url.resolvingSymlinksInPath().absolutePath() != preserve {
                     try? FileManager.default.removeItem(at: url)
                 }
             }
