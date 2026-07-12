@@ -851,6 +851,76 @@ extension IntegrationSuite {
         }
     }
 
+    func testContainerVirtioGraphicsDeviceAttachesVirtioGPU() async throws {
+        let id = "test-container-virtio-graphics"
+
+        let bs = try await bootstrap(id)
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["sleep", "infinity"]
+            config.graphics = .deviceOnly
+            config.bootLog = bs.bootLog
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+
+            let buffer = BufferWriter()
+            let script = """
+                set -eu
+                echo '== virtio modalias =='
+                cat /sys/bus/virtio/devices/*/modalias 2>/dev/null | tee /tmp/virtio-modalias
+                grep -q 'virtio:d00000010v00001AF4' /tmp/virtio-modalias
+                echo '== drm sysfs =='
+                if [ -e /sys/class/drm/card0 ]; then
+                    ls -1 /sys/class/drm
+                    if [ -e /sys/class/drm/card0/device/uevent ]; then
+                        cat /sys/class/drm/card0/device/uevent
+                    fi
+                    echo '== dev dri =='
+                    test -c /dev/dri/card0
+                    ls -l /dev/dri
+                else
+                    echo 'DRM devices are not exposed by this guest kernel'
+                    zcat /proc/config.gz 2>/dev/null | grep -E 'CONFIG_DRM|CONFIG_DRM_VIRTIO_GPU' || true
+                fi
+                echo '== virtio dmesg =='
+                dmesg | grep -i 'virtio\\|drm' | head -40 || true
+                """
+            let exec = try await container.exec("graphics-drm-enumeration") { config in
+                config.arguments = ["sh", "-c", script]
+                config.stdout = buffer
+                config.stderr = buffer
+            }
+
+            try await exec.start()
+            let status = try await exec.wait()
+            try await exec.delete()
+
+            guard status.exitCode == 0 else {
+                let output = String(data: buffer.data, encoding: .utf8) ?? ""
+                throw IntegrationError.assert(msg: "graphics DRM enumeration status \(status) != 0:\n\(output)")
+            }
+
+            let output = String(data: buffer.data, encoding: .utf8) ?? ""
+            guard output.contains("virtio:d00000010v00001AF4") else {
+                throw IntegrationError.assert(msg: "expected virtio-gpu modalias output, got:\n\(output)")
+            }
+            guard output.contains("card0") || output.contains("DRM devices are not exposed by this guest kernel") else {
+                throw IntegrationError.assert(msg: "expected DRM card0 or explicit kernel limitation output, got:\n\(output)")
+            }
+
+            try await container.kill(.kill)
+            try await container.wait()
+            try await container.stop()
+        } catch {
+            try? await container.kill(.kill)
+            _ = try? await container.wait()
+            try? await container.stop()
+            throw error
+        }
+    }
+
     #endif
 
     func testContainerStatistics() async throws {

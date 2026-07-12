@@ -312,8 +312,114 @@ struct LinuxContainerTests {
         try await container.create()
 
         let configuration = try #require(manager.vm?.configuration)
+        #expect(configuration.graphics == .display())
         #expect(configuration.graphicsDevice)
         #expect(configuration.graphicsDisplay)
+    }
+
+    @Test func graphicsDisplayImpliesDeviceOnlyOnce() {
+        var configuration = LinuxContainer.Configuration()
+
+        configuration.graphicsDisplay = true
+
+        #expect(configuration.graphics == .display())
+        #expect(configuration.graphicsDevice)
+        #expect(configuration.graphicsDisplay)
+
+        configuration.graphicsDisplay = false
+
+        #expect(configuration.graphics == .deviceOnly)
+        #expect(configuration.graphicsDevice)
+        #expect(!configuration.graphicsDisplay)
+    }
+
+    @Test func startDiscoversConfiguredGuestDeviceNodes() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "guest-device-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(),
+                guestDevices: [
+                    LinuxGuestDeviceRequest(path: "/dev/dri/card0"),
+                    LinuxGuestDeviceRequest(path: "/dev/dri/renderD128"),
+                ]
+            )
+        )
+
+        try await container.create()
+        let vm = try #require(manager.vm)
+        vm.agent.stats = [
+            "/dev/dri/card0": characterDeviceStat(major: 226, minor: 0, uid: 0, gid: 44, mode: 0o660),
+            "/dev/dri/renderD128": characterDeviceStat(major: 226, minor: 128, uid: 0, gid: 104, mode: 0o660),
+        ]
+
+        try await container.start()
+
+        let spec = try #require(vm.agent.createdProcessSpec)
+        let devices = try #require(spec.linux?.devices)
+        let rules = try #require(spec.linux?.resources?.devices)
+        #expect(devices.map(\.path) == ["/dev/dri/card0", "/dev/dri/renderD128"])
+        #expect(devices.map(\.type) == ["c", "c"])
+        #expect(devices.map(\.major) == [226, 226])
+        #expect(devices.map(\.minor) == [0, 128])
+        #expect(devices.map(\.fileMode) == [0o660, 0o660])
+        #expect(devices.map(\.gid) == [44, 104])
+        #expect(rules.map(\.major) == [226, 226])
+        #expect(rules.map(\.minor) == [0, 128])
+        #expect(rules.map(\.access) == ["rwm", "rwm"])
+    }
+
+    @Test func optionalGuestDeviceNodeCanBeMissing() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "guest-device-optional-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(),
+                guestDevices: [
+                    LinuxGuestDeviceRequest(path: "/dev/dri/card0"),
+                    LinuxGuestDeviceRequest(path: "/dev/dri/renderD128", required: false),
+                ]
+            )
+        )
+
+        try await container.create()
+        let vm = try #require(manager.vm)
+        vm.agent.stats = [
+            "/dev/dri/card0": characterDeviceStat(major: 226, minor: 0)
+        ]
+
+        try await container.start()
+
+        let spec = try #require(vm.agent.createdProcessSpec)
+        #expect(spec.linux?.devices.map(\.path) == ["/dev/dri/card0"])
+        #expect(spec.linux?.resources?.devices.map(\.minor) == [0])
+    }
+
+    @Test func requiredGuestDeviceNodeMissingFailsStart() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "guest-device-missing-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(),
+                guestDevices: [LinuxGuestDeviceRequest(path: "/dev/dri/card0")]
+            )
+        )
+
+        try await container.create()
+
+        do {
+            try await container.start()
+            Issue.record("expected notFound error")
+        } catch let error as ContainerizationError {
+            #expect(error.code == .notFound)
+            #expect(error.message.contains("required guest device not found: /dev/dri/card0"))
+        }
     }
 
     @Test func pauseRequiresRunningContainer() async throws {
@@ -439,6 +545,37 @@ private func expectInvalidState(operation: () async throws -> Void) async {
     }
 }
 
+private func characterDeviceStat(
+    major: UInt64,
+    minor: UInt64,
+    uid: UInt32 = 0,
+    gid: UInt32 = 0,
+    mode: UInt32 = 0o666
+) -> Stat {
+    Stat(
+        dev: 0,
+        ino: 1,
+        mode: UInt32(S_IFCHR) | mode,
+        nlink: 1,
+        uid: uid,
+        gid: gid,
+        rdev: linuxDeviceID(major: major, minor: minor),
+        size: 0,
+        blksize: 4096,
+        blocks: 0,
+        atime: TimeSpec(seconds: 0, nanoseconds: 0),
+        mtime: TimeSpec(seconds: 0, nanoseconds: 0),
+        ctime: TimeSpec(seconds: 0, nanoseconds: 0)
+    )
+}
+
+private func linuxDeviceID(major: UInt64, minor: UInt64) -> UInt64 {
+    ((major & 0xfff) << 8)
+        | (minor & 0xff)
+        | ((minor & ~UInt64(0xff)) << 12)
+        | ((major & ~UInt64(0xfff)) << 32)
+}
+
 private final class RecordingVirtualMachineManager: VirtualMachineManager, @unchecked Sendable {
     private let state = Mutex<RecordingVirtualMachineInstance?>(nil)
 
@@ -535,6 +672,8 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         var processContainerID: String?
         var processInfo: [ContainerProcessInfo] = []
         var processInfoContainerID: String?
+        var stats: [String: Stat] = [:]
+        var createdProcessSpec: Spec?
     }
 
     private let storage = Mutex<State>(State())
@@ -565,6 +704,19 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         storage.withLock { $0.processInfoContainerID }
     }
 
+    var stats: [String: Stat] {
+        get {
+            storage.withLock { $0.stats }
+        }
+        set {
+            storage.withLock { $0.stats = newValue }
+        }
+    }
+
+    var createdProcessSpec: Spec? {
+        storage.withLock { $0.createdProcessSpec }
+    }
+
     func standardSetup() async throws {}
 
     func close() async throws {}
@@ -591,6 +743,13 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
 
     func writeFile(path: String, data: Data, flags: WriteFileFlags, mode: UInt32) async throws {}
 
+    func stat(path: URL) async throws -> Stat {
+        guard let stat = storage.withLock({ $0.stats[path.path] }) else {
+            throw ContainerizationError(.notFound, message: "stat: path not found '\(path.path)'")
+        }
+        return stat
+    }
+
     func createProcess(
         id: String,
         containerID: String?,
@@ -600,7 +759,9 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         ociRuntimePath: String?,
         configuration: ContainerizationOCI.Spec,
         options: Data?
-    ) async throws {}
+    ) async throws {
+        storage.withLock { $0.createdProcessSpec = configuration }
+    }
 
     func startProcess(id: String, containerID: String?) async throws -> Int32 {
         1

@@ -17,6 +17,7 @@
 import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOCI
+import ContainerizationOS
 import Foundation
 
 public struct WriteFileFlags {
@@ -53,6 +54,7 @@ public protocol VirtualMachineAgent: Sendable {
     func kill(pid: Int32, signal: Int32) async throws -> Int32
     func sync() async throws
     func writeFile(path: String, data: Data, flags: WriteFileFlags, mode: UInt32) async throws
+    func stat(path: URL) async throws -> ContainerizationOS.Stat
 
     // Process lifecycle
     func createProcess(
@@ -115,6 +117,10 @@ extension VirtualMachineAgent {
 
     public func sync() async throws {
         throw ContainerizationError(.unsupported, message: "sync")
+    }
+
+    public func stat(path: URL) async throws -> ContainerizationOS.Stat {
+        throw ContainerizationError(.unsupported, message: "stat")
     }
 
 }

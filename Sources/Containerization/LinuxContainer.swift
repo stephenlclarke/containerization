@@ -26,6 +26,23 @@ import SystemPackage
 
 import struct ContainerizationOS.Terminal
 
+/// A device node that should be discovered from the booted guest before the
+/// container process starts.
+public struct LinuxGuestDeviceRequest: Sendable, Equatable {
+    /// Absolute path to the device node inside the guest VM.
+    public var path: String
+    /// Device cgroup access granted for the node.
+    public var permissions: String
+    /// Whether a missing guest path should fail container start.
+    public var required: Bool
+
+    public init(path: String, permissions: String = "rwm", required: Bool = true) {
+        self.path = path
+        self.permissions = permissions
+        self.required = required
+    }
+}
+
 private final class CopyOutProducerError: Sendable {
     private let value = Mutex<(any Error)?>(nil)
 
@@ -77,6 +94,8 @@ public final class LinuxContainer: Container, Sendable {
         public var deviceCgroupRules: [LinuxDeviceCgroup] = []
         /// Optional device nodes to create in the container spec.
         public var devices: [LinuxDevice] = []
+        /// Device nodes to discover from the running guest before process start.
+        public var guestDevices: [LinuxGuestDeviceRequest] = []
         /// The hostname for the container.
         public var hostname: String?
         /// The system control options for the container.
@@ -121,10 +140,28 @@ public final class LinuxContainer: Container, Sendable {
         /// on top of the container's configured `memoryInBytes` value.
         /// The total is aligned to a 1 MiB boundary.
         public var memoryOverhead: UInt64 = 128.mib()
+        /// Virtual graphics device configuration.
+        public var graphics: GraphicsConfiguration = .disabled
         /// Enable virtio-gpu device.
-        public var graphicsDevice: Bool = false
+        public var graphicsDevice: Bool {
+            get { self.graphics.isEnabled }
+            set {
+                self.graphics = newValue ? .deviceOnly : .disabled
+            }
+        }
         /// Enable graphical output (scanout) for the virtio-gpu device.
-        public var graphicsDisplay: Bool = false
+        public var graphicsDisplay: Bool {
+            get { self.graphics.hasDisplay }
+            set {
+                if newValue {
+                    self.graphics = .display()
+                } else if self.graphics.isEnabled {
+                    self.graphics = .deviceOnly
+                } else {
+                    self.graphics = .disabled
+                }
+            }
+        }
 
         public init() {}
 
@@ -136,6 +173,7 @@ public final class LinuxContainer: Container, Sendable {
             blockIO: LinuxBlockIO? = nil,
             deviceCgroupRules: [LinuxDeviceCgroup] = [],
             devices: [LinuxDevice] = [],
+            guestDevices: [LinuxGuestDeviceRequest] = [],
             hostname: String? = nil,
             sysctl: [String: String] = [:],
             interfaces: [any Interface] = [],
@@ -153,7 +191,8 @@ public final class LinuxContainer: Container, Sendable {
             cpuOverhead: Int = 1,
             memoryOverhead: UInt64 = 128.mib(),
             graphicsDevice: Bool = false,
-            graphicsDisplay: Bool = false
+            graphicsDisplay: Bool = false,
+            graphics: GraphicsConfiguration? = nil
         ) {
             self.process = process
             self.cpus = cpus
@@ -162,6 +201,7 @@ public final class LinuxContainer: Container, Sendable {
             self.blockIO = blockIO
             self.deviceCgroupRules = deviceCgroupRules
             self.devices = devices
+            self.guestDevices = guestDevices
             self.hostname = hostname
             self.sysctl = sysctl
             self.interfaces = interfaces
@@ -178,8 +218,7 @@ public final class LinuxContainer: Container, Sendable {
             self.hostPIDNamespace = hostPIDNamespace
             self.cpuOverhead = cpuOverhead
             self.memoryOverhead = memoryOverhead
-            self.graphicsDevice = graphicsDevice
-            self.graphicsDisplay = graphicsDisplay
+            self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .deviceOnly : .disabled))
         }
     }
 
@@ -488,6 +527,98 @@ public final class LinuxContainer: Container, Sendable {
         return spec
     }
 
+    private func addGuestDevices(to spec: inout Spec, using agent: any VirtualMachineAgent) async throws {
+        guard !self.config.guestDevices.isEmpty else {
+            return
+        }
+
+        var devices = spec.linux?.devices ?? []
+        var cgroupRules = spec.linux?.resources?.devices ?? []
+        for request in self.config.guestDevices {
+            let resolved: (device: LinuxDevice, cgroupRule: LinuxDeviceCgroup)
+            do {
+                resolved = try await Self.resolveGuestDevice(request, using: agent)
+            } catch let error as ContainerizationError where error.code == .notFound && !request.required {
+                continue
+            } catch let error as ContainerizationError where error.code == .notFound {
+                throw ContainerizationError(
+                    .notFound,
+                    message: "required guest device not found: \(request.path)",
+                    cause: error
+                )
+            }
+            devices.append(resolved.device)
+            cgroupRules.append(resolved.cgroupRule)
+        }
+
+        spec.linux?.devices = devices
+        if spec.linux?.resources == nil {
+            spec.linux?.resources = LinuxResources()
+        }
+        spec.linux?.resources?.devices = cgroupRules
+    }
+
+    private static func resolveGuestDevice(
+        _ request: LinuxGuestDeviceRequest,
+        using agent: any VirtualMachineAgent
+    ) async throws -> (device: LinuxDevice, cgroupRule: LinuxDeviceCgroup) {
+        guard request.path.hasPrefix("/") else {
+            throw ContainerizationError(.invalidArgument, message: "guest device path must be absolute: \(request.path)")
+        }
+        guard isValidDeviceAccess(request.permissions) else {
+            throw ContainerizationError(.invalidArgument, message: "invalid guest device permissions '\(request.permissions)' for \(request.path)")
+        }
+
+        let stat = try await agent.stat(path: URL(fileURLWithPath: request.path))
+        let deviceType: String
+        switch stat.mode & UInt32(S_IFMT) {
+        case UInt32(S_IFCHR):
+            deviceType = "c"
+        case UInt32(S_IFBLK):
+            deviceType = "b"
+        default:
+            throw ContainerizationError(.invalidArgument, message: "guest device path is not a character or block device: \(request.path)")
+        }
+
+        let major = linuxMajor(stat.rdev)
+        let minor = linuxMinor(stat.rdev)
+        let fileMode = stat.mode & 0o7777
+        return (
+            LinuxDevice(
+                path: request.path,
+                type: deviceType,
+                major: major,
+                minor: minor,
+                fileMode: fileMode,
+                uid: stat.uid,
+                gid: stat.gid
+            ),
+            LinuxDeviceCgroup(
+                allow: true,
+                type: deviceType,
+                major: major,
+                minor: minor,
+                access: request.permissions
+            )
+        )
+    }
+
+    private static func isValidDeviceAccess(_ access: String) -> Bool {
+        guard !access.isEmpty else {
+            return false
+        }
+        let allowed: Set<Character> = ["r", "w", "m"]
+        return Set(access).isSubset(of: allowed)
+    }
+
+    private static func linuxMajor(_ device: UInt64) -> Int64 {
+        Int64(((device >> 8) & 0xfff) | ((device >> 32) & ~UInt64(0xfff)))
+    }
+
+    private static func linuxMinor(_ device: UInt64) -> Int64 {
+        Int64((device & 0xff) | ((device >> 12) & ~UInt64(0xff)))
+    }
+
     /// The default set of mounts for a LinuxContainer.
     public static func defaultMounts() -> [Mount] {
         let defaultOptions = ["nosuid", "noexec", "nodev"]
@@ -684,8 +815,7 @@ extension LinuxContainer {
                 mountsByID: [self.id: containerMounts],
                 bootLog: self.config.bootLog,
                 nestedVirtualization: self.config.virtualization,
-                graphicsDevice: self.config.graphicsDevice,
-                graphicsDisplay: self.config.graphicsDisplay
+                graphics: self.config.graphics
             )
             let creationConfig = StandardVMConfig(configuration: vmConfig)
             let vm = try await self.vmm.create(config: creationConfig)
@@ -814,6 +944,7 @@ extension LinuxContainer {
             let agent = try await createdState.vm.dialAgent()
             do {
                 var spec = self.generateRuntimeSpec()
+                try await self.addGuestDevices(to: &spec, using: agent)
                 // We don't need the rootfs (or writable layer), nor do OCI runtimes want it included.
                 // Also filter out file mount holding directories. We'll mount those separately under /run.
                 // Transform virtiofs mounts to bind mounts from /run/virtiofs/{tag}

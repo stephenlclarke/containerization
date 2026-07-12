@@ -2,7 +2,7 @@
 
 This directory includes an optimized kernel configuration to produce a fast and lightweight kernel for container use.
 
-- `config-arm64` and `config-x86_64` include the per-arch kernel `CONFIG_` options.
+- `config-arm64` and `config-x86_64` include the per-arch kernel `CONFIG_` options, including `CONFIG_DRM_VIRTIO_GPU=y` so built kernels can expose `/dev/dri` nodes for the Virtualization.framework virtio-gpu device.
 - `Makefile` includes the kernel version and source package URL.
 - `build.sh` scripts the kernel build process.
 - `image/` includes the configuration for an image with build tooling.

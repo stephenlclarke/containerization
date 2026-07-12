@@ -85,10 +85,28 @@ public final class VZVirtualMachineInstance: Sendable {
         public var bootLog: BootLog?
         /// Extension objects that participate in the VM instance lifecycle.
         public var extensions: [any Sendable] = []
+        /// Virtual graphics device configuration.
+        public var graphics: GraphicsConfiguration
         /// Enable virtio-gpu device.
-        public var graphicsDevice: Bool
+        public var graphicsDevice: Bool {
+            get { self.graphics.isEnabled }
+            set {
+                self.graphics = newValue ? .deviceOnly : .disabled
+            }
+        }
         /// Enable graphical output (scanout) for the virtio-gpu device.
-        public var graphicsDisplay: Bool
+        public var graphicsDisplay: Bool {
+            get { self.graphics.hasDisplay }
+            set {
+                if newValue {
+                    self.graphics = .display()
+                } else if self.graphics.isEnabled {
+                    self.graphics = .deviceOnly
+                } else {
+                    self.graphics = .disabled
+                }
+            }
+        }
 
         public init() {
             self.cpus = 4
@@ -97,8 +115,7 @@ public final class VZVirtualMachineInstance: Sendable {
             self.nestedVirtualization = false
             self.mountsByID = [:]
             self.interfaces = []
-            self.graphicsDevice = false
-            self.graphicsDisplay = false
+            self.graphics = .disabled
         }
     }
 
@@ -520,13 +537,29 @@ extension VZVirtualMachineInstance.Configuration {
 
         let storageDeviceCount = config.storageDevices.count
 
-        if self.graphicsDevice || self.graphicsDisplay {
+        if self.graphics.isEnabled {
             let device = VZVirtioGraphicsDeviceConfiguration()
-            if self.graphicsDisplay {
-                device.scanouts = [
-                    VZVirtioGraphicsScanoutConfiguration(widthInPixels: 1920, heightInPixels: 1080)
-                ]
+            let scanout: (widthInPixels: Int, heightInPixels: Int)
+            switch self.graphics {
+            case .disabled:
+                preconditionFailure("disabled graphics configuration reached enabled path")
+            case .deviceOnly:
+                scanout = (1920, 1080)
+            case .display(let widthInPixels, let heightInPixels):
+                scanout = (widthInPixels, heightInPixels)
             }
+            guard scanout.widthInPixels > 0, scanout.heightInPixels > 0 else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "graphics display dimensions must be positive"
+                )
+            }
+            device.scanouts = [
+                VZVirtioGraphicsScanoutConfiguration(
+                    widthInPixels: scanout.widthInPixels,
+                    heightInPixels: scanout.heightInPixels
+                )
+            ]
             config.graphicsDevices = [device]
         }
 

@@ -75,8 +75,7 @@ public struct VZVirtualMachineManager: VirtualMachineManager {
                 instanceConfig.interfaces = vmConfig.interfaces
                 instanceConfig.rosetta = self.rosetta
                 instanceConfig.nestedVirtualization = useNestedVirtualization
-                instanceConfig.graphicsDevice = vmConfig.graphicsDevice
-                instanceConfig.graphicsDisplay = vmConfig.graphicsDisplay
+                instanceConfig.graphics = vmConfig.graphics
 
                 instanceConfig.mountsByID = vmConfig.mountsByID
                 instanceConfig.extensions = vmConfig.extensions

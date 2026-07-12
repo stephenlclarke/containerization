@@ -63,8 +63,8 @@ extension Application {
         @Flag(name: .long, help: "Run with an init process for signal forwarding and zombie reaping")
         var `init`: Bool = false
 
-        @Flag(name: .customLong("graphics-acceleration"), help: "Enable virtio-gpu acceleration")
-        var graphicsAcceleration: Bool = false
+        @Flag(name: .customLong("graphics-device"), help: "Attach a virtio-gpu device")
+        var graphicsDevice: Bool = false
 
         @Flag(name: .customLong("graphics-output"), help: "Enable graphical output (display)")
         var graphicsOutput: Bool = false
@@ -164,7 +164,7 @@ extension Application {
                 }
 
                 config.useInit = self.`init`
-                config.graphicsDevice = self.graphicsAcceleration
+                config.graphicsDevice = self.graphicsDevice
                 config.graphicsDisplay = self.graphicsOutput
             }
 

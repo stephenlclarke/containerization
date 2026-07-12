@@ -589,6 +589,7 @@ struct IntegrationSuite: AsyncParsableCommand {
                 Test("container manager", testContainerManagerCreate),
                 Test("container reuse", testContainerReuse),
                 Test("container /dev/console", testContainerDevConsole),
+                Test("container virtio graphics device attachment", testContainerVirtioGraphicsDeviceAttachesVirtioGPU),
 
                 // Nested virtualization (VZ-only feature)
                 Test("nested virt", testNestedVirtualizationEnabled),

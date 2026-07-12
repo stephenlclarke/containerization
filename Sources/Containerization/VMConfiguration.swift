@@ -17,6 +17,32 @@
 import ContainerizationOCI
 import Foundation
 
+/// Virtual graphics configuration for a Linux VM.
+public enum GraphicsConfiguration: Sendable, Equatable {
+    /// Do not attach a graphics device.
+    case disabled
+    /// Attach a virtio-gpu device using the default VZ-required scanout.
+    case deviceOnly
+    /// Attach a virtio-gpu device with one scanout/display.
+    case display(widthInPixels: Int = 1920, heightInPixels: Int = 1080)
+
+    public var isEnabled: Bool {
+        switch self {
+        case .disabled:
+            return false
+        case .deviceOnly, .display:
+            return true
+        }
+    }
+
+    public var hasDisplay: Bool {
+        if case .display = self {
+            return true
+        }
+        return false
+    }
+}
+
 /// Destination for boot log (serial console) output.
 public struct BootLog: Sendable {
     /// The underlying representation of the boot log destination.
@@ -84,10 +110,28 @@ public struct VMConfiguration: Sendable {
     /// Extension packages append their types here; VZ-aware extensions
     /// should conform to ``VZInstanceExtension``.
     public var extensions: [any Sendable] = []
+    /// Virtual graphics device configuration.
+    public var graphics: GraphicsConfiguration
     /// Enable virtio-gpu device.
-    public var graphicsDevice: Bool
+    public var graphicsDevice: Bool {
+        get { self.graphics.isEnabled }
+        set {
+            self.graphics = newValue ? .deviceOnly : .disabled
+        }
+    }
     /// Enable graphical output (scanout) for the virtio-gpu device.
-    public var graphicsDisplay: Bool
+    public var graphicsDisplay: Bool {
+        get { self.graphics.hasDisplay }
+        set {
+            if newValue {
+                self.graphics = .display()
+            } else if self.graphics.isEnabled {
+                self.graphics = .deviceOnly
+            } else {
+                self.graphics = .disabled
+            }
+        }
+    }
 
     public init(
         cpus: Int = 4,
@@ -97,7 +141,8 @@ public struct VMConfiguration: Sendable {
         bootLog: BootLog? = nil,
         nestedVirtualization: Bool = false,
         graphicsDevice: Bool = false,
-        graphicsDisplay: Bool = false
+        graphicsDisplay: Bool = false,
+        graphics: GraphicsConfiguration? = nil
     ) {
         self.cpus = cpus
         self.memoryInBytes = memoryInBytes
@@ -105,7 +150,6 @@ public struct VMConfiguration: Sendable {
         self.mountsByID = mountsByID
         self.bootLog = bootLog
         self.nestedVirtualization = nestedVirtualization
-        self.graphicsDevice = graphicsDevice
-        self.graphicsDisplay = graphicsDisplay
+        self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .deviceOnly : .disabled))
     }
 }
