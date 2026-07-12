@@ -1638,6 +1638,34 @@ public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: 
 
   public var pids: [Int32] = []
 
+  public var processes: [Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var uid: String = String()
+
+  public var pid: Int32 = 0
+
+  public var ppid: Int32 = 0
+
+  public var cpu: Int32 = 0
+
+  public var startTime: String = String()
+
+  public var tty: String = String()
+
+  public var time: String = String()
+
+  public var command: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -4455,7 +4483,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest: Swift
 
 extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerProcessesResponse"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pids\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pids\0\u{1}processes\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -4464,6 +4492,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: Swif
       // enabled. https://github.com/apple/swift-protobuf/issues/1034
       switch fieldNumber {
       case 1: try { try decoder.decodeRepeatedInt32Field(value: &self.pids) }()
+      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.processes) }()
       default: break
       }
     }
@@ -4473,11 +4502,80 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: Swif
     if !self.pids.isEmpty {
       try visitor.visitPackedInt32Field(value: self.pids, fieldNumber: 1)
     }
+    if !self.processes.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.processes, fieldNumber: 2)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse, rhs: Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse) -> Bool {
     if lhs.pids != rhs.pids {return false}
+    if lhs.processes != rhs.processes {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ContainerProcessInfo"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}uid\0\u{1}pid\0\u{1}ppid\0\u{1}cpu\0\u{3}start_time\0\u{1}tty\0\u{1}time\0\u{1}command\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.uid) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.pid) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.ppid) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.cpu) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.startTime) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.tty) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.time) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.command) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.uid.isEmpty {
+      try visitor.visitSingularStringField(value: self.uid, fieldNumber: 1)
+    }
+    if self.pid != 0 {
+      try visitor.visitSingularInt32Field(value: self.pid, fieldNumber: 2)
+    }
+    if self.ppid != 0 {
+      try visitor.visitSingularInt32Field(value: self.ppid, fieldNumber: 3)
+    }
+    if self.cpu != 0 {
+      try visitor.visitSingularInt32Field(value: self.cpu, fieldNumber: 4)
+    }
+    if !self.startTime.isEmpty {
+      try visitor.visitSingularStringField(value: self.startTime, fieldNumber: 5)
+    }
+    if !self.tty.isEmpty {
+      try visitor.visitSingularStringField(value: self.tty, fieldNumber: 6)
+    }
+    if !self.time.isEmpty {
+      try visitor.visitSingularStringField(value: self.time, fieldNumber: 7)
+    }
+    if !self.command.isEmpty {
+      try visitor.visitSingularStringField(value: self.command, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo, rhs: Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo) -> Bool {
+    if lhs.uid != rhs.uid {return false}
+    if lhs.pid != rhs.pid {return false}
+    if lhs.ppid != rhs.ppid {return false}
+    if lhs.cpu != rhs.cpu {return false}
+    if lhs.startTime != rhs.startTime {return false}
+    if lhs.tty != rhs.tty {return false}
+    if lhs.time != rhs.time {return false}
+    if lhs.command != rhs.command {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

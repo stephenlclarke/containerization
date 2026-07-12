@@ -350,6 +350,56 @@ struct LinuxContainerTests {
         #expect(pausedIdentifiers == [42, 99])
     }
 
+    @Test func processInfoRowsAreReadFromTheAgent() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "process-info-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init()
+        )
+
+        try await container.create()
+        try await container.start()
+
+        let vm = try #require(manager.vm)
+        vm.agent.processInfo = [
+            ContainerProcessInfo(
+                uid: "root",
+                pid: 42,
+                ppid: 7,
+                cpu: 0,
+                startTime: "15:33",
+                tty: "?",
+                time: "00:00:00",
+                command: "sleep 60"
+            )
+        ]
+
+        let processes = try await container.processes()
+
+        #expect(processes == vm.agent.processInfo)
+        #expect(vm.agent.processInfoContainerID == "process-info-test")
+
+        try await container.pause()
+        vm.agent.processInfo = [
+            ContainerProcessInfo(
+                uid: "root",
+                pid: 99,
+                ppid: 42,
+                cpu: 1,
+                startTime: "15:34",
+                tty: "?",
+                time: "00:00:01",
+                command: "sh"
+            )
+        ]
+
+        let pausedProcesses = try await container.processes()
+
+        #expect(pausedProcesses == vm.agent.processInfo)
+    }
+
 }
 
 private struct StubVirtualMachineManager: VirtualMachineManager {
@@ -461,6 +511,8 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
     private struct State {
         var processIdentifiers: [Int32] = []
         var processContainerID: String?
+        var processInfo: [ContainerProcessInfo] = []
+        var processInfoContainerID: String?
     }
 
     private let storage = Mutex<State>(State())
@@ -474,8 +526,21 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         }
     }
 
+    var processInfo: [ContainerProcessInfo] {
+        get {
+            storage.withLock { $0.processInfo }
+        }
+        set {
+            storage.withLock { $0.processInfo = newValue }
+        }
+    }
+
     var processContainerID: String? {
         storage.withLock { $0.processContainerID }
+    }
+
+    var processInfoContainerID: String? {
+        storage.withLock { $0.processInfoContainerID }
     }
 
     func standardSetup() async throws {}
@@ -553,6 +618,13 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         storage.withLock {
             $0.processContainerID = containerID
             return $0.processIdentifiers
+        }
+    }
+
+    func containerProcessInfo(containerID: String) async throws -> [ContainerProcessInfo] {
+        storage.withLock {
+            $0.processInfoContainerID = containerID
+            return $0.processInfo
         }
     }
 }

@@ -244,6 +244,10 @@ extension ManagedContainer {
         try self.cgroupManager.processIdentifiers()
     }
 
+    func processes() throws -> [Cgroup2ProcessInfo] {
+        try self.cgroupManager.processes()
+    }
+
     func getMemoryEvents() throws -> MemoryEvents {
         try self.cgroupManager.getMemoryEvents()
     }

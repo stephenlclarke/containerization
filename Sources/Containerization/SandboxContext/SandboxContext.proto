@@ -447,6 +447,18 @@ message ContainerProcessesRequest {
 
 message ContainerProcessesResponse {
   repeated int32 pids = 1;
+  repeated ContainerProcessInfo processes = 2;
+}
+
+message ContainerProcessInfo {
+  string uid = 1;
+  int32 pid = 2;
+  int32 ppid = 3;
+  int32 cpu = 4;
+  string start_time = 5;
+  string tty = 6;
+  string time = 7;
+  string command = 8;
 }
 
 message MemoryStats {

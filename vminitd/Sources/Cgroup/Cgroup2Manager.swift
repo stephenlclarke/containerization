@@ -42,10 +42,42 @@ package enum Cgroup2Controller: String {
     case hugetlb
 }
 
+package struct Cgroup2ProcessInfo: Sendable, Equatable {
+    package var uid: String
+    package var pid: Int32
+    package var ppid: Int32
+    package var cpu: Int32
+    package var startTime: String
+    package var tty: String
+    package var time: String
+    package var command: String
+
+    package init(
+        uid: String,
+        pid: Int32,
+        ppid: Int32,
+        cpu: Int32,
+        startTime: String,
+        tty: String,
+        time: String,
+        command: String
+    ) {
+        self.uid = uid
+        self.pid = pid
+        self.ppid = ppid
+        self.cpu = cpu
+        self.startTime = startTime
+        self.tty = tty
+        self.time = time
+        self.command = command
+    }
+}
+
 // Extremely simple cgroup manager. Our needs are simple for now, and this is
 // reflected in the type.
 public struct Cgroup2Manager: Sendable {
     public static let defaultMountPoint = URL(filePath: "/sys/fs/cgroup")
+    package static let defaultProcRoot = URL(filePath: "/proc")
 
     private static let killFile = "cgroup.kill"
     private static let procsFile = "cgroup.procs"
@@ -204,6 +236,22 @@ public struct Cgroup2Manager: Sendable {
         try Self.parseProcessIdentifiers(try readFileContent(fileName: Self.procsFile))
     }
 
+    package func processes(
+        procRoot: URL = Self.defaultProcRoot,
+        now: Date = Date()
+    ) throws -> [Cgroup2ProcessInfo] {
+        let identifiers = try processIdentifiers()
+        let uptime = try Self.readSystemUptime(procRoot: procRoot)
+        let clockTicks = Self.clockTicksPerSecond()
+        return try Self.processes(
+            identifiers: identifiers,
+            procRoot: procRoot,
+            now: now,
+            uptime: uptime,
+            clockTicks: clockTicks
+        )
+    }
+
     package static func parseProcessIdentifiers(_ content: String?) throws -> [Int32] {
         guard let content, !content.isEmpty else {
             return []
@@ -220,6 +268,173 @@ public struct Cgroup2Manager: Sendable {
                 return pid
             }
             .sorted()
+    }
+
+    package static func processes(
+        identifiers: [Int32],
+        procRoot: URL = Self.defaultProcRoot,
+        now: Date = Date(),
+        uptime: Double,
+        clockTicks: Int64
+    ) throws -> [Cgroup2ProcessInfo] {
+        var processes: [Cgroup2ProcessInfo] = []
+        for identifier in identifiers.sorted() {
+            do {
+                if let process = try processInfo(
+                    pid: identifier,
+                    procRoot: procRoot,
+                    now: now,
+                    uptime: uptime,
+                    clockTicks: clockTicks
+                ) {
+                    processes.append(process)
+                }
+            } catch where isMissingProcessFileError(error) {
+                continue
+            }
+        }
+        return processes
+    }
+
+    package static func parseProcessStat(_ content: String) throws -> (
+        commandName: String,
+        parentProcessIdentifier: Int32,
+        terminalNumber: Int64,
+        userTicks: UInt64,
+        systemTicks: UInt64,
+        startTicks: UInt64
+    ) {
+        guard
+            let commandStart = content.firstIndex(of: "("),
+            let commandEnd = content.lastIndex(of: ")"),
+            commandStart < commandEnd
+        else {
+            throw ContainerizationError(.internalError, message: "invalid process stat content")
+        }
+
+        let commandName = String(content[content.index(after: commandStart)..<commandEnd])
+        let remainderStart = content.index(after: commandEnd)
+        let fields = content[remainderStart...].split(whereSeparator: \.isWhitespace)
+        guard fields.count > 19 else {
+            throw ContainerizationError(.internalError, message: "incomplete process stat content")
+        }
+        guard
+            let parentProcessIdentifier = Int32(fields[1]),
+            let terminalNumber = Int64(fields[4]),
+            let userTicks = UInt64(fields[11]),
+            let systemTicks = UInt64(fields[12]),
+            let startTicks = UInt64(fields[19])
+        else {
+            throw ContainerizationError(.internalError, message: "invalid process stat values")
+        }
+
+        return (
+            commandName: commandName,
+            parentProcessIdentifier: parentProcessIdentifier,
+            terminalNumber: terminalNumber,
+            userTicks: userTicks,
+            systemTicks: systemTicks,
+            startTicks: startTicks
+        )
+    }
+
+    package static func parseProcessUserIdentifier(_ content: String) throws -> UInt32 {
+        for line in content.split(whereSeparator: \.isNewline) {
+            let fields = line.split(whereSeparator: \.isWhitespace)
+            guard fields.first == "Uid:", fields.count > 1 else {
+                continue
+            }
+            guard let uid = UInt32(fields[1]) else {
+                throw ContainerizationError(.internalError, message: "invalid process uid '\(fields[1])'")
+            }
+            return uid
+        }
+        throw ContainerizationError(.internalError, message: "missing process uid")
+    }
+
+    package static func parseCommandLine(_ data: Data, fallbackCommandName: String) -> String {
+        let arguments = data.split(separator: 0).map { String(decoding: $0, as: UTF8.self) }
+        if !arguments.isEmpty {
+            return arguments.joined(separator: " ")
+        }
+        return "[\(fallbackCommandName)]"
+    }
+
+    private static func processInfo(
+        pid: Int32,
+        procRoot: URL,
+        now: Date,
+        uptime: Double,
+        clockTicks: Int64
+    ) throws -> Cgroup2ProcessInfo? {
+        let processRoot = procRoot.appending(path: String(pid))
+        let stat = try parseProcessStat(String(contentsOf: processRoot.appending(path: "stat"), encoding: .utf8))
+        let uid = try parseProcessUserIdentifier(String(contentsOf: processRoot.appending(path: "status"), encoding: .utf8))
+        let commandLine = (try? Data(contentsOf: processRoot.appending(path: "cmdline"))) ?? Data()
+        let command = parseCommandLine(commandLine, fallbackCommandName: stat.commandName)
+        let totalTicks = stat.userTicks + stat.systemTicks
+        let startSeconds = Double(stat.startTicks) / Double(clockTicks)
+        let elapsedSeconds = max(1, uptime - startSeconds)
+
+        return Cgroup2ProcessInfo(
+            uid: userName(for: uid),
+            pid: pid,
+            ppid: stat.parentProcessIdentifier,
+            cpu: cpuColumn(totalTicks: totalTicks, elapsedSeconds: elapsedSeconds, clockTicks: clockTicks),
+            startTime: startTimeColumn(startSeconds: startSeconds, uptime: uptime, now: now),
+            tty: terminalColumn(stat.terminalNumber),
+            time: elapsedTimeColumn(totalTicks: totalTicks, clockTicks: clockTicks),
+            command: command
+        )
+    }
+
+    package static func readSystemUptime(procRoot: URL = Self.defaultProcRoot) throws -> Double {
+        let content = try String(contentsOf: procRoot.appending(path: "uptime"), encoding: .utf8)
+        guard let uptime = Double(content.split(whereSeparator: \.isWhitespace).first ?? "") else {
+            throw ContainerizationError(.internalError, message: "invalid process uptime")
+        }
+        return uptime
+    }
+
+    private static func clockTicksPerSecond() -> Int64 {
+        let value = sysconf(Int32(_SC_CLK_TCK))
+        return value > 0 ? Int64(value) : 100
+    }
+
+    private static func cpuColumn(totalTicks: UInt64, elapsedSeconds: Double, clockTicks: Int64) -> Int32 {
+        let processSeconds = Double(totalTicks) / Double(clockTicks)
+        let value = max(0, min(999, Int((processSeconds * 100 / elapsedSeconds).rounded(.down))))
+        return Int32(value)
+    }
+
+    private static func startTimeColumn(startSeconds: Double, uptime: Double, now: Date) -> String {
+        let startDate = now.addingTimeInterval(startSeconds - uptime)
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = calendar.isDate(startDate, inSameDayAs: now) ? "HH:mm" : "MMMdd"
+        return formatter.string(from: startDate)
+    }
+
+    private static func terminalColumn(_ terminalNumber: Int64) -> String {
+        terminalNumber == 0 ? "?" : String(terminalNumber)
+    }
+
+    private static func elapsedTimeColumn(totalTicks: UInt64, clockTicks: Int64) -> String {
+        let seconds = Int(totalTicks / UInt64(clockTicks))
+        return String(format: "%02d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
+    }
+
+    private static func userName(for uid: UInt32) -> String {
+        guard let entry = getpwuid(uid_t(uid)), let name = entry.pointee.pw_name else {
+            return String(uid)
+        }
+        return String(cString: name)
+    }
+
+    private static func isMissingProcessFileError(_ error: any Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError
     }
 
     public func applyResources(resources: ContainerizationOCI.LinuxResources) throws {

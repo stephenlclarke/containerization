@@ -38,6 +38,59 @@ struct Cgroup2ManagerProcessTests {
             try Cgroup2Manager.parseProcessIdentifiers("42\nnot-a-pid\n")
         }
     }
+
+    @Test func processInfoRowsAreReadFromProc() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-process-\(UUID().uuidString)")
+        let processRoot = root.appending(path: "42")
+        try FileManager.default.createDirectory(at: processRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try "42 (sleep) S 7 42 42 0 -1 0 0 0 0 0 200 300 0 0 20 0 1 0 9000 0\n"
+            .write(to: processRoot.appending(path: "stat"), atomically: true, encoding: .utf8)
+        try "Name:\tsleep\nUid:\t0\t0\t0\t0\n"
+            .write(to: processRoot.appending(path: "status"), atomically: true, encoding: .utf8)
+        try Data([UInt8(ascii: "s"), UInt8(ascii: "l"), UInt8(ascii: "e"), UInt8(ascii: "e"), UInt8(ascii: "p"), 0, UInt8(ascii: "6"), UInt8(ascii: "0"), 0])
+            .write(to: processRoot.appending(path: "cmdline"))
+
+        let rows = try Cgroup2Manager.processes(
+            identifiers: [42],
+            procRoot: root,
+            now: Date(timeIntervalSince1970: 3_600),
+            uptime: 100,
+            clockTicks: 100
+        )
+
+        let row = try #require(rows.first)
+        #expect(rows.count == 1)
+        #expect(row.uid == "root")
+        #expect(row.pid == 42)
+        #expect(row.ppid == 7)
+        #expect(row.cpu == 50)
+        #expect(!row.startTime.isEmpty)
+        #expect(row.tty == "?")
+        #expect(row.time == "00:00:05")
+        #expect(row.command == "sleep 60")
+    }
+
+    @Test func processInfoRowsSkipExitedProcesses() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-process-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let rows = try Cgroup2Manager.processes(
+            identifiers: [42],
+            procRoot: root,
+            now: Date(timeIntervalSince1970: 0),
+            uptime: 1_000,
+            clockTicks: 100
+        )
+
+        #expect(rows == [])
+    }
+
+    @Test func commandLineFallsBackToStatCommandName() {
+        #expect(Cgroup2Manager.parseCommandLine(Data(), fallbackCommandName: "sh") == "[sh]")
+    }
 }
 
 #endif

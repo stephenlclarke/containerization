@@ -1208,6 +1208,30 @@ extension LinuxContainer {
         }
     }
 
+    /// Get process-table rows for all processes currently in the container.
+    public func processes() async throws -> [ContainerProcessInfo] {
+        try await self.state.withLock {
+            let vm: any VirtualMachineInstance =
+                switch $0 {
+                case .started(let state):
+                    state.vm
+                case .paused(let state):
+                    state.vm
+                case .errored(let err):
+                    throw err
+                default:
+                    throw ContainerizationError(
+                        .invalidState,
+                        message: "failed to processes: container must be running or paused"
+                    )
+                }
+
+            return try await vm.withAgent { agent in
+                try await agent.containerProcessInfo(containerID: self.id)
+            }
+        }
+    }
+
     // Perform filesystem operations in the container.
     public func filesystemOperation(operation: FilesystemOperation, path: String) async throws {
         try await self.state.withLock {

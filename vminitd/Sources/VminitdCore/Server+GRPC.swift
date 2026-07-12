@@ -1688,8 +1688,21 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         do {
             let container = try await state.get(container: request.containerID)
             let pids = try await container.processIdentifiers()
+            let processes = try await container.processes()
             return .with {
                 $0.pids = pids
+                $0.processes = processes.map { process in
+                    .with {
+                        $0.uid = process.uid
+                        $0.pid = process.pid
+                        $0.ppid = process.ppid
+                        $0.cpu = process.cpu
+                        $0.startTime = process.startTime
+                        $0.tty = process.tty
+                        $0.time = process.time
+                        $0.command = process.command
+                    }
+                }
             }
         } catch {
             log.error(
