@@ -61,6 +61,7 @@ SWIFT_VERSION := $(shell cat $(ROOT_DIR)/.swift-version)
 SWIFT_SDK_URL := $(shell grep '^SWIFT_SDK_URL' vminitd/Makefile | head -1 | sed 's/.*:= *//')
 SWIFT_SDK_CHECKSUM := $(shell grep '^SWIFT_SDK_CHECKSUM' vminitd/Makefile | head -1 | sed 's/.*:= *//')
 LINUX_DEV_IMAGE := containerization-dev:$(SWIFT_VERSION)
+VMINIT_IMAGE ?= vminit:latest
 
 # Literal `,` for use inside $(call ...) arguments — bare commas are
 # treated as the call's argument separator and split the value early.
@@ -297,7 +298,7 @@ init: containerization vminitd
 		--vmexec vminitd/bin/vmexec \
 		--ext4 ./bin/initfs.ext4 \
 		--label org.opencontainers.image.source=https://github.com/apple/containerization \
-		--image vminit:latest \
+		--image $(VMINIT_IMAGE) \
 		bin/init.rootfs.tar.gz
 
 .PHONY: cross-prep
