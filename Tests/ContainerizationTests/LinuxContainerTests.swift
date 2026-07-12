@@ -296,6 +296,26 @@ struct LinuxContainerTests {
         #expect(vm.resumeCalls == 1)
     }
 
+    @Test func graphicsConfigurationIsForwardedToVM() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "graphics-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(),
+                graphicsDevice: true,
+                graphicsDisplay: true
+            )
+        )
+
+        try await container.create()
+
+        let configuration = try #require(manager.vm?.configuration)
+        #expect(configuration.graphicsDevice)
+        #expect(configuration.graphicsDisplay)
+    }
+
     @Test func pauseRequiresRunningContainer() async throws {
         let container = try LinuxContainer(
             "pause-invalid",
@@ -445,6 +465,7 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
     private let storage = Mutex<State>(State())
     let agent = RecordingVirtualMachineAgent()
 
+    let configuration: VMConfiguration
     let mounts: [String: [AttachedFilesystem]]
 
     var state: VirtualMachineInstanceState {
@@ -460,6 +481,7 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
     }
 
     init(configuration: VMConfiguration) {
+        self.configuration = configuration
         self.mounts = configuration.mountsByID.mapValues { mounts in
             mounts.map {
                 AttachedFilesystem(

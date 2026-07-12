@@ -30,6 +30,9 @@ Containerization provides APIs to:
 - [Spawn lightweight virtual machines and manage the runtime environment](./Sources/Containerization/LinuxContainer.swift).
 - Configure OCI Linux runtime controls such as device cgroup rules and
   pre-resolved device nodes for generated runtime specs.
+- Attach an optional virtio-gpu device to Virtualization.framework-backed
+  container VMs. The in-repo arm64 kernel enables the matching Linux driver;
+  this is paravirtual graphics support, not vendor GPU passthrough.
 - [Spawn and interact with containerized processes](./Sources/Containerization/LinuxProcess.swift).
 - Use Rosetta 2 for running linux/amd64 containers on Apple silicon.
 
