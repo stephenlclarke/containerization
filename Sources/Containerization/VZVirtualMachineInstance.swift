@@ -85,6 +85,10 @@ public final class VZVirtualMachineInstance: Sendable {
         public var bootLog: BootLog?
         /// Extension objects that participate in the VM instance lifecycle.
         public var extensions: [any Sendable] = []
+        /// Enable virtio-gpu device.
+        public var graphicsDevice: Bool
+        /// Enable graphical output (scanout) for the virtio-gpu device.
+        public var graphicsDisplay: Bool
 
         public init() {
             self.cpus = 4
@@ -93,6 +97,8 @@ public final class VZVirtualMachineInstance: Sendable {
             self.nestedVirtualization = false
             self.mountsByID = [:]
             self.interfaces = []
+            self.graphicsDevice = false
+            self.graphicsDisplay = false
         }
     }
 
@@ -513,6 +519,16 @@ extension VZVirtualMachineInstance.Configuration {
         config.directorySharingDevices.append(virtiofsDevice)
 
         let storageDeviceCount = config.storageDevices.count
+
+        if self.graphicsDevice || self.graphicsDisplay {
+            let device = VZVirtioGraphicsDeviceConfiguration()
+            if self.graphicsDisplay {
+                device.scanouts = [
+                    VZVirtioGraphicsScanoutConfiguration(widthInPixels: 1920, heightInPixels: 1080)
+                ]
+            }
+            config.graphicsDevices = [device]
+        }
 
         let platform = VZGenericPlatformConfiguration()
         // We shouldn't silently succeed if the user asked for virt and their hardware does

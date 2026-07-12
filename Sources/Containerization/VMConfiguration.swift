@@ -84,6 +84,10 @@ public struct VMConfiguration: Sendable {
     /// Extension packages append their types here; VZ-aware extensions
     /// should conform to ``VZInstanceExtension``.
     public var extensions: [any Sendable] = []
+    /// Enable virtio-gpu device.
+    public var graphicsDevice: Bool
+    /// Enable graphical output (scanout) for the virtio-gpu device.
+    public var graphicsDisplay: Bool
 
     public init(
         cpus: Int = 4,
@@ -91,7 +95,9 @@ public struct VMConfiguration: Sendable {
         interfaces: [any Interface] = [],
         mountsByID: [String: [Mount]] = [:],
         bootLog: BootLog? = nil,
-        nestedVirtualization: Bool = false
+        nestedVirtualization: Bool = false,
+        graphicsDevice: Bool = false,
+        graphicsDisplay: Bool = false
     ) {
         self.cpus = cpus
         self.memoryInBytes = memoryInBytes
@@ -99,5 +105,7 @@ public struct VMConfiguration: Sendable {
         self.mountsByID = mountsByID
         self.bootLog = bootLog
         self.nestedVirtualization = nestedVirtualization
+        self.graphicsDevice = graphicsDevice
+        self.graphicsDisplay = graphicsDisplay
     }
 }
