@@ -432,7 +432,7 @@ public struct Cgroup2Manager: Sendable {
         return String(cString: name)
     }
 
-    private static func isMissingProcessFileError(_ error: any Error) -> Bool {
+    private static func isMissingProcessFileError(_ error: any Swift.Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileReadNoSuchFileError
     }

@@ -17,6 +17,7 @@
 #if os(Linux)
 
 import ContainerizationError
+import Foundation
 import Testing
 
 @testable import Cgroup
