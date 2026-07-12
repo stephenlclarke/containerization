@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD013 -->
+
 # CloudHypervisor
 
 A standalone Swift library for driving the [cloud-hypervisor](https://github.com/cloud-hypervisor/cloud-hypervisor) REST API over a Unix domain socket. The package compiles on both macOS and Linux, though `cloud-hypervisor` itself only runs on Linux.
