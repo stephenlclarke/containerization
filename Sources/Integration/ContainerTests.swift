@@ -2143,7 +2143,12 @@ extension IntegrationSuite {
             } catch let error as IntegrationError {
                 throw error
             } catch {
-                // The guest error shape is runtime-specific; returning promptly is the invariant.
+                let message = String(describing: error)
+                guard !message.contains("copyOut: no metadata received"),
+                    !message.contains("copyOut: vsock connection not established")
+                else {
+                    throw IntegrationError.assert(msg: "copyOut replaced the guest error with '\(message)'")
+                }
             }
 
             let exec = try await container.exec("after-missing-copy") { config in
