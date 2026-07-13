@@ -57,12 +57,18 @@ actor UnpackCoordinator {
 }
 
 struct Test: Sendable {
-    var name: String
-    var work: @Sendable () async throws -> Void
+    let name: String
+    let work: @Sendable () async throws -> Void
+    let requiresExclusiveExecution: Bool
 
-    init(_ name: String, _ work: @escaping @Sendable () async throws -> Void) {
+    init(
+        _ name: String,
+        requiresExclusiveExecution: Bool = false,
+        _ work: @escaping @Sendable () async throws -> Void
+    ) {
         self.name = name
         self.work = work
+        self.requiresExclusiveExecution = requiresExclusiveExecution
     }
 }
 
@@ -387,17 +393,17 @@ struct IntegrationSuite: AsyncParsableCommand {
     private func macOS26Tests() -> [Test] {
         if #available(macOS 26.0, *) {
             return [
-                Test("container interface custom MTU", testInterfaceMTU),
-                Test("container networking disabled", testNetworkingDisabled),
-                Test("container networking enabled", testNetworkingEnabled),
-                Test("container networking enabled ipv6", testNetworkingEnabledIPv6),
-                Test("container IPv6 address", testIPv6AddressAdd),
-                Test("container IPv6 default route", testIPv6DefaultRoute),
-                Test("container IPv6 gateway outside subnet", testIPv6GatewayOutsideSubnet),
-                Test("container IPv6 only default route", testIPv6OnlyDefaultRoute),
-                Test("container IPv6 only gateway outside subnet", testIPv6OnlyGatewayOutsideSubnet),
-                Test("container IPv6 dual stack", testIPv6DualStack),
-                Test("pod IPv6 address", testPodIPv6AddressAdd),
+                Test("container interface custom MTU", requiresExclusiveExecution: true, testInterfaceMTU),
+                Test("container networking disabled", requiresExclusiveExecution: true, testNetworkingDisabled),
+                Test("container networking enabled", requiresExclusiveExecution: true, testNetworkingEnabled),
+                Test("container networking enabled ipv6", requiresExclusiveExecution: true, testNetworkingEnabledIPv6),
+                Test("container IPv6 address", requiresExclusiveExecution: true, testIPv6AddressAdd),
+                Test("container IPv6 default route", requiresExclusiveExecution: true, testIPv6DefaultRoute),
+                Test("container IPv6 gateway outside subnet", requiresExclusiveExecution: true, testIPv6GatewayOutsideSubnet),
+                Test("container IPv6 only default route", requiresExclusiveExecution: true, testIPv6OnlyDefaultRoute),
+                Test("container IPv6 only gateway outside subnet", requiresExclusiveExecution: true, testIPv6OnlyGatewayOutsideSubnet),
+                Test("container IPv6 dual stack", requiresExclusiveExecution: true, testIPv6DualStack),
+                Test("pod IPv6 address", requiresExclusiveExecution: true, testPodIPv6AddressAdd),
             ]
         }
         return []
@@ -642,31 +648,42 @@ struct IntegrationSuite: AsyncParsableCommand {
 
         let passed: Atomic<Int> = Atomic(0)
         let skipped: Atomic<Int> = Atomic(0)
+        // vmnet-backed VMs are host-global Virtualization.framework resources.
+        let concurrentTests = filteredTests.filter { !$0.requiresExclusiveExecution }
+        let exclusiveTests = filteredTests.filter(\.requiresExclusiveExecution)
+
+        @Sendable func runTest(_ job: Test) async {
+            do {
+                log.info("test \(job.name) started...")
+
+                let started = Date().timeIntervalSinceReferenceDate
+                try await job.work()
+                let lasted = Date().timeIntervalSinceReferenceDate - started
+
+                log.info("✅ test \(job.name) complete in \(lasted)s.")
+                passed.add(1, ordering: .relaxed)
+            } catch let err as SkipTest {
+                log.info("⏭️ skipped test: \(err)")
+                skipped.add(1, ordering: .relaxed)
+            } catch {
+                log.error("❌ test \(job.name) failed: \(error)")
+            }
+        }
 
         await withTaskGroup(of: Void.self) { group in
-            let jobQueue = JobQueue(filteredTests)
+            let jobQueue = JobQueue(concurrentTests)
             for _ in 0..<maxConcurrency {
                 group.addTask { @Sendable in
                     while let job = jobQueue.pop() {
-                        do {
-                            log.info("test \(job.name) started...")
-
-                            let started = Date().timeIntervalSinceReferenceDate
-                            try await job.work()
-                            let lasted = Date().timeIntervalSinceReferenceDate - started
-
-                            log.info("✅ test \(job.name) complete in \(lasted)s.")
-                            passed.add(1, ordering: .relaxed)
-                        } catch let err as SkipTest {
-                            log.info("⏭️ skipped test: \(err)")
-                            skipped.add(1, ordering: .relaxed)
-                        } catch {
-                            log.error("❌ test \(job.name) failed: \(error)")
-                        }
+                        await runTest(job)
                     }
                 }
             }
             await group.waitForAll()
+        }
+
+        for job in exclusiveTests {
+            await runTest(job)
         }
 
         let passedCount = passed.load(ordering: .acquiring)
