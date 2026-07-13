@@ -11,6 +11,7 @@ workdir/
 installer/
 .venv/
 test_results/
+code-coverage-report
 *.pid
 *.log
 *.zip
