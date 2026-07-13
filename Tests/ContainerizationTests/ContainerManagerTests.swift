@@ -45,6 +45,18 @@ private struct NilGatewayNetwork: Network {
 
 @Suite
 struct ContainerManagerTests {
+    @Test(arguments: ["", ".", "..", "../outside", "/tmp/outside", "nested/path"])
+    func containerPathRejectsUnsafeIdentifiers(_ id: String) {
+        #expect(throws: Error.self) {
+            try ContainerManager.containerPath(root: URL(filePath: "/tmp/containers"), id: id)
+        }
+    }
+
+    @Test func containerPathStaysInsideManagedRoot() throws {
+        let root = URL(filePath: "/tmp/containers")
+        #expect(try ContainerManager.containerPath(root: root, id: "web-1").path == root.appendingPathComponent("web-1").path)
+    }
+
     @Test func testCreateThrowsWhenGatewayMissing() async throws {
         let fm = FileManager.default
         let root = fm.uniqueTemporaryDirectory(create: true)

@@ -292,6 +292,7 @@ public struct ContainerManager: Sendable {
         networking: Bool = true,
         configuration: (inout LinuxContainer.Configuration) throws -> Void
     ) async throws -> LinuxContainer {
+        let path = try Self.containerPath(root: self.containerRoot, id: id)
         let imageConfig = try await image.config(for: .current).config
         return try LinuxContainer(
             id,
@@ -314,7 +315,7 @@ public struct ContainerManager: Sendable {
                     config.dns = .init(nameservers: [gateway.description])
                 }
             }
-            config.bootLog = BootLog.file(path: self.containerRoot.appendingPathComponent(id).appendingPathComponent("bootlog.log"))
+            config.bootLog = BootLog.file(path: path.appendingPathComponent("bootlog.log"))
             try configuration(&config)
         }
     }
@@ -323,21 +324,32 @@ public struct ContainerManager: Sendable {
     ///
     /// - Parameter id: The container ID.
     public mutating func releaseNetwork(_ id: String) throws {
+        _ = try Self.containerPath(root: self.containerRoot, id: id)
         try self.network?.releaseInterface(id)
     }
 
     /// Releases network resources and removes all files for a container.
     /// - Parameter id: The container ID.
     public mutating func delete(_ id: String) throws {
+        let path = try Self.containerPath(root: self.containerRoot, id: id)
         try self.releaseNetwork(id)
-        let path = containerRoot.appendingPathComponent(id)
         try FileManager.default.removeItem(at: path)
     }
 
     private func createContainerRoot(_ id: String) throws -> URL {
-        let path = containerRoot.appendingPathComponent(id)
+        let path = try Self.containerPath(root: self.containerRoot, id: id)
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
         return path
+    }
+
+    static func containerPath(root: URL, id: String) throws -> URL {
+        guard let component = FilePath.Component(id), case .regular = component.kind else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "container ID \(id) is not a valid path component"
+            )
+        }
+        return root.appendingPathComponent(component.string, isDirectory: true)
     }
 
     private func unpack(image: Image, destination: URL, size: UInt64, progress: ProgressHandler? = nil) async throws -> Mount {
