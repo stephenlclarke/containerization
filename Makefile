@@ -337,7 +337,10 @@ coverage: test
 	@echo Code coverage report generated: $(COV_REPORT_FILE)
 
 .PHONY: integration
-integration:
+# The integration suite boots vmexec from the vminit image, not from the host
+# build tree.  Recreate that image first so a successful suite proves the
+# checked-out runtime source rather than a stale cached vminit:latest image.
+integration: init
 	@kernel="$$(for f in $(KERNEL_CANDIDATES); do [ -f $$f ] && echo $$f && break; done)"; \
 	if [ -z "$$kernel" ]; then \
 		echo "No kernel found. Looked for: $(KERNEL_CANDIDATES). See fetch-default-kernel target or build via kernel/Makefile."; \
