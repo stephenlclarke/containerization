@@ -3,29 +3,28 @@ name: Build containerization template
 permissions:
   contents: read
 
-on: 
+on:
   workflow_call:
     inputs:
       release:
         type: boolean
         description: "Create a release"
         default: false
-      version: 
+      version:
         type: string
-        description: Version of containerization 
+        description: Version of containerization
         default: test
 
-jobs: 
-  buildAndTest: 
+jobs:
+  buildAndTest:
     name: Build and Test repo
-    if: github.repository == 'apple/containerization'
     timeout-minutes: 60
-    runs-on: [self-hosted, macos, tahoe, ARM64]
+    runs-on: >-
+      ${{ github.repository == 'apple/containerization'
+      && fromJSON('["self-hosted", "macos", "tahoe", "ARM64"]') || 'macos-15' }}
     permissions:
       contents: read
       packages: write
-    env:
-      DEVELOPER_DIR: "/Applications/Xcode_swift_6.3.app/Contents/Developer"
 
     steps:
       - name: Checkout repository
@@ -33,21 +32,27 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Select Apple-managed toolchain
+        if: ${{ github.repository == 'apple/containerization' }}
+        run: >-
+          echo "DEVELOPER_DIR=/Applications/Xcode_swift_6.3.app/Contents/Developer" >> "$GITHUB_ENV"
+
       - name: Activate Swiftly
+        if: ${{ github.repository == 'apple/containerization' }}
         run: |
           # shellcheck source=/dev/null
           source ~/.swiftly/env.sh
           cat ~/.swiftly/env.sh
 
       - name: Check formatting
-        run: | 
+        run: |
           ./scripts/install-hawkeye.sh
           make fmt
           git diff
           if ! git diff --quiet ; then echo the following files require formatting or license headers: ; git diff --name-only ; false ; fi
 
       - name: Check protobufs
-        run: | 
+        run: |
           make protos
           if ! git diff --quiet ; then echo the following files require formatting or license headers: ; git diff --name-only ; false ; fi
 
@@ -59,6 +64,7 @@ jobs:
           BUILD_CONFIGURATION: ${{ inputs.release && 'release' || 'debug' }}
 
       - name: Make vminitd image
+        if: ${{ github.repository == 'apple/containerization' }}
         run: |
           # shellcheck source=/dev/null
           source ~/.swiftly/env.sh
@@ -68,15 +74,24 @@ jobs:
           BUILD_CONFIGURATION: ${{ inputs.release && 'release' || 'debug' }}
 
       - name: Test containerization
-        run: | 
+        run: |
+          make test
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+
+      - name: Test containerization integration
+        if: ${{ github.repository == 'apple/containerization' }}
+        run: |
           make fetch-default-kernel
-          make test integration
+          make integration
         env:
           REGISTRY_TOKEN: ${{ github.token }}
           REGISTRY_USERNAME: ${{ github.actor }}
 
       - name: Push vminitd image
-        if: ${{ inputs.release }}
+        if: >-
+          ${{ inputs.release && github.repository == 'apple/containerization' }}
         env:
           REGISTRY_TOKEN: ${{ github.token }}
           REGISTRY_USERNAME: ${{ github.actor }}
@@ -86,13 +101,15 @@ jobs:
           bin/cctl images tag vminit:latest "ghcr.io/apple/containerization/vminit:${VERSION}"
           bin/cctl images push "ghcr.io/apple/containerization/vminit:${VERSION}"
 
-      - name: Create image tar 
-        if: ${{ !inputs.release }}
+      - name: Create image tar
+        if: >-
+          ${{ !inputs.release && github.repository == 'apple/containerization' }}
         run: |
           bin/cctl images save vminit:latest -o vminit.tar
 
       - name: Save vminit artifact
-        if: ${{ !inputs.release }}
+        if: >-
+          ${{ !inputs.release && github.repository == 'apple/containerization' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: vminit
