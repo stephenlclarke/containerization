@@ -289,7 +289,7 @@ public struct Cgroup2Manager: Sendable {
                 ) {
                     processes.append(process)
                 }
-            } catch  where isMissingProcessFileError(error) {
+            } catch where isMissingProcessFileError(error) {
                 continue
             }
         }
