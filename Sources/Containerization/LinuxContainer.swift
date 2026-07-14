@@ -142,21 +142,23 @@ public final class LinuxContainer: Container, Sendable {
         public var memoryOverhead: UInt64 = 128.mib()
         /// Virtual graphics device configuration.
         public var graphics: GraphicsConfiguration = .disabled
-        /// Enable virtio-gpu device.
+        /// Legacy virtio-gpu switch. Prefer ``graphics`` to avoid order-dependent configuration.
+        @available(*, deprecated, message: "Configure graphics directly with the graphics property.")
         public var graphicsDevice: Bool {
             get { self.graphics.isEnabled }
             set {
-                self.graphics = newValue ? .deviceOnly : .disabled
+                self.graphics = newValue ? .virtioDevice : .disabled
             }
         }
-        /// Enable graphical output (scanout) for the virtio-gpu device.
+        /// Legacy graphical-output switch. Prefer ``graphics`` to avoid order-dependent configuration.
+        @available(*, deprecated, message: "Configure graphics directly with the graphics property.")
         public var graphicsDisplay: Bool {
             get { self.graphics.hasDisplay }
             set {
                 if newValue {
                     self.graphics = .display()
                 } else if self.graphics.isEnabled {
-                    self.graphics = .deviceOnly
+                    self.graphics = .virtioDevice
                 } else {
                     self.graphics = .disabled
                 }
@@ -218,7 +220,7 @@ public final class LinuxContainer: Container, Sendable {
             self.hostPIDNamespace = hostPIDNamespace
             self.cpuOverhead = cpuOverhead
             self.memoryOverhead = memoryOverhead
-            self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .deviceOnly : .disabled))
+            self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .virtioDevice : .disabled))
         }
     }
 
@@ -532,9 +534,54 @@ public final class LinuxContainer: Container, Sendable {
             return
         }
 
-        var devices = spec.linux?.devices ?? []
-        var cgroupRules = spec.linux?.resources?.devices ?? []
+        var devices: [LinuxDevice] = []
+        var deviceIndexes: [String: Int] = [:]
+        for device in spec.linux?.devices ?? [] {
+            if let index = deviceIndexes[device.path] {
+                devices[index] = device
+            } else {
+                deviceIndexes[device.path] = devices.count
+                devices.append(device)
+            }
+        }
+
+        var cgroupRules: [LinuxDeviceCgroup] = []
+        var cgroupRuleIndexes: [String: Int] = [:]
+        for rule in spec.linux?.resources?.devices ?? [] {
+            let key = Self.cgroupRuleKey(rule)
+            if let index = cgroupRuleIndexes[key] {
+                cgroupRules[index] = rule
+            } else {
+                cgroupRuleIndexes[key] = cgroupRules.count
+                cgroupRules.append(rule)
+            }
+        }
+
+        var guestRequests: [LinuxGuestDeviceRequest] = []
+        var guestRequestIndexes: [String: Int] = [:]
         for request in self.config.guestDevices {
+            guard Self.isValidDeviceAccess(request.permissions) else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "invalid guest device permissions '\(request.permissions)' for \(request.path)"
+                )
+            }
+            var canonicalRequest = request
+            canonicalRequest.permissions = Self.canonicalDeviceAccess(request.permissions)
+            if let index = guestRequestIndexes[canonicalRequest.path] {
+                guard guestRequests[index].permissions == canonicalRequest.permissions else {
+                    throw ContainerizationError(
+                        .invalidArgument,
+                        message: "guest device path has conflicting permissions: \(canonicalRequest.path)"
+                    )
+                }
+                guestRequests[index].required = guestRequests[index].required || canonicalRequest.required
+            } else {
+                guestRequestIndexes[canonicalRequest.path] = guestRequests.count
+                guestRequests.append(canonicalRequest)
+            }
+        }
+        for request in guestRequests {
             let resolved: (device: LinuxDevice, cgroupRule: LinuxDeviceCgroup)
             do {
                 resolved = try await Self.resolveGuestDevice(request, using: agent)
@@ -547,8 +594,30 @@ public final class LinuxContainer: Container, Sendable {
                     cause: error
                 )
             }
-            devices.append(resolved.device)
-            cgroupRules.append(resolved.cgroupRule)
+            if let index = deviceIndexes[resolved.device.path] {
+                devices[index] = resolved.device
+            } else {
+                deviceIndexes[resolved.device.path] = devices.count
+                devices.append(resolved.device)
+            }
+
+            let cgroupRuleKey = Self.cgroupRuleKey(resolved.cgroupRule)
+            if let index = cgroupRuleIndexes[cgroupRuleKey] {
+                cgroupRules[index] = resolved.cgroupRule
+            } else {
+                cgroupRuleIndexes[cgroupRuleKey] = cgroupRules.count
+                cgroupRules.append(resolved.cgroupRule)
+            }
+
+            if let deviceGID = resolved.device.gid,
+                var process = spec.process,
+                process.user.uid != 0,
+                process.user.gid != deviceGID,
+                !process.user.additionalGids.contains(deviceGID)
+            {
+                process.user.additionalGids.append(deviceGID)
+                spec.process = process
+            }
         }
 
         spec.linux?.devices = devices
@@ -556,6 +625,13 @@ public final class LinuxContainer: Container, Sendable {
             spec.linux?.resources = LinuxResources()
         }
         spec.linux?.resources?.devices = cgroupRules
+    }
+
+    /// Creates a stable identity for a Linux device cgroup rule.
+    private static func cgroupRuleKey(_ rule: LinuxDeviceCgroup) -> String {
+        let major = rule.major.map { String($0) } ?? "*"
+        let minor = rule.minor.map { String($0) } ?? "*"
+        return "\(rule.allow)|\(rule.type)|\(major)|\(minor)"
     }
 
     private static func resolveGuestDevice(
@@ -609,6 +685,10 @@ public final class LinuxContainer: Container, Sendable {
         }
         let allowed: Set<Character> = ["r", "w", "m"]
         return Set(access).isSubset(of: allowed)
+    }
+
+    private static func canonicalDeviceAccess(_ access: String) -> String {
+        ["r", "w", "m"].filter(access.contains).joined()
     }
 
     private static func linuxMajor(_ device: UInt64) -> Int64 {

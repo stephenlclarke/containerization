@@ -21,7 +21,10 @@ import Foundation
 public enum GraphicsConfiguration: Sendable, Equatable {
     /// Do not attach a graphics device.
     case disabled
-    /// Attach a virtio-gpu device using the default VZ-required scanout.
+    /// Attach a virtio-gpu device using the mandatory default VZ scanout.
+    case virtioDevice
+    /// Backwards-compatible virtio-gpu configuration name.
+    @available(*, deprecated, message: "Use .virtioDevice; Virtualization.framework always receives a scanout.")
     case deviceOnly
     /// Attach a virtio-gpu device with one scanout/display.
     case display(widthInPixels: Int = 1920, heightInPixels: Int = 1080)
@@ -30,7 +33,7 @@ public enum GraphicsConfiguration: Sendable, Equatable {
         switch self {
         case .disabled:
             return false
-        case .deviceOnly, .display:
+        case .virtioDevice, .deviceOnly, .display:
             return true
         }
     }
@@ -112,21 +115,23 @@ public struct VMConfiguration: Sendable {
     public var extensions: [any Sendable] = []
     /// Virtual graphics device configuration.
     public var graphics: GraphicsConfiguration
-    /// Enable virtio-gpu device.
+    /// Legacy virtio-gpu switch. Prefer ``graphics`` to avoid order-dependent configuration.
+    @available(*, deprecated, message: "Configure graphics directly with the graphics property.")
     public var graphicsDevice: Bool {
         get { self.graphics.isEnabled }
         set {
-            self.graphics = newValue ? .deviceOnly : .disabled
+            self.graphics = newValue ? .virtioDevice : .disabled
         }
     }
-    /// Enable graphical output (scanout) for the virtio-gpu device.
+    /// Legacy graphical-output switch. Prefer ``graphics`` to avoid order-dependent configuration.
+    @available(*, deprecated, message: "Configure graphics directly with the graphics property.")
     public var graphicsDisplay: Bool {
         get { self.graphics.hasDisplay }
         set {
             if newValue {
                 self.graphics = .display()
             } else if self.graphics.isEnabled {
-                self.graphics = .deviceOnly
+                self.graphics = .virtioDevice
             } else {
                 self.graphics = .disabled
             }
@@ -150,6 +155,6 @@ public struct VMConfiguration: Sendable {
         self.mountsByID = mountsByID
         self.bootLog = bootLog
         self.nestedVirtualization = nestedVirtualization
-        self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .deviceOnly : .disabled))
+        self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .virtioDevice : .disabled))
     }
 }
