@@ -164,8 +164,9 @@ extension Application {
                 }
 
                 config.useInit = self.`init`
-                config.graphicsDevice = self.graphicsDevice
-                config.graphicsDisplay = self.graphicsOutput
+                config.graphics = self.graphicsOutput
+                    ? .display()
+                    : (self.graphicsDevice ? .virtioDevice : .disabled)
             }
 
             defer {

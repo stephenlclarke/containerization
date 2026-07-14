@@ -304,8 +304,7 @@ struct LinuxContainerTests {
             vmm: manager,
             configuration: .init(
                 process: .init(),
-                graphicsDevice: true,
-                graphicsDisplay: true
+                graphics: .display()
             )
         )
 
@@ -313,24 +312,32 @@ struct LinuxContainerTests {
 
         let configuration = try #require(manager.vm?.configuration)
         #expect(configuration.graphics == .display())
-        #expect(configuration.graphicsDevice)
-        #expect(configuration.graphicsDisplay)
+        #expect(configuration.graphics.isEnabled)
+        #expect(configuration.graphics.hasDisplay)
     }
 
-    @Test func graphicsDisplayImpliesDeviceOnlyOnce() {
+    @Test func graphicsConfigurationCanRetainTheMandatoryVZScanout() {
         var configuration = LinuxContainer.Configuration()
 
-        configuration.graphicsDisplay = true
+        configuration.graphics = .display()
 
         #expect(configuration.graphics == .display())
-        #expect(configuration.graphicsDevice)
-        #expect(configuration.graphicsDisplay)
+        #expect(configuration.graphics.isEnabled)
+        #expect(configuration.graphics.hasDisplay)
 
-        configuration.graphicsDisplay = false
+        configuration.graphics = .virtioDevice
 
-        #expect(configuration.graphics == .deviceOnly)
-        #expect(configuration.graphicsDevice)
-        #expect(!configuration.graphicsDisplay)
+        #expect(configuration.graphics == .virtioDevice)
+        #expect(configuration.graphics.isEnabled)
+        #expect(!configuration.graphics.hasDisplay)
+    }
+
+    @Test func legacyGraphicsDeviceOnlyCaseRemainsUsable() {
+        var configuration = LinuxContainer.Configuration()
+        configuration.graphics = .deviceOnly
+
+        #expect(configuration.graphics.isEnabled)
+        #expect(!configuration.graphics.hasDisplay)
     }
 
     @Test func startDiscoversConfiguredGuestDeviceNodes() async throws {
@@ -369,6 +376,54 @@ struct LinuxContainerTests {
         #expect(rules.map(\.major) == [226, 226])
         #expect(rules.map(\.minor) == [0, 128])
         #expect(rules.map(\.access) == ["rwm", "rwm"])
+    }
+
+    @Test func guestDeviceDiscoveryDeduplicatesNodesAndMapsTheirGroups() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "guest-device-deduplication-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(
+                    arguments: ["sleep", "infinity"],
+                    user: .init(uid: 1000, gid: 1000, additionalGids: [2000])
+                ),
+                deviceCgroupRules: [
+                    LinuxDeviceCgroup(allow: true, type: "c", major: 226, minor: 128, access: "r")
+                ],
+                devices: [
+                    LinuxDevice(
+                        path: "/dev/dri/renderD128",
+                        type: "c",
+                        major: 226,
+                        minor: 128,
+                        fileMode: 0o600,
+                        uid: 0,
+                        gid: 0
+                    )
+                ],
+                guestDevices: [
+                    LinuxGuestDeviceRequest(path: "/dev/dri/renderD128"),
+                    LinuxGuestDeviceRequest(path: "/dev/dri/renderD128"),
+                ]
+            )
+        )
+
+        try await container.create()
+        let vm = try #require(manager.vm)
+        vm.agent.stats = [
+            "/dev/dri/renderD128": characterDeviceStat(major: 226, minor: 128, uid: 0, gid: 104, mode: 0o660)
+        ]
+
+        try await container.start()
+
+        let spec = try #require(vm.agent.createdProcessSpec)
+        #expect(spec.linux?.devices.map(\.path) == ["/dev/dri/renderD128"])
+        #expect(spec.linux?.devices.first?.gid == 104)
+        #expect(spec.linux?.resources?.devices.count == 1)
+        #expect(spec.linux?.resources?.devices.first?.access == "rwm")
+        #expect(spec.process?.user.additionalGids == [2000, 104])
     }
 
     @Test func optionalGuestDeviceNodeCanBeMissing() async throws {

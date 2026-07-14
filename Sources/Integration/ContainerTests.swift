@@ -857,7 +857,8 @@ extension IntegrationSuite {
         let bs = try await bootstrap(id)
         let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
             config.process.arguments = ["sleep", "infinity"]
-            config.graphics = .deviceOnly
+            config.graphics = .virtioDevice
+            config.guestDevices = [LinuxGuestDeviceRequest(path: "/dev/dri/renderD128")]
             config.bootLog = bs.bootLog
         }
 
@@ -872,18 +873,12 @@ extension IntegrationSuite {
                 cat /sys/bus/virtio/devices/*/modalias 2>/dev/null | tee /tmp/virtio-modalias
                 grep -q 'virtio:d00000010v00001AF4' /tmp/virtio-modalias
                 echo '== drm sysfs =='
-                if [ -e /sys/class/drm/card0 ]; then
-                    ls -1 /sys/class/drm
-                    if [ -e /sys/class/drm/card0/device/uevent ]; then
-                        cat /sys/class/drm/card0/device/uevent
-                    fi
-                    echo '== dev dri =='
-                    test -c /dev/dri/card0
-                    ls -l /dev/dri
-                else
-                    echo 'DRM devices are not exposed by this guest kernel'
-                    zcat /proc/config.gz 2>/dev/null | grep -E 'CONFIG_DRM|CONFIG_DRM_VIRTIO_GPU' || true
-                fi
+                ls -1 /sys/class/drm
+                echo '== dev dri =='
+                test -c /dev/dri/renderD128
+                test -r /dev/dri/renderD128
+                test -w /dev/dri/renderD128
+                ls -l /dev/dri
                 echo '== virtio dmesg =='
                 dmesg | grep -i 'virtio\\|drm' | head -40 || true
                 """
@@ -906,8 +901,8 @@ extension IntegrationSuite {
             guard output.contains("virtio:d00000010v00001AF4") else {
                 throw IntegrationError.assert(msg: "expected virtio-gpu modalias output, got:\n\(output)")
             }
-            guard output.contains("card0") || output.contains("DRM devices are not exposed by this guest kernel") else {
-                throw IntegrationError.assert(msg: "expected DRM card0 or explicit kernel limitation output, got:\n\(output)")
+            guard output.contains("renderD128") else {
+                throw IntegrationError.assert(msg: "expected usable DRM render node output, got:\n\(output)")
             }
 
             try await container.kill(.kill)
@@ -918,6 +913,31 @@ extension IntegrationSuite {
             _ = try? await container.wait()
             try? await container.stop()
             throw error
+        }
+    }
+
+    func testContainerVirtioGraphicsDeviceAllowsNonRootRenderAccess() async throws {
+        let id = "test-container-virtio-graphics-non-root"
+        let bs = try await bootstrap(id)
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = [
+                "sh",
+                "-c",
+                "test -c /dev/dri/renderD128 && test -r /dev/dri/renderD128 && test -w /dev/dri/renderD128",
+            ]
+            config.process.user = .init(uid: 40000, gid: 40000)
+            config.graphics = .virtioDevice
+            config.guestDevices = [LinuxGuestDeviceRequest(path: "/dev/dri/renderD128")]
+            config.bootLog = bs.bootLog
+        }
+
+        try await container.create()
+        try await container.start()
+        let status = try await container.wait()
+        try await container.stop()
+
+        guard status.exitCode == 0 else {
+            throw IntegrationError.assert(msg: "non-root virtio-gpu render-node smoke test failed: \(status)")
         }
     }
 

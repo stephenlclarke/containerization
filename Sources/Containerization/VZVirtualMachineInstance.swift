@@ -87,21 +87,23 @@ public final class VZVirtualMachineInstance: Sendable {
         public var extensions: [any Sendable] = []
         /// Virtual graphics device configuration.
         public var graphics: GraphicsConfiguration
-        /// Enable virtio-gpu device.
+        /// Legacy virtio-gpu switch. Prefer ``graphics`` to avoid order-dependent configuration.
+        @available(*, deprecated, message: "Configure graphics directly with the graphics property.")
         public var graphicsDevice: Bool {
             get { self.graphics.isEnabled }
             set {
-                self.graphics = newValue ? .deviceOnly : .disabled
+                self.graphics = newValue ? .virtioDevice : .disabled
             }
         }
-        /// Enable graphical output (scanout) for the virtio-gpu device.
+        /// Legacy graphical-output switch. Prefer ``graphics`` to avoid order-dependent configuration.
+        @available(*, deprecated, message: "Configure graphics directly with the graphics property.")
         public var graphicsDisplay: Bool {
             get { self.graphics.hasDisplay }
             set {
                 if newValue {
                     self.graphics = .display()
                 } else if self.graphics.isEnabled {
-                    self.graphics = .deviceOnly
+                    self.graphics = .virtioDevice
                 } else {
                     self.graphics = .disabled
                 }
@@ -543,7 +545,7 @@ extension VZVirtualMachineInstance.Configuration {
             switch self.graphics {
             case .disabled:
                 preconditionFailure("disabled graphics configuration reached enabled path")
-            case .deviceOnly:
+            case .virtioDevice, .deviceOnly:
                 scanout = (1920, 1080)
             case .display(let widthInPixels, let heightInPixels):
                 scanout = (widthInPixels, heightInPixels)
