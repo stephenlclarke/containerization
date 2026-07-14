@@ -923,7 +923,7 @@ extension IntegrationSuite {
             config.process.arguments = [
                 "sh",
                 "-c",
-                "test -c /dev/dri/renderD128 && test -r /dev/dri/renderD128 && test -w /dev/dri/renderD128",
+                "test -c /dev/dri/renderD128 && dd if=/dev/dri/renderD128 of=/dev/null bs=1 count=0 2>/dev/null && dd if=/dev/null of=/dev/dri/renderD128 bs=1 count=0 2>/dev/null",
             ]
             config.process.user = .init(uid: 40000, gid: 40000)
             config.graphics = .virtioDevice

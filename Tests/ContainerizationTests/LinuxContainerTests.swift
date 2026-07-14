@@ -426,6 +426,32 @@ struct LinuxContainerTests {
         #expect(spec.process?.user.additionalGids == [2000, 104])
     }
 
+    @Test func duplicateGuestDeviceRequestsKeepTheRequiredContract() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "guest-device-required-deduplication-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(),
+                guestDevices: [
+                    LinuxGuestDeviceRequest(path: "/dev/dri/renderD128"),
+                    LinuxGuestDeviceRequest(path: "/dev/dri/renderD128", required: false),
+                ]
+            )
+        )
+
+        try await container.create()
+
+        do {
+            try await container.start()
+            Issue.record("expected missing required guest device error")
+        } catch let error as ContainerizationError {
+            #expect(error.code == .notFound)
+            #expect(error.message.contains("required guest device not found: /dev/dri/renderD128"))
+        }
+    }
+
     @Test func optionalGuestDeviceNodeCanBeMissing() async throws {
         let manager = RecordingVirtualMachineManager()
         let container = try LinuxContainer(

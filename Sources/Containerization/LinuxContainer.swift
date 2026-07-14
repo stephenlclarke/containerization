@@ -560,11 +560,25 @@ public final class LinuxContainer: Container, Sendable {
         var guestRequests: [LinuxGuestDeviceRequest] = []
         var guestRequestIndexes: [String: Int] = [:]
         for request in self.config.guestDevices {
-            if let index = guestRequestIndexes[request.path] {
-                guestRequests[index] = request
+            guard Self.isValidDeviceAccess(request.permissions) else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "invalid guest device permissions '\(request.permissions)' for \(request.path)"
+                )
+            }
+            var canonicalRequest = request
+            canonicalRequest.permissions = Self.canonicalDeviceAccess(request.permissions)
+            if let index = guestRequestIndexes[canonicalRequest.path] {
+                guard guestRequests[index].permissions == canonicalRequest.permissions else {
+                    throw ContainerizationError(
+                        .invalidArgument,
+                        message: "guest device path has conflicting permissions: \(canonicalRequest.path)"
+                    )
+                }
+                guestRequests[index].required = guestRequests[index].required || canonicalRequest.required
             } else {
-                guestRequestIndexes[request.path] = guestRequests.count
-                guestRequests.append(request)
+                guestRequestIndexes[canonicalRequest.path] = guestRequests.count
+                guestRequests.append(canonicalRequest)
             }
         }
         for request in guestRequests {
@@ -597,6 +611,7 @@ public final class LinuxContainer: Container, Sendable {
 
             if let deviceGID = resolved.device.gid,
                 var process = spec.process,
+                process.user.uid != 0,
                 process.user.gid != deviceGID,
                 !process.user.additionalGids.contains(deviceGID)
             {
@@ -670,6 +685,10 @@ public final class LinuxContainer: Container, Sendable {
         }
         let allowed: Set<Character> = ["r", "w", "m"]
         return Set(access).isSubset(of: allowed)
+    }
+
+    private static func canonicalDeviceAccess(_ access: String) -> String {
+        ["r", "w", "m"].filter(access.contains).joined()
     }
 
     private static func linuxMajor(_ device: UInt64) -> Int64 {
