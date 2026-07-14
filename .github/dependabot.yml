@@ -11,3 +11,51 @@ updates:
     commit-message:
       prefix: "ci"
     open-pull-requests-limit: 5
+
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      root-swift-packages:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(swift)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "swift"
+    directory: "/vminitd"
+    schedule:
+      interval: "weekly"
+    groups:
+      vminitd-swift-packages:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(swift)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "swift"
+    directory: "/examples/ctr-example"
+    schedule:
+      interval: "weekly"
+    groups:
+      ctr-example-swift-packages:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(swift)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "swift"
+    directory: "/examples/sandboxy"
+    schedule:
+      interval: "weekly"
+    groups:
+      sandboxy-swift-packages:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(swift)"
+    open-pull-requests-limit: 5
