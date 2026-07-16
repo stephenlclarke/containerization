@@ -77,6 +77,7 @@ public protocol VirtualMachineAgent: Sendable {
     // Networking
     func up(name: String, mtu: UInt32?) async throws
     func down(name: String) async throws
+    func rename(name: String, to newName: String) async throws
     func addressAdd(name: String, address: InterfaceAddress) async throws
     func routeAddLink(name: String, route: LinkRoute) async throws
     func routeAddDefault(name: String, route: DefaultRoute) async throws
@@ -91,6 +92,10 @@ public protocol VirtualMachineAgent: Sendable {
 }
 
 extension VirtualMachineAgent {
+    public func rename(name: String, to newName: String) async throws {
+        throw ContainerizationError(.unsupported, message: "rename interface")
+    }
+
     public func closeProcessStdin(id: String, containerID: String?) async throws {
         throw ContainerizationError(.unsupported, message: "closeProcessStdin")
     }

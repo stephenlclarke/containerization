@@ -387,6 +387,16 @@ extension Vminitd: VirtualMachineAgent {
         _ = try await client.ipLinkSet(request)
     }
 
+    /// Rename a network interface before configuring its addresses and routes.
+    public func rename(name: String, to newName: String) async throws {
+        let request = Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest.with {
+            $0.interface = name
+            $0.up = false
+            $0.newName = newName
+        }
+        _ = try await client.ipLinkSet(request)
+    }
+
     /// Get an environment variable from the sandbox's environment.
     public func getenv(key: String) async throws -> String {
         let response = try await client.getenv(

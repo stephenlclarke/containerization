@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ContainerizationError
 import ContainerizationExtras
 import Testing
 
@@ -36,6 +37,7 @@ struct InterfaceTests {
             macAddress: nil)
         #expect(i.ipv6Address == nil)
         #expect(i.ipv6Gateway == nil)
+        #expect(i.guestInterfaceName == nil)
         #expect(i.mtu == 1500)
     }
 
@@ -55,5 +57,40 @@ struct InterfaceTests {
             ipv4Gateway: try IPv4Address("10.0.0.1"))
         #expect(nat.ipv6Address == nil)
         #expect(nat.ipv6Gateway == nil)
+    }
+
+    @Test func natInterfaceStoresRequestedGuestInterfaceName() throws {
+        let nat = NATInterface(
+            ipv4Address: try CIDRv4("10.0.0.2/24"),
+            ipv4Gateway: try IPv4Address("10.0.0.1"),
+            guestInterfaceName: "backend0")
+
+        #expect(nat.guestInterfaceName == "backend0")
+    }
+
+    @Test func resolvesGuestInterfaceNames() throws {
+        let first = NATInterface(
+            ipv4Address: try CIDRv4("10.0.0.2/24"),
+            ipv4Gateway: try IPv4Address("10.0.0.1"),
+            guestInterfaceName: "frontend")
+        let second = NATInterface(
+            ipv4Address: try CIDRv4("10.0.1.2/24"),
+            ipv4Gateway: try IPv4Address("10.0.1.1"))
+
+        #expect(try resolveGuestInterfaceNames([first, second]) == ["frontend", "eth1"])
+    }
+
+    @Test func rejectsConflictingGuestInterfaceNames() throws {
+        let first = NATInterface(
+            ipv4Address: try CIDRv4("10.0.0.2/24"),
+            ipv4Gateway: try IPv4Address("10.0.0.1"),
+            guestInterfaceName: "eth1")
+        let second = NATInterface(
+            ipv4Address: try CIDRv4("10.0.1.2/24"),
+            ipv4Gateway: try IPv4Address("10.0.1.1"))
+
+        #expect(throws: ContainerizationError.self) {
+            try resolveGuestInterfaceNames([first, second])
+        }
     }
 }

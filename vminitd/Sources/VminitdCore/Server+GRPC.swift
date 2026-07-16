@@ -1335,13 +1335,15 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             metadata: [
                 "interface": "\(request.interface)",
                 "up": "\(request.up)",
+                "newName": request.hasNewName ? "\(request.newName)" : "<none>",
             ])
 
         do {
             let socket = try DefaultNetlinkSocket()
             let session = NetlinkSession(socket: socket, log: log)
             let mtuValue: UInt32? = request.hasMtu ? request.mtu : nil
-            try session.linkSet(interface: request.interface, up: request.up, mtu: mtuValue)
+            let newName: String? = request.hasNewName ? request.newName : nil
+            try session.linkSet(interface: request.interface, up: request.up, mtu: mtuValue, newName: newName)
         } catch {
             log.error(
                 "ipLinkSet",
