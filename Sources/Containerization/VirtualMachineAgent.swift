@@ -79,6 +79,7 @@ public protocol VirtualMachineAgent: Sendable {
     func down(name: String) async throws
     func rename(name: String, to newName: String) async throws
     func addressAdd(name: String, address: InterfaceAddress) async throws
+    func addressAdd(name: String, address: CIDR) async throws
     func routeAddLink(name: String, route: LinkRoute) async throws
     func routeAddDefault(name: String, route: DefaultRoute) async throws
     func configureDNS(config: DNS, location: String) async throws
@@ -92,6 +93,19 @@ public protocol VirtualMachineAgent: Sendable {
 }
 
 extension VirtualMachineAgent {
+    /// Add a single IPv4 or IPv6 address to a network interface.
+    public func addressAdd(name: String, address: CIDR) async throws {
+        switch address {
+        case .v4(let ipv4Address, let prefix):
+            try await addressAdd(
+                name: name,
+                address: .init(ipv4Address: try CIDRv4(ipv4Address, prefix: prefix))
+            )
+        case .v6:
+            throw ContainerizationError(.unsupported, message: "adding IPv6-only interface addresses")
+        }
+    }
+
     public func rename(name: String, to newName: String) async throws {
         throw ContainerizationError(.unsupported, message: "rename interface")
     }

@@ -36,6 +36,7 @@ public struct TAPInterface: CHInterface, Interface, Sendable {
     public let guestInterfaceName: String?
     public let ipv4Address: CIDRv4
     public let ipv4Gateway: IPv4Address?
+    public let additionalIPAddresses: [CIDR]
     public let macAddress: MACAddress?
     public let mtu: UInt32
 
@@ -45,12 +46,14 @@ public struct TAPInterface: CHInterface, Interface, Sendable {
         ipv4Gateway: IPv4Address? = nil,
         macAddress: MACAddress? = nil,
         mtu: UInt32 = 1500,
-        guestInterfaceName: String? = nil
+        guestInterfaceName: String? = nil,
+        additionalIPAddresses: [CIDR] = []
     ) {
         self.tapName = tapName
         self.guestInterfaceName = guestInterfaceName
         self.ipv4Address = ipv4Address
         self.ipv4Gateway = ipv4Gateway
+        self.additionalIPAddresses = additionalIPAddresses
         self.macAddress = macAddress
         self.mtu = mtu
     }

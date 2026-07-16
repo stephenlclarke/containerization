@@ -461,6 +461,20 @@ extension Vminitd {
             })
     }
 
+    /// Add a single IPv4 or IPv6 address to the sandbox's network interfaces.
+    public func addressAdd(name: String, address: CIDR) async throws {
+        _ = try await client.ipAddrAdd(
+            .with {
+                $0.interface = name
+                switch address {
+                case .v4:
+                    $0.ipv4Address = address.description
+                case .v6:
+                    $0.ipv6Address = address.description
+                }
+            })
+    }
+
     /// Add a link-scoped route in the sandbox's environment, used to install an
     /// on-link host route (a /32 for v4, /128 for v6) to a gateway that lives
     /// outside the interface's subnet so the kernel will accept the default route.

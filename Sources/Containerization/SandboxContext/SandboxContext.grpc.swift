@@ -940,7 +940,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Add an IPv4 address to a network interface.
+        /// > Add an IPv4 or IPv6 address to a network interface.
         ///
         /// - Parameters:
         ///   - request: A streaming request of `Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest` messages.
@@ -1514,7 +1514,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Add an IPv4 address to a network interface.
+        /// > Add an IPv4 or IPv6 address to a network interface.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest` message.
@@ -2087,7 +2087,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Add an IPv4 address to a network interface.
+        /// > Add an IPv4 or IPv6 address to a network interface.
         ///
         /// - Parameters:
         ///   - request: A `Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest` message.
@@ -3887,7 +3887,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Add an IPv4 address to a network interface.
+        /// > Add an IPv4 or IPv6 address to a network interface.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest` message.
@@ -4886,7 +4886,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > Add an IPv4 address to a network interface.
+        /// > Add an IPv4 or IPv6 address to a network interface.
         ///
         /// - Parameters:
         ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest` message.
@@ -5826,7 +5826,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Add an IPv4 address to a network interface.
+    /// > Add an IPv4 or IPv6 address to a network interface.
     ///
     /// - Parameters:
     ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest` message.
@@ -6826,7 +6826,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > Add an IPv4 address to a network interface.
+    /// > Add an IPv4 or IPv6 address to a network interface.
     ///
     /// - Parameters:
     ///   - message: request message to send.
