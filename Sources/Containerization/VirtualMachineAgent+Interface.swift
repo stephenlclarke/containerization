@@ -73,6 +73,9 @@ extension VirtualMachineAgent {
             name: name,
             address: .init(ipv4Address: interface.ipv4Address, ipv6Address: interface.ipv6Address)
         )
+        for address in interface.additionalIPAddresses {
+            try await addressAdd(name: name, address: address)
+        }
         try await up(name: name, mtu: interface.mtu)
 
         guard setDefaultRoute else { return }

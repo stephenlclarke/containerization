@@ -1367,11 +1367,17 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 "ipv6Address": "\(request.hasIpv6Address ? request.ipv6Address : "<none>")",
             ])
 
+        guard !request.ipv4Address.isEmpty || request.hasIpv6Address else {
+            throw RPCError(code: .invalidArgument, message: "ipAddrAdd requires an IPv4 or IPv6 address")
+        }
+
         do {
             let socket = try DefaultNetlinkSocket()
             let session = NetlinkSession(socket: socket, log: log)
-            let ipv4Address = try CIDRv4(request.ipv4Address)
-            try session.addressAdd(interface: request.interface, ipv4Address: ipv4Address)
+            if !request.ipv4Address.isEmpty {
+                let ipv4Address = try CIDRv4(request.ipv4Address)
+                try session.addressAdd(interface: request.interface, ipv4Address: ipv4Address)
+            }
             if request.hasIpv6Address {
                 // Suppress SLAAC on this interface before adding the static
                 // address: the host would provide a static IPv6 config, this

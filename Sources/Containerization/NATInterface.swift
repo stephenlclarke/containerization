@@ -22,6 +22,7 @@ public struct NATInterface: Interface {
     public var ipv4Gateway: IPv4Address?
     public var ipv6Address: CIDRv6?
     public var ipv6Gateway: IPv6Address?
+    public var additionalIPAddresses: [CIDR]
     public var macAddress: MACAddress?
     public var mtu: UInt32
 
@@ -32,13 +33,15 @@ public struct NATInterface: Interface {
         ipv6Gateway: IPv6Address? = nil,
         macAddress: MACAddress? = nil,
         mtu: UInt32 = 1500,
-        guestInterfaceName: String? = nil
+        guestInterfaceName: String? = nil,
+        additionalIPAddresses: [CIDR] = []
     ) {
         self.guestInterfaceName = guestInterfaceName
         self.ipv4Address = ipv4Address
         self.ipv4Gateway = ipv4Gateway
         self.ipv6Address = ipv6Address
         self.ipv6Gateway = ipv6Gateway
+        self.additionalIPAddresses = additionalIPAddresses
         self.macAddress = macAddress
         self.mtu = mtu
     }

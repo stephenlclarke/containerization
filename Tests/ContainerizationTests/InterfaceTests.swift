@@ -38,6 +38,7 @@ struct InterfaceTests {
         #expect(i.ipv6Address == nil)
         #expect(i.ipv6Gateway == nil)
         #expect(i.guestInterfaceName == nil)
+        #expect(i.additionalIPAddresses == [])
         #expect(i.mtu == 1500)
     }
 
@@ -66,6 +67,23 @@ struct InterfaceTests {
             guestInterfaceName: "backend0")
 
         #expect(nat.guestInterfaceName == "backend0")
+    }
+
+    @Test func natInterfaceStoresAdditionalIPAddresses() throws {
+        let nat = NATInterface(
+            ipv4Address: try CIDRv4("10.0.0.2/24"),
+            ipv4Gateway: try IPv4Address("10.0.0.1"),
+            additionalIPAddresses: [
+                try CIDR("198.51.100.8/32"),
+                try CIDR("2001:db8::8/128"),
+            ]
+        )
+
+        #expect(
+            nat.additionalIPAddresses == [
+                try CIDR("198.51.100.8/32"),
+                try CIDR("2001:db8::8/128"),
+            ])
     }
 
     @Test func resolvesGuestInterfaceNames() throws {

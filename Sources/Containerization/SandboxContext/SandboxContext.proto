@@ -61,7 +61,7 @@ service SandboxContext {
 
   // Set the link state of a network interface.
   rpc IpLinkSet(IpLinkSetRequest) returns (IpLinkSetResponse);
-  // Add an IPv4 address to a network interface.
+  // Add an IPv4 or IPv6 address to a network interface.
   rpc IpAddrAdd(IpAddrAddRequest) returns (IpAddrAddResponse);
   // Add an IP route for a network interface.
   rpc IpRouteAddLink(IpRouteAddLinkRequest) returns (IpRouteAddLinkResponse);

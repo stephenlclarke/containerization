@@ -37,6 +37,11 @@ public protocol Interface: Sendable {
     /// The IPv6 gateway address for the default route, or nil for no IPv6 default route.
     var ipv6Gateway: IPv6Address? { get }
 
+    /// Additional IPv4 or IPv6 addresses configured on the interface.
+    ///
+    /// These addresses do not affect the interface's default route.
+    var additionalIPAddresses: [CIDR] { get }
+
     /// The interface MAC address, or nil to auto-configure the address.
     var macAddress: MACAddress? { get }
 
@@ -49,4 +54,5 @@ extension Interface {
     public var mtu: UInt32 { 1500 }
     public var ipv6Address: CIDRv6? { nil }
     public var ipv6Gateway: IPv6Address? { nil }
+    public var additionalIPAddresses: [CIDR] { [] }
 }
