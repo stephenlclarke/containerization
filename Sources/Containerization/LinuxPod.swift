@@ -762,11 +762,13 @@ extension LinuxPod {
                     // 2. Online the adapter
                     // 3. For the first interface, add the default route
                     var defaultRouteSet = false
+                    let interfaceNames = try resolveGuestInterfaceNames(self.interfaces)
                     for (index, i) in self.interfaces.enumerated() {
-                        let name = "eth\(index)"
+                        let name = interfaceNames[index]
                         try await agent.setupInterface(
                             i,
                             name: name,
+                            initialName: "eth\(index)",
                             setDefaultRoute: !defaultRouteSet,
                             logger: self.logger
                         )

@@ -67,7 +67,7 @@ public struct NetlinkSession {
     /// - Parameters:
     ///   - interface: The name of the interface.
     ///   - up: The value to set the interface state to.
-    public func linkSet(interface: String, up: Bool, mtu: UInt32? = nil) throws {
+    public func linkSet(interface: String, up: Bool, mtu: UInt32? = nil, newName: String? = nil) throws {
         // ip link set dev [interface] [up|down]
         let interfaceIndex = try getInterfaceIndex(interface)
         // build the attribute only when mtu is supplied
@@ -77,7 +77,14 @@ public struct NetlinkSession {
                 len: UInt16(RTAttribute.size + MemoryLayout<UInt32>.size),
                 type: LinkAttributeType.IFLA_MTU)
             : nil
-        let requestSize = NetlinkMessageHeader.size + InterfaceInfo.size + (attr?.paddedLen ?? 0)
+        let newNameBytes = newName.map { Array($0.utf8) + [0] }
+        let newNameAttribute = newNameBytes.map {
+            RTAttribute(
+                len: UInt16(RTAttribute.size + $0.count),
+                type: LinkAttributeType.IFLA_IFNAME
+            )
+        }
+        let requestSize = NetlinkMessageHeader.size + InterfaceInfo.size + (attr?.paddedLen ?? 0) + (newNameAttribute?.paddedLen ?? 0)
         var requestBuffer = [UInt8](repeating: 0, count: requestSize)
         var requestOffset = 0
 
@@ -105,6 +112,14 @@ public struct NetlinkSession {
                 throw BindError.sendMarshalFailure(type: "RTAttribute", field: "IFLA_MTU")
             }
             requestOffset = newRequestOffset
+        }
+
+        if let newNameAttribute, let newNameBytes {
+            requestOffset = try newNameAttribute.appendBuffer(&requestBuffer, offset: requestOffset)
+            guard let newRequestOffset = requestBuffer.copyIn(buffer: newNameBytes, offset: requestOffset) else {
+                throw BindError.sendMarshalFailure(type: "RTAttribute", field: "IFLA_IFNAME")
+            }
+            requestOffset = newRequestOffset + (newNameAttribute.paddedLen - RTAttribute.size - newNameBytes.count)
         }
 
         guard requestOffset == requestSize else {

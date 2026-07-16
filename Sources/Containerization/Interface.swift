@@ -18,6 +18,11 @@ import ContainerizationExtras
 
 /// A network interface.
 public protocol Interface: Sendable {
+    /// Optional name for the network interface inside the guest.
+    ///
+    /// When nil, the runtime uses its stable `ethN` device name.
+    var guestInterfaceName: String? { get }
+
     /// The interface IPv4 address and subnet prefix length, as a CIDR address.
     /// Example: `192.168.64.3/24`
     var ipv4Address: CIDRv4 { get }
@@ -40,6 +45,7 @@ public protocol Interface: Sendable {
 }
 
 extension Interface {
+    public var guestInterfaceName: String? { nil }
     public var mtu: UInt32 { 1500 }
     public var ipv6Address: CIDRv6? { nil }
     public var ipv6Gateway: IPv6Address? { nil }

@@ -26,6 +26,7 @@ import Synchronization
 /// container/virtual machine.
 @available(macOS 26, *)
 public final class NATNetworkInterface: Interface, Sendable {
+    public let guestInterfaceName: String?
     public let ipv4Address: CIDRv4
     public let ipv4Gateway: IPv4Address?
     public let macAddress: MACAddress?
@@ -41,8 +42,10 @@ public final class NATNetworkInterface: Interface, Sendable {
         ipv4Gateway: IPv4Address?,
         reference: sending vmnet_network_ref,
         macAddress: MACAddress? = nil,
-        mtu: UInt32 = 1500
+        mtu: UInt32 = 1500,
+        guestInterfaceName: String? = nil
     ) {
+        self.guestInterfaceName = guestInterfaceName
         self.ipv4Address = ipv4Address
         self.ipv4Gateway = ipv4Gateway
         self.macAddress = macAddress
@@ -55,8 +58,10 @@ public final class NATNetworkInterface: Interface, Sendable {
         ipv4Address: CIDRv4,
         ipv4Gateway: IPv4Address?,
         macAddress: MACAddress? = nil,
-        mtu: UInt32 = 1500
+        mtu: UInt32 = 1500,
+        guestInterfaceName: String? = nil
     ) {
+        self.guestInterfaceName = guestInterfaceName
         self.ipv4Address = ipv4Address
         self.ipv4Gateway = ipv4Gateway
         self.macAddress = macAddress

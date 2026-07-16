@@ -104,6 +104,46 @@ struct NetlinkSessionTest {
         #expect(expectedUpRequest == mockSocket.requests[1].hexEncodedString())
     }
 
+    @Test func testNetworkLinkRename() throws {
+        let mockSocket = try MockNetlinkSocket()
+        mockSocket.pid = 0xc00c_c00c
+
+        let expectedLookupRequest =
+            "3400000012000100000000000cc00cc0"
+            + "110000000000000001000000ffffffff"
+            + "08001d00090000000c0003006574683000000000"
+        mockSocket.responses.append(
+            [UInt8](
+                hex:
+                    "2000000010000000000000000cc00cc0"
+                    + "00000100020000004310010000000000"
+            )
+        )
+
+        let expectedRenameRequest =
+            "3000000010000500000000000cc00cc0"
+            + "110000000200000000000000ffffffff"
+            + "0d0003006261636b656e643000000000"
+        mockSocket.responses.append(
+            [UInt8](
+                hex:
+                    "2400000002000001000000000cc00cc0"
+                    + "00000000200000001000050000000000"
+                    + "0c000000"
+            )
+        )
+
+        let session = NetlinkSession(socket: mockSocket)
+        try session.linkSet(interface: "eth0", up: false, newName: "backend0")
+
+        #expect(mockSocket.requests.count == 2)
+        #expect(mockSocket.responseIndex == 2)
+        mockSocket.requests[0][8..<12] = [0, 0, 0, 0]
+        #expect(expectedLookupRequest == mockSocket.requests[0].hexEncodedString())
+        mockSocket.requests[1][8..<12] = [0, 0, 0, 0]
+        #expect(expectedRenameRequest == mockSocket.requests[1].hexEncodedString())
+    }
+
     @Test func testNetworkLinkUpLoopback() throws {
         let mockSocket = try MockNetlinkSocket()
         mockSocket.pid = 0xc00c_c00c

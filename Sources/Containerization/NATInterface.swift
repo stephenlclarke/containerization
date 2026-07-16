@@ -17,6 +17,7 @@
 import ContainerizationExtras
 
 public struct NATInterface: Interface {
+    public var guestInterfaceName: String?
     public var ipv4Address: CIDRv4
     public var ipv4Gateway: IPv4Address?
     public var ipv6Address: CIDRv6?
@@ -30,8 +31,10 @@ public struct NATInterface: Interface {
         ipv6Address: CIDRv6? = nil,
         ipv6Gateway: IPv6Address? = nil,
         macAddress: MACAddress? = nil,
-        mtu: UInt32 = 1500
+        mtu: UInt32 = 1500,
+        guestInterfaceName: String? = nil
     ) {
+        self.guestInterfaceName = guestInterfaceName
         self.ipv4Address = ipv4Address
         self.ipv4Gateway = ipv4Gateway
         self.ipv6Address = ipv6Address

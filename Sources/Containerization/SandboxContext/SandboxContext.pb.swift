@@ -1230,11 +1230,21 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: Sendable {
   /// Clears the value of `mtu`. Subsequent reads from it will return its default value.
   public mutating func clearMtu() {self._mtu = nil}
 
+  public var newName: String {
+    get {_newName ?? String()}
+    set {_newName = newValue}
+  }
+  /// Returns true if `newName` has been explicitly set.
+  public var hasNewName: Bool {self._newName != nil}
+  /// Clears the value of `newName`. Subsequent reads from it will return its default value.
+  public mutating func clearNewName() {self._newName = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _mtu: UInt32? = nil
+  fileprivate var _newName: String? = nil
 }
 
 public struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetResponse: Sendable {
@@ -3696,7 +3706,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse: Swi
 
 extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpLinkSetRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}up\0\u{1}mtu\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}up\0\u{1}mtu\0\u{3}new_name\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -3707,6 +3717,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: SwiftProtobuf.
       case 1: try { try decoder.decodeSingularStringField(value: &self.interface) }()
       case 2: try { try decoder.decodeSingularBoolField(value: &self.up) }()
       case 3: try { try decoder.decodeSingularUInt32Field(value: &self._mtu) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self._newName) }()
       default: break
       }
     }
@@ -3726,6 +3737,9 @@ extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: SwiftProtobuf.
     try { if let v = self._mtu {
       try visitor.visitSingularUInt32Field(value: v, fieldNumber: 3)
     } }()
+    try { if let v = self._newName {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 4)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -3733,6 +3747,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: SwiftProtobuf.
     if lhs.interface != rhs.interface {return false}
     if lhs.up != rhs.up {return false}
     if lhs._mtu != rhs._mtu {return false}
+    if lhs._newName != rhs._newName {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
