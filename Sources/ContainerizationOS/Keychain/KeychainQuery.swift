@@ -29,6 +29,26 @@ public struct KeychainQueryResult {
     public var createdDate: Date
 }
 
+/// Holds an opaque generic-password value and its keychain metadata.
+public struct KeychainGenericPasswordResult {
+    /// Bytes stored in the keychain item.
+    public var data: Data
+    /// Date the item was last modified.
+    public var modifiedDate: Date
+    /// Date the item was created.
+    public var createdDate: Date
+}
+
+/// Metadata for a generic-password item without exposing its value.
+public struct KeychainGenericPasswordInfo {
+    /// The caller-defined account that identifies the item.
+    public var account: String
+    /// Date the item was last modified.
+    public var modifiedDate: Date
+    /// Date the item was created.
+    public var createdDate: Date
+}
+
 /// Type that facilitates interacting with the macOS keychain.
 public struct KeychainQuery {
     public init() {}
@@ -46,7 +66,7 @@ public struct KeychainQuery {
         accessGroup: String? = nil,
         hostname: String,
         username: String,
-        password: String
+        password: String,
     ) throws {
         if try exists(securityDomain: securityDomain, accessGroup: accessGroup, hostname: hostname) {
             try delete(securityDomain: securityDomain, accessGroup: accessGroup, hostname: hostname)
@@ -142,7 +162,7 @@ public struct KeychainQuery {
             username: username,
             password: password,
             modifiedDate: modifiedDate,
-            createdDate: createdDate
+            createdDate: createdDate,
         )
     }
 
@@ -192,7 +212,7 @@ public struct KeychainQuery {
                 hostname: hostname,
                 username: username,
                 modifiedDate: modifiedDate,
-                createdDate: createdDate
+                createdDate: createdDate,
             )
         }
     }
@@ -209,6 +229,163 @@ public struct KeychainQuery {
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrSecurityDomain as String: securityDomain,
             kSecAttrServer as String: hostname,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: false,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        return try isQuerySuccessful(status)
+    }
+
+    /// Saves an opaque generic-password value under a service and account.
+    ///
+    /// Existing values with the same service and account are replaced. Values
+    /// are kept on the local keychain and are available after first unlock.
+    public func saveGenericPassword(
+        service: String,
+        accessGroup: String? = nil,
+        account: String,
+        data: Data,
+    ) throws {
+        if try genericPasswordExists(service: service, accessGroup: accessGroup, account: account) {
+            try deleteGenericPassword(service: service, accessGroup: accessGroup, account: account)
+        }
+
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrSynchronizable as String: false,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else { throw Self.Error.unhandledError(status: status) }
+    }
+
+    /// Deletes a generic-password value identified by service and account.
+    public func deleteGenericPassword(
+        service: String,
+        accessGroup: String? = nil,
+        account: String,
+    ) throws {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw Self.Error.unhandledError(status: status)
+        }
+    }
+
+    /// Retrieves opaque generic-password bytes and keychain metadata.
+    public func getGenericPassword(
+        service: String,
+        accessGroup: String? = nil,
+        account: String,
+    ) throws -> KeychainGenericPasswordResult? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: true,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard try isQuerySuccessful(status) else {
+            return nil
+        }
+
+        guard let fetched = item as? [String: Any] else {
+            throw Self.Error.unexpectedDataFetched
+        }
+        guard let data = fetched[kSecValueData as String] as? Data else {
+            throw Self.Error.keyNotPresent(key: kSecValueData as String)
+        }
+        guard let modifiedDate = fetched[kSecAttrModificationDate as String] as? Date else {
+            throw Self.Error.keyNotPresent(key: kSecAttrModificationDate as String)
+        }
+        guard let createdDate = fetched[kSecAttrCreationDate as String] as? Date else {
+            throw Self.Error.keyNotPresent(key: kSecAttrCreationDate as String)
+        }
+        return KeychainGenericPasswordResult(
+            data: data,
+            modifiedDate: modifiedDate,
+            createdDate: createdDate,
+        )
+    }
+
+    /// Lists generic-password metadata for one service without returning bytes.
+    public func listGenericPasswords(
+        service: String,
+        accessGroup: String? = nil,
+    ) throws -> [KeychainGenericPasswordInfo] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: false,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+        ]
+        if let accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard try isQuerySuccessful(status) else {
+            return []
+        }
+
+        guard let fetched = item as? [[String: Any]] else {
+            throw Self.Error.unexpectedDataFetched
+        }
+        return try fetched.map { item in
+            guard let account = item[kSecAttrAccount as String] as? String else {
+                throw Self.Error.keyNotPresent(key: kSecAttrAccount as String)
+            }
+            guard let modifiedDate = item[kSecAttrModificationDate as String] as? Date else {
+                throw Self.Error.keyNotPresent(key: kSecAttrModificationDate as String)
+            }
+            guard let createdDate = item[kSecAttrCreationDate as String] as? Date else {
+                throw Self.Error.keyNotPresent(key: kSecAttrCreationDate as String)
+            }
+            return KeychainGenericPasswordInfo(
+                account: account,
+                modifiedDate: modifiedDate,
+                createdDate: createdDate,
+            )
+        }
+    }
+
+    /// Returns whether a generic-password item exists for service and account.
+    public func genericPasswordExists(
+        service: String,
+        accessGroup: String? = nil,
+        account: String,
+    ) throws -> Bool {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
             kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: false,

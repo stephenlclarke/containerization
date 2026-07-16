@@ -332,6 +332,7 @@ struct LinuxContainerTests {
         #expect(!configuration.graphics.hasDisplay)
     }
 
+    @available(*, deprecated)
     @Test func legacyGraphicsDeviceOnlyCaseRemainsUsable() {
         var configuration = LinuxContainer.Configuration()
         configuration.graphics = .deviceOnly
