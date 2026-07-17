@@ -969,6 +969,7 @@ extension LinuxContainer {
                             vmMounts: containerMounts,
                             agent: agent
                         )
+                        try await ctx.materializeOwnedFiles(containerID: self.id, agent: agent)
                         fileMountContextHolder.withLock { $0 = ctx }
                     }
 

@@ -782,6 +782,14 @@ public struct Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: Sendable {
   /// Clears the value of `flags`. Subsequent reads from it will return its default value.
   public mutating func clearFlags() {self._flags = nil}
 
+  public var setOwnerUid: Bool = false
+
+  public var ownerUid: UInt32 = 0
+
+  public var setOwnerGid: Bool = false
+
+  public var ownerGid: UInt32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public struct WriteFileFlags: Sendable {
@@ -2986,7 +2994,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MkdirResponse: SwiftProtobuf.Mes
 
 extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WriteFileRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}data\0\u{1}mode\0\u{1}flags\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}data\0\u{1}mode\0\u{1}flags\0\u{3}set_owner_uid\0\u{3}owner_uid\0\u{3}set_owner_gid\0\u{3}owner_gid\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2998,6 +3006,10 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: SwiftProtobuf.
       case 2: try { try decoder.decodeSingularBytesField(value: &self.data) }()
       case 3: try { try decoder.decodeSingularUInt32Field(value: &self.mode) }()
       case 4: try { try decoder.decodeSingularMessageField(value: &self._flags) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.setOwnerUid) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.ownerUid) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.setOwnerGid) }()
+      case 8: try { try decoder.decodeSingularUInt32Field(value: &self.ownerGid) }()
       default: break
       }
     }
@@ -3020,6 +3032,18 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: SwiftProtobuf.
     try { if let v = self._flags {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
     } }()
+    if self.setOwnerUid != false {
+      try visitor.visitSingularBoolField(value: self.setOwnerUid, fieldNumber: 5)
+    }
+    if self.ownerUid != 0 {
+      try visitor.visitSingularUInt32Field(value: self.ownerUid, fieldNumber: 6)
+    }
+    if self.setOwnerGid != false {
+      try visitor.visitSingularBoolField(value: self.setOwnerGid, fieldNumber: 7)
+    }
+    if self.ownerGid != 0 {
+      try visitor.visitSingularUInt32Field(value: self.ownerGid, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -3028,6 +3052,10 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: SwiftProtobuf.
     if lhs.data != rhs.data {return false}
     if lhs.mode != rhs.mode {return false}
     if lhs._flags != rhs._flags {return false}
+    if lhs.setOwnerUid != rhs.setOwnerUid {return false}
+    if lhs.ownerUid != rhs.ownerUid {return false}
+    if lhs.setOwnerGid != rhs.setOwnerGid {return false}
+    if lhs.ownerGid != rhs.ownerGid {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

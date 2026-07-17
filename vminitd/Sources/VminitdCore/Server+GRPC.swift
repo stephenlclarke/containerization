@@ -350,6 +350,24 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
             let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
             try fh.write(contentsOf: request.data)
+            if request.setOwnerUid || request.setOwnerGid {
+                let uid = request.setOwnerUid ? uid_t(request.ownerUid) : uid_t.max
+                let gid = request.setOwnerGid ? gid_t(request.ownerGid) : gid_t.max
+                guard fchown(fd, uid, gid) == 0 else {
+                    throw RPCError(
+                        code: .internalError,
+                        message: "writeFile: failed to set file ownership",
+                        cause: swiftErrno("fchown")
+                    )
+                }
+                guard fchmod(fd, mode) == 0 else {
+                    throw RPCError(
+                        code: .internalError,
+                        message: "writeFile: failed to restore file mode",
+                        cause: swiftErrno("fchmod")
+                    )
+                }
+            }
         } catch {
             log.error(
                 "writeFile",

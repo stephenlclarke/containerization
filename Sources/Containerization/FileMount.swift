@@ -39,8 +39,12 @@ struct FileMountContext: Sendable {
         let tag: String
         /// Mount options from the original mount
         let options: [String]
+        /// Optional guest ownership for a private create-time copy.
+        let ownership: FileMountOwnership?
         /// Where we mounted the share in the guest (set after mountHoldingDirectories)
         var guestHoldingPath: String?
+        /// Guest-private file written during container creation when ownership is requested.
+        var guestMaterializedPath: String?
     }
 
     /// Prepared file mounts for this context
@@ -63,7 +67,10 @@ struct FileMountContext: Sendable {
     /// These should be filtered out from OCI spec mounts since we mount them
     /// separately under /run.
     var holdingDirectoryTags: Set<String> {
-        Set(preparedMounts.map { $0.tag })
+        Set(
+            preparedMounts.compactMap { prepared in
+                prepared.ownership == nil ? prepared.tag : nil
+            })
     }
 }
 
@@ -88,6 +95,7 @@ extension FileMountContext {
                 transformed.append(mount)
                 continue
             }
+            let ownership = mount.fileOwnership?.requestsOwnershipChange == true ? mount.fileOwnership : nil
 
             // Stat the source to see if it's a file
             let fm = FileManager.default
@@ -99,16 +107,26 @@ extension FileMountContext {
             }
 
             if isDirectory.boolValue {
+                if ownership != nil {
+                    throw ContainerizationError(
+                        .invalidArgument,
+                        message: "file ownership overrides require a regular-file mount source"
+                    )
+                }
                 // It's a directory, pass through unchanged
                 transformed.append(mount)
                 continue
             }
 
             // It's a file, so prepare it.
-            let prepared = try context.prepareFileMount(mount: mount, runtimeOptions: runtimeOpts)
+            let prepared = try context.prepareFileMount(
+                mount: mount,
+                runtimeOptions: runtimeOpts,
+                ownership: ownership
+            )
 
             // Only add the directory share once per unique parent directory.
-            if !sharedParentTags.contains(prepared.tag) {
+            if prepared.ownership == nil, !sharedParentTags.contains(prepared.tag) {
                 sharedParentTags.insert(prepared.tag)
                 // The destination here is unused. We mount the share ourselves
                 // to a location under /run in mountHoldingDirectories.
@@ -128,7 +146,8 @@ extension FileMountContext {
 
     private mutating func prepareFileMount(
         mount: Mount,
-        runtimeOptions: [String]
+        runtimeOptions: [String],
+        ownership: FileMountOwnership?
     ) throws -> PreparedMount {
         let resolvedSource = URL(fileURLWithPath: mount.source).resolvingSymlinksInPath()
         let filename = resolvedSource.lastPathComponent
@@ -142,7 +161,9 @@ extension FileMountContext {
             parentDirectory: parentDirectory,
             tag: tag,
             options: mount.options,
-            guestHoldingPath: nil
+            ownership: ownership,
+            guestHoldingPath: nil,
+            guestMaterializedPath: nil
         )
 
         preparedMounts.append(prepared)
@@ -164,6 +185,10 @@ extension FileMountContext {
         for i in preparedMounts.indices {
             let prepared = preparedMounts[i]
 
+            guard prepared.ownership == nil else {
+                continue
+            }
+
             // Verify the attached filesystem exists
             guard
                 vmMounts.first(where: {
@@ -184,16 +209,58 @@ extension FileMountContext {
 }
 
 extension FileMountContext {
+    /// Materializes owned file mounts inside the guest without changing host files.
+    mutating func materializeOwnedFiles(
+        containerID: String,
+        agent: any VirtualMachineAgent
+    ) async throws {
+        for index in preparedMounts.indices {
+            let prepared = preparedMounts[index]
+            guard let ownership = prepared.ownership else {
+                continue
+            }
+
+            let source = URL(fileURLWithPath: prepared.hostFilePath).resolvingSymlinksInPath()
+            let data = try Data(contentsOf: source, options: .mappedIfSafe)
+            let permissions =
+                try FileManager.default.attributesOfItem(atPath: source.path)[.posixPermissions]
+                .flatMap { $0 as? NSNumber }
+                .map { UInt32($0.uintValue) & 0o777 }
+                ?? 0o644
+            let path = "/run/container/\(containerID)/file-mounts/\(index)"
+            var flags = WriteFileFlags()
+            flags.createParentDirectories = true
+            flags.create = true
+            try await agent.writeFile(
+                path: path,
+                data: data,
+                flags: flags,
+                mode: permissions,
+                ownerUID: ownership.uid,
+                ownerGID: ownership.gid
+            )
+            preparedMounts[index].guestMaterializedPath = path
+        }
+    }
+
     /// Get the bind mounts to append to the OCI spec.
     func ociBindMounts() -> [ContainerizationOCI.Mount] {
         preparedMounts.compactMap { prepared in
-            guard let guestPath = prepared.guestHoldingPath else {
+            let source: String?
+            if let guestMaterializedPath = prepared.guestMaterializedPath {
+                source = guestMaterializedPath
+            } else if let guestHoldingPath = prepared.guestHoldingPath {
+                source = "\(guestHoldingPath)/\(prepared.filename)"
+            } else {
+                source = nil
+            }
+            guard let source else {
                 return nil
             }
 
             return ContainerizationOCI.Mount(
                 type: "none",
-                source: "\(guestPath)/\(prepared.filename)",
+                source: source,
                 destination: prepared.containerDestination,
                 options: ["bind"] + prepared.options
             )

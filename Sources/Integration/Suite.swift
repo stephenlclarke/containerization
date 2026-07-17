@@ -578,6 +578,7 @@ struct IntegrationSuite: AsyncParsableCommand {
             // Mounts / virtiofs shares (cross-platform: VZ on macOS, virtiofsd on Linux/CH).
             Test("container mount", testMounts),
             Test("container single file mount", testSingleFileMount),
+            Test("container single file mount with ownership", testSingleFileMountWithOwnership),
             Test("container single file mount read-only", testSingleFileMountReadOnly),
             Test("container single file mount write-back", testSingleFileMountWriteBack),
             Test("container single file mount symlink", testSingleFileMountSymlink),

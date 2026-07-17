@@ -3508,6 +3508,51 @@ extension IntegrationSuite {
         }
     }
 
+    func testSingleFileMountWithOwnership() async throws {
+        let id = "test-single-file-mount-with-ownership"
+        let bs = try await bootstrap(id)
+        let hostFile = FileManager.default.uniqueTemporaryDirectory(create: true)
+            .appendingPathComponent("owned-config.txt")
+        let content = "owned configuration"
+        try content.write(to: hostFile, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o440], ofItemAtPath: hostFile.path)
+
+        let buffer = BufferWriter()
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["sh", "-c", "stat -c '%u:%g:%a' /etc/owned-config.txt && cat /etc/owned-config.txt"]
+            config.mounts.append(
+                .share(
+                    source: hostFile.path,
+                    destination: "/etc/owned-config.txt",
+                    options: ["ro"],
+                    fileOwnership: .init(uid: 1000, gid: 1001)
+                )
+            )
+            config.process.stdout = buffer
+            config.bootLog = bs.bootLog
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+            let status = try await container.wait()
+            try await container.stop()
+
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "process status \(status) != 0")
+            }
+            guard let output = String(data: buffer.data, encoding: .utf8) else {
+                throw IntegrationError.assert(msg: "failed to convert output to UTF8")
+            }
+            guard output == "1000:1001:440\n\(content)" else {
+                throw IntegrationError.assert(msg: "unexpected ownership mount output \(output)")
+            }
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
     func testSingleFileMountReadOnly() async throws {
         let id = "test-single-file-mount-readonly"
 
