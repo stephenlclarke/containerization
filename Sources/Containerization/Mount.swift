@@ -62,6 +62,12 @@ public struct Mount: Sendable {
     public var destination: String
     /// Filesystem or mount specific options.
     public var options: [String]
+    /// Optional relative directory below the attached filesystem to mount.
+    ///
+    /// The directory must already exist. `LinuxContainer` resolves it beneath
+    /// the attached filesystem before the OCI runtime starts, so symlinks
+    /// cannot escape the filesystem root.
+    public var sourceSubpath: String?
     /// Optional ownership metadata for a private regular-file mount copy.
     public var fileOwnership: FileMountOwnership?
     /// Runtime specific options. This can be used
@@ -86,6 +92,7 @@ public struct Mount: Sendable {
         destination: String,
         options: [String],
         runtimeOptions: RuntimeOptions,
+        sourceSubpath: String? = nil,
         fileOwnership: FileMountOwnership? = nil
     ) {
         self.type = type
@@ -93,6 +100,7 @@ public struct Mount: Sendable {
         self.destination = destination
         self.options = options
         self.runtimeOptions = runtimeOptions
+        self.sourceSubpath = sourceSubpath
         self.fileOwnership = fileOwnership
     }
 
@@ -103,6 +111,7 @@ public struct Mount: Sendable {
         destination: String,
         options: [String] = [],
         runtimeOptions: [String] = [],
+        subpath: String? = nil,
         fileOwnership: FileMountOwnership? = nil
     ) -> Self {
         .init(
@@ -111,6 +120,7 @@ public struct Mount: Sendable {
             destination: destination,
             options: options,
             runtimeOptions: .virtioblk(runtimeOptions),
+            sourceSubpath: subpath,
             fileOwnership: fileOwnership
         )
     }
@@ -193,6 +203,7 @@ public struct Mount: Sendable {
             destination: self.destination,
             options: self.options,
             runtimeOptions: self.runtimeOptions,
+            sourceSubpath: self.sourceSubpath,
             fileOwnership: self.fileOwnership
         )
     }

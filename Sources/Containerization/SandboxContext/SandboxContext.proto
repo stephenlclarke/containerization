@@ -130,6 +130,7 @@ message MountRequest {
   string source = 2;
   string destination = 3;
   repeated string options = 4;
+  optional string source_root = 5;
 }
 
 message MountResponse {}

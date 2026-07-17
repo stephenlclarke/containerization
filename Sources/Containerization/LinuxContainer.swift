@@ -255,6 +255,7 @@ public final class LinuxContainer: Container, Sendable {
             let vm: any VirtualMachineInstance
             let relayManager: UnixSocketRelayManager
             var fileMountContext: FileMountContext
+            let stagedSubpathMounts: [Int: String]
         }
 
         struct StartedState: Sendable {
@@ -856,6 +857,88 @@ extension LinuxContainer {
         }
     }
 
+    private static func normalizedSourceSubpath(_ subpath: String) throws -> String {
+        guard !subpath.hasPrefix("/") else {
+            throw ContainerizationError(.invalidArgument, message: "mount subpath must be relative: \(subpath)")
+        }
+
+        var components: [Substring] = []
+        for component in subpath.split(separator: "/", omittingEmptySubsequences: true) {
+            switch component {
+            case ".":
+                continue
+            case "..":
+                guard !components.isEmpty else {
+                    throw ContainerizationError(.invalidArgument, message: "mount subpath escapes its volume root: \(subpath)")
+                }
+                components.removeLast()
+            default:
+                components.append(component)
+            }
+        }
+
+        guard !components.isEmpty else {
+            throw ContainerizationError(.invalidArgument, message: "mount subpath must name a directory")
+        }
+        return components.joined(separator: "/")
+    }
+
+    private static func guestSubpathVolumePath(_ id: String, index: Int) -> String {
+        "/run/container/\(id)/volumes/\(index)"
+    }
+
+    private static func guestSubpathMountPath(_ id: String, index: Int) -> String {
+        "/run/container/\(id)/subpaths/\(index)"
+    }
+
+    private func stageSubpathMounts(
+        mounts: [Mount],
+        attachments: [AttachedFilesystem],
+        agent: any VirtualMachineAgent
+    ) async throws -> [Int: String] {
+        guard mounts.count == attachments.count else {
+            throw ContainerizationError(.invalidState, message: "attached filesystem count does not match configured mount count")
+        }
+
+        let firstConfigMount = self.writableLayer == nil ? 1 : 2
+        var staged: [Int: String] = [:]
+        for index in attachments.indices {
+            let attachment = attachments[index]
+            guard let rawSubpath = attachment.sourceSubpath else {
+                continue
+            }
+            guard index >= firstConfigMount else {
+                throw ContainerizationError(.invalidArgument, message: "mount subpath is not valid for a container root filesystem")
+            }
+            guard case .virtioblk = mounts[index].runtimeOptions else {
+                throw ContainerizationError(.unsupported, message: "mount subpath requires a block filesystem mount")
+            }
+
+            let subpath = try Self.normalizedSourceSubpath(rawSubpath)
+            let volumePath = Self.guestSubpathVolumePath(self.id, index: index)
+            let stagedPath = Self.guestSubpathMountPath(self.id, index: index)
+
+            try await agent.mount(
+                ContainerizationOCI.Mount(
+                    type: attachment.type,
+                    source: attachment.source,
+                    destination: volumePath,
+                    options: attachment.options
+                ))
+            try await agent.mount(
+                ContainerizationOCI.Mount(
+                    type: "none",
+                    source: subpath,
+                    destination: stagedPath,
+                    options: ["bind"] + attachment.options
+                ),
+                sourceRoot: volumePath
+            )
+            staged[index] = stagedPath
+        }
+        return staged
+    }
+
     /// Create and start the underlying container's virtual machine
     /// and set up the runtime environment. The container's init process
     /// is NOT running afterwards.
@@ -881,18 +964,20 @@ extension LinuxContainer {
             let fileMountContext = try FileMountContext.prepare(mounts: self.config.mounts)
             // This is dumb, but alas.
             let fileMountContextHolder = Mutex<FileMountContext>(fileMountContext)
+            let stagedSubpathMountsHolder = Mutex<[Int: String]>([:])
 
             // Build the list of mounts to attach to the VM.
             var containerMounts = [modifiedRootfs] + fileMountContext.transformedMounts
             if let writableLayer = self.writableLayer {
                 containerMounts.insert(writableLayer, at: 1)
             }
+            let preparedContainerMounts = containerMounts
 
             let vmConfig = VMConfiguration(
                 cpus: vmCpus,
                 memoryInBytes: vmMemory,
                 interfaces: self.interfaces,
-                mountsByID: [self.id: containerMounts],
+                mountsByID: [self.id: preparedContainerMounts],
                 bootLog: self.config.bootLog,
                 nestedVirtualization: self.config.virtualization,
                 graphics: self.config.graphics
@@ -903,7 +988,7 @@ extension LinuxContainer {
 
             try await vm.start()
             do {
-                let mountsForAgent = containerMounts
+                let mountsForAgent = preparedContainerMounts
                 try await vm.withAgent { agent in
                     try await agent.standardSetup()
 
@@ -960,6 +1045,12 @@ extension LinuxContainer {
                     }
                     let rootfsPath = Self.guestRootfsPath(self.id)
                     try await self.mountRootfs(attachments: attachments, rootfsPath: rootfsPath, agent: agent)
+                    let stagedSubpathMounts = try await self.stageSubpathMounts(
+                        mounts: preparedContainerMounts,
+                        attachments: attachments,
+                        agent: agent
+                    )
+                    stagedSubpathMountsHolder.withLock { $0 = stagedSubpathMounts }
 
                     // Mount file mount holding directories under /run.
                     if fileMountContext.hasFileMounts {
@@ -1009,7 +1100,13 @@ extension LinuxContainer {
                     }
 
                 }
-                state = .created(.init(vm: vm, relayManager: relayManager, fileMountContext: fileMountContextHolder.withLock { $0 }))
+                state = .created(
+                    .init(
+                        vm: vm,
+                        relayManager: relayManager,
+                        fileMountContext: fileMountContextHolder.withLock { $0 },
+                        stagedSubpathMounts: stagedSubpathMountsHolder.withLock { $0 }
+                    ))
             } catch {
                 try? await relayManager.stopAll()
                 try? await vm.stop()
@@ -1036,9 +1133,17 @@ extension LinuxContainer {
                 // Drop rootfs, and writable layer if present.
                 let mountsToSkip = self.writableLayer != nil ? 2 : 1
                 var mounts: [ContainerizationOCI.Mount] =
-                    containerMounts.dropFirst(mountsToSkip)
-                    .filter { !holdingTags.contains($0.source) }
-                    .map { attached -> ContainerizationOCI.Mount in
+                    containerMounts.enumerated().dropFirst(mountsToSkip)
+                    .filter { !holdingTags.contains($0.element.source) }
+                    .map { index, attached -> ContainerizationOCI.Mount in
+                        if let stagedPath = createdState.stagedSubpathMounts[index] {
+                            return ContainerizationOCI.Mount(
+                                type: "none",
+                                source: stagedPath,
+                                destination: attached.destination,
+                                options: ["bind"] + attached.options
+                            )
+                        }
                         if attached.type == "virtiofs" {
                             // Transform to bind mount from holding directory
                             return ContainerizationOCI.Mount(

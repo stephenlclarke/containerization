@@ -46,12 +46,22 @@ public struct Mount: Sendable {
     public var target: String
     // Options contains zero or more fstab-style mount options.
     public var options: [String]
+    // SourceRoot confines a bind-mount source to this directory when present.
+    // The source must then be a non-empty relative path below this root.
+    public var sourceRoot: String?
 
-    public init(type: String, source: String, target: String, options: [String]) {
+    public init(
+        type: String,
+        source: String,
+        target: String,
+        options: [String],
+        sourceRoot: String? = nil
+    ) {
         self.type = type
         self.source = source
         self.target = target
         self.options = options
+        self.sourceRoot = sourceRoot
     }
 }
 
@@ -126,11 +136,18 @@ extension Mount {
     /// Optionally provide `createWithPerms` to set the permissions for the directory that
     /// it will be mounted at.
     public func mount(root: String, createWithPerms: Int16? = nil) throws {
-        let fd = try secureResolveInRoot(root: root)
-        defer { close(fd) }
+        try withResolvedSource { source in
+            let fd = try secureResolveInRoot(root: root, source: source)
+            defer { close(fd) }
 
-        let realPath = try readlinkProc(fd: fd)
-        try self.mountToTarget(target: realPath, createWithPerms: createWithPerms, targetResolved: true)
+            let realPath = try readlinkProc(fd: fd)
+            try self.mountToTarget(
+                target: realPath,
+                source: source,
+                createWithPerms: createWithPerms,
+                targetResolved: true
+            )
+        }
     }
 
     /// Open a path relative to `dirFd` using `openat2(2)` with `RESOLVE_IN_ROOT`.
@@ -148,7 +165,44 @@ extension Mount {
         }
     }
 
-    private func secureResolveInRoot(root: String) throws -> Int32 {
+    private func withResolvedSource<T>(_ operation: (String) throws -> T) throws -> T {
+        guard let sourceRoot else {
+            return try operation(source)
+        }
+
+        let options = parseMountOptions()
+        guard options.flags & Int32(MS_BIND) != 0 else {
+            throw Error.validation("sourceRoot is only supported for bind mounts")
+        }
+        guard !source.hasPrefix("/") else {
+            throw Error.validation("source must be relative when sourceRoot is set")
+        }
+
+        let components = source.split(separator: "/", omittingEmptySubsequences: true)
+        guard !components.isEmpty, !components.contains("."), !components.contains("..") else {
+            throw Error.validation("source must be a non-empty relative path without traversal when sourceRoot is set")
+        }
+
+        let rootFd = open(sourceRoot, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard rootFd >= 0 else {
+            throw Error.errno(errno, "failed to open mount source root '\(sourceRoot)'")
+        }
+        defer { close(rootFd) }
+
+        let sourceFd = openInRoot(
+            dirFd: rootFd,
+            path: components.joined(separator: "/"),
+            flags: O_RDONLY | O_DIRECTORY | O_CLOEXEC
+        )
+        guard sourceFd >= 0 else {
+            throw Error.errno(errno, "failed to resolve mount source '\(source)' in '\(sourceRoot)'")
+        }
+        defer { close(sourceFd) }
+
+        return try operation("/proc/self/fd/\(sourceFd)")
+    }
+
+    private func secureResolveInRoot(root: String, source: String) throws -> Int32 {
         let rootFd = open(root, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard rootFd >= 0 else {
             throw Error.errno(errno, "failed to open rootfs '\(root)'")
@@ -160,7 +214,7 @@ extension Mount {
         var leafIsFile = false
         if isBindMount {
             var sourceStat = stat()
-            if stat(self.source, &sourceStat) == 0 {
+            if stat(source, &sourceStat) == 0 {
                 leafIsFile = (sourceStat.st_mode & S_IFMT) != S_IFDIR
             }
         }
@@ -292,10 +346,21 @@ extension Mount {
     /// provide `createWithPerms` to set the permissions for the directory that
     /// it will be mounted at.
     public func mount(createWithPerms: Int16? = nil) throws {
-        try self.mountToTarget(target: self.target, createWithPerms: createWithPerms)
+        try withResolvedSource { source in
+            try self.mountToTarget(
+                target: self.target,
+                source: source,
+                createWithPerms: createWithPerms
+            )
+        }
     }
 
-    private func mountToTarget(target: String, createWithPerms: Int16?, targetResolved: Bool = false) throws {
+    private func mountToTarget(
+        target: String,
+        source: String,
+        createWithPerms: Int16?,
+        targetResolved: Bool = false
+    ) throws {
         let pageSize = sysconf(Int32(_SC_PAGESIZE))
 
         let opts = parseMountOptions()
@@ -324,7 +389,7 @@ extension Mount {
             if isBindMount {
                 var sourceIsNonDir = false
                 var sourceStat = stat()
-                if stat(self.source, &sourceStat) == 0 {
+                if stat(source, &sourceStat) == 0 {
                     sourceIsNonDir = (sourceStat.st_mode & S_IFMT) != S_IFDIR
                 }
 
@@ -344,10 +409,10 @@ extension Mount {
         }
 
         if opts.flags & Int32(MS_REMOUNT) == 0 || !dataString.isEmpty {
-            guard _mount(self.source, target, self.type, UInt(originalFlags), dataString) == 0 else {
+            guard _mount(source, target, self.type, UInt(originalFlags), dataString) == 0 else {
                 throw Error.errno(
                     errno,
-                    "failed initial mount source=\(self.source) target=\(target) type=\(self.type) data=\(dataString)"
+                    "failed initial mount source=\(source) target=\(target) type=\(self.type) data=\(dataString)"
                 )
             }
         }

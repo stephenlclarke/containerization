@@ -48,6 +48,7 @@ public protocol VirtualMachineAgent: Sendable {
     func getenv(key: String) async throws -> String
     func setenv(key: String, value: String) async throws
     func mount(_ mount: ContainerizationOCI.Mount) async throws
+    func mount(_ mount: ContainerizationOCI.Mount, sourceRoot: String?) async throws
     func umount(path: String, flags: Int32) async throws
     func mkdir(path: String, all: Bool, perms: UInt32) async throws
     @discardableResult
@@ -100,6 +101,14 @@ public protocol VirtualMachineAgent: Sendable {
 }
 
 extension VirtualMachineAgent {
+    /// Mount a filesystem while confining a bind source to `sourceRoot`.
+    public func mount(_ mount: ContainerizationOCI.Mount, sourceRoot: String?) async throws {
+        guard sourceRoot == nil else {
+            throw ContainerizationError(.unsupported, message: "mount source root")
+        }
+        try await self.mount(mount)
+    }
+
     /// Add a single IPv4 or IPv6 address to a network interface.
     public func addressAdd(name: String, address: CIDR) async throws {
         switch address {
