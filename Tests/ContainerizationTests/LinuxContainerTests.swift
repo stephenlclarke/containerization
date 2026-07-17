@@ -195,6 +195,19 @@ struct LinuxContainerTests {
         #expect(resources.pids?.limit == 128)
     }
 
+    @Test func runtimeSpecIncludesConfiguredCPUShares() throws {
+        let container = try LinuxContainer(
+            "cpu-shares-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), cpuShares: 512)
+        )
+
+        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+
+        #expect(resources.cpu?.shares == 512)
+    }
+
     @Test func runtimeSpecIncludesConfiguredDeviceCgroupRules() throws {
         let deviceRules = [
             LinuxDeviceCgroup(allow: true, type: "c", major: 1, minor: 3, access: "mr"),
