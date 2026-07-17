@@ -173,6 +173,25 @@ extension User {
         return users[0]
     }
 
+    /// Looks up the numeric ID for `name` in the group file specified by
+    /// `groupPath`.
+    public static func lookupGid(groupPath: URL = Self.groupFilePath, name: String) throws -> UInt32 {
+        let groups: [Group]
+        do {
+            groups = try parseGroup(
+                groupFile: groupPath,
+                filter: { group in
+                    group.name == name
+                })
+        } catch Error.missingFile {
+            throw Error.noGroupEntries
+        }
+        guard let group = groups.first else {
+            throw Error.noGroupEntries
+        }
+        return group.gid
+    }
+
     /// Parses a user string in any of the following formats:
     /// "user, uid, user:group, uid:gid, uid:group, user:gid"
     /// and returns an ExecUser type from the information.

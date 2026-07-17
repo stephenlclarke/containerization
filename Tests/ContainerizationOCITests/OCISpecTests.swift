@@ -99,7 +99,25 @@ struct OCISpecTests {
         #expect(decodedSpec.gid == 11)
         #expect(decodedSpec.umask == nil)
         #expect(decodedSpec.additionalGids.isEmpty)
+        #expect(decodedSpec.additionalGroupNames.isEmpty)
         #expect(decodedSpec.username == "")
+    }
+
+    @Test func userAdditionalGroupNamesRoundTrip() throws {
+        let user = ContainerizationOCI.User(
+            uid: 1000,
+            gid: 1000,
+            additionalGids: [1001],
+            additionalGroupNames: ["staff", "docker"],
+            username: "platform"
+        )
+
+        let decodedUser = try JSONDecoder().decode(
+            ContainerizationOCI.User.self,
+            from: JSONEncoder().encode(user)
+        )
+        #expect(decodedUser.additionalGids == [1001])
+        #expect(decodedUser.additionalGroupNames == ["staff", "docker"])
     }
 
     @Test func minimalRootSpecDecode() throws {

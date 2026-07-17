@@ -1924,14 +1924,18 @@ extension Initd {
         // to pass through the exact string representation of a username (or username:group, uid:group etc.) a client
         // may have given us.
         let username = process.user.username.isEmpty ? "\(process.user.uid):\(process.user.gid)" : process.user.username
+        let groupPath = URL(filePath: root.path).appending(path: "etc/group")
         let parsedUser = try User.getExecUser(
             userString: username,
             passwdPath: URL(filePath: root.path).appending(path: "etc/passwd"),
-            groupPath: URL(filePath: root.path).appending(path: "etc/group")
+            groupPath: groupPath
         )
         process.user.uid = parsedUser.uid
         process.user.gid = parsedUser.gid
         process.user.additionalGids.append(contentsOf: parsedUser.sgids)
+        for name in process.user.additionalGroupNames {
+            process.user.additionalGids.append(try User.lookupGid(groupPath: groupPath, name: name))
+        }
         process.user.additionalGids.append(process.user.gid)
 
         var seenSuppGids = Set<UInt32>()

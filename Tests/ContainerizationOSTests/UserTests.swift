@@ -96,6 +96,29 @@ final class UsersTests {
     }
 
     @Test
+    func testLookupGidByName() throws {
+        let groupContent = """
+            root:x:0:
+            staff:x:50:platform
+            platform:x:1000:
+            """
+
+        let fileManager = FileManager.default
+        let tempDir = fileManager.uniqueTemporaryDirectory()
+        defer { try? fileManager.removeItem(at: tempDir) }
+        let groupPath = tempDir.appending(path: "etc/group")
+        try Self.createFile(path: groupPath, content: groupContent.data(using: .ascii)!)
+
+        #expect(try User.lookupGid(groupPath: groupPath, name: "staff") == 50)
+        #expect(throws: User.Error.self) {
+            try User.lookupGid(groupPath: groupPath, name: "missing")
+        }
+        #expect(throws: User.Error.self) {
+            try User.lookupGid(groupPath: tempDir.appending(path: "missing-group"), name: "staff")
+        }
+    }
+
+    @Test
     func testExecUserPasswdGroup() throws {
         let passwordContent = """
             root:x:0:0:root:/root:/bin/bash

@@ -256,6 +256,9 @@ public struct User: Codable, Sendable {
     public var gid: UInt32
     public var umask: UInt32?
     public var additionalGids: [UInt32]
+    /// Supplemental group names that must be resolved against the container
+    /// root filesystem before the process starts.
+    public var additionalGroupNames: [String]
     public var username: String
 
     public enum CodingKeys: String, CodingKey {
@@ -263,6 +266,7 @@ public struct User: Codable, Sendable {
         case gid
         case umask
         case additionalGids
+        case additionalGroupNames
         case username
     }
 
@@ -271,12 +275,14 @@ public struct User: Codable, Sendable {
         gid: UInt32 = 0,
         umask: UInt32? = nil,
         additionalGids: [UInt32] = [],
+        additionalGroupNames: [String] = [],
         username: String = ""
     ) {
         self.uid = uid
         self.gid = gid
         self.umask = umask
         self.additionalGids = additionalGids
+        self.additionalGroupNames = additionalGroupNames
         self.username = username
     }
 
@@ -289,6 +295,9 @@ public struct User: Codable, Sendable {
         self.umask = try container.decodeIfPresent(UInt32.self, forKey: .umask)
         if let additionalGids = try container.decodeIfPresent([UInt32].self, forKey: .additionalGids) {
             self.additionalGids = additionalGids
+        }
+        if let additionalGroupNames = try container.decodeIfPresent([String].self, forKey: .additionalGroupNames) {
+            self.additionalGroupNames = additionalGroupNames
         }
         if let username = try container.decodeIfPresent(String.self, forKey: .username) {
             self.username = username
