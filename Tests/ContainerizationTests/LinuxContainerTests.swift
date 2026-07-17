@@ -187,15 +187,28 @@ struct LinuxContainerTests {
             "memory-reservation-test",
             rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
             vmm: StubVirtualMachineManager(),
-            configuration: .init(process: .init(), memoryReservationInBytes: 512.mib())
+            configuration: .init(process: .init(), memoryReservationInBytes: Int64(512.mib()))
         )
 
         let memory = try #require(container.generateRuntimeSpec().linux?.resources?.memory)
         let limit = try #require(memory.limit)
         let reservation = try #require(memory.reservation)
 
-        #expect(limit == 1024.mib())
-        #expect(reservation == 512.mib())
+        #expect(limit == Int64(1024.mib()))
+        #expect(reservation == Int64(512.mib()))
+    }
+
+    @Test func runtimeSpecPreservesLargestMemoryReservation() throws {
+        let container = try LinuxContainer(
+            "maximum-memory-reservation-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), memoryReservationInBytes: .max)
+        )
+
+        let reservation = try #require(container.generateRuntimeSpec().linux?.resources?.memory?.reservation)
+
+        #expect(reservation == .max)
     }
 
     @Test func runtimeSpecIncludesConfiguredPidsLimit() throws {
