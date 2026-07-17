@@ -90,6 +90,12 @@ public final class LinuxContainer: Container, Sendable {
         ///
         /// When omitted, the OCI runtime leaves the reservation unset.
         public var memoryReservationInBytes: Int64?
+        /// Optional limit for the combined memory and swap usage of the
+        /// container cgroup.
+        ///
+        /// A value of `-1` leaves swap unlimited; when omitted, the OCI
+        /// runtime retains its default swap policy.
+        public var memorySwapLimitInBytes: Int64?
         /// Optional relative CPU scheduling weight for the container cgroup.
         ///
         /// When omitted, the OCI runtime retains its default CPU weight.
@@ -180,6 +186,7 @@ public final class LinuxContainer: Container, Sendable {
             cpus: Int = 4,
             memoryInBytes: UInt64 = 1024.mib(),
             memoryReservationInBytes: Int64? = nil,
+            memorySwapLimitInBytes: Int64? = nil,
             cpuShares: UInt64? = nil,
             pidsLimit: Int64? = nil,
             blockIO: LinuxBlockIO? = nil,
@@ -210,6 +217,7 @@ public final class LinuxContainer: Container, Sendable {
             self.cpus = cpus
             self.memoryInBytes = memoryInBytes
             self.memoryReservationInBytes = memoryReservationInBytes
+            self.memorySwapLimitInBytes = memorySwapLimitInBytes
             self.cpuShares = cpuShares
             self.pidsLimit = pidsLimit
             self.blockIO = blockIO
@@ -519,7 +527,8 @@ public final class LinuxContainer: Container, Sendable {
             devices: config.deviceCgroupRules,
             memory: LinuxMemory(
                 limit: Int64(config.memoryInBytes),
-                reservation: config.memoryReservationInBytes
+                reservation: config.memoryReservationInBytes,
+                swap: config.memorySwapLimitInBytes
             ),
             cpu: LinuxCPU(
                 shares: config.cpuShares,

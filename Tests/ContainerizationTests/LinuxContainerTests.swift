@@ -211,6 +211,38 @@ struct LinuxContainerTests {
         #expect(reservation == .max)
     }
 
+    @Test func runtimeSpecIncludesConfiguredMemorySwapLimit() throws {
+        let container = try LinuxContainer(
+            "memory-swap-limit-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(
+                process: .init(),
+                memorySwapLimitInBytes: Int64(1536.mib())
+            )
+        )
+
+        let memory = try #require(container.generateRuntimeSpec().linux?.resources?.memory)
+        let limit = try #require(memory.limit)
+        let swap = try #require(memory.swap)
+
+        #expect(limit == Int64(1024.mib()))
+        #expect(swap == Int64(1536.mib()))
+    }
+
+    @Test func runtimeSpecPreservesUnlimitedMemorySwapLimit() throws {
+        let container = try LinuxContainer(
+            "unlimited-memory-swap-limit-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), memorySwapLimitInBytes: -1)
+        )
+
+        let swap = try #require(container.generateRuntimeSpec().linux?.resources?.memory?.swap)
+
+        #expect(swap == -1)
+    }
+
     @Test func runtimeSpecIncludesConfiguredPidsLimit() throws {
         let container = try LinuxContainer(
             "pids-limit-test",
