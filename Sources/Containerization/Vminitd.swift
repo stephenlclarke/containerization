@@ -228,12 +228,20 @@ extension Vminitd: VirtualMachineAgent {
 
     /// Mount a filesystem in the sandbox's environment.
     public func mount(_ mount: ContainerizationOCI.Mount) async throws {
+        try await self.mount(mount, sourceRoot: Optional<String>.none)
+    }
+
+    /// Mount a filesystem in the sandbox's environment while confining a bind source to a root.
+    public func mount(_ mount: ContainerizationOCI.Mount, sourceRoot: String?) async throws {
         _ = try await client.mount(
             .with {
                 $0.type = mount.type
                 $0.source = mount.source
                 $0.destination = mount.destination
                 $0.options = mount.options
+                if let sourceRoot {
+                    $0.sourceRoot = sourceRoot
+                }
             })
     }
 

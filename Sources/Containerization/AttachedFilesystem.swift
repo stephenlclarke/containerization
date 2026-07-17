@@ -27,6 +27,8 @@ public struct AttachedFilesystem: Sendable {
     public var destination: String
     /// The options to use when mounting the filesystem.
     public var options: [String]
+    /// Optional relative directory below the attached filesystem to mount.
+    public var sourceSubpath: String?
 
     public init(mount: Mount, allocator: any AddressAllocator<Character>) throws {
         switch mount.runtimeOptions {
@@ -42,12 +44,20 @@ public struct AttachedFilesystem: Sendable {
         self.type = mount.type
         self.options = mount.options
         self.destination = mount.destination
+        self.sourceSubpath = mount.sourceSubpath
     }
 
-    public init(type: String, source: String, destination: String, options: [String]) {
+    public init(
+        type: String,
+        source: String,
+        destination: String,
+        options: [String],
+        sourceSubpath: String? = nil
+    ) {
         self.type = type
         self.source = source
         self.destination = destination
         self.options = options
+        self.sourceSubpath = sourceSubpath
     }
 }

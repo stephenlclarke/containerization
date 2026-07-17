@@ -325,9 +325,20 @@ public struct Com_Apple_Containerization_Sandbox_V3_MountRequest: Sendable {
 
   public var options: [String] = []
 
+  public var sourceRoot: String {
+    get {_sourceRoot ?? String()}
+    set {_sourceRoot = newValue}
+  }
+  /// Returns true if `sourceRoot` has been explicitly set.
+  public var hasSourceRoot: Bool {self._sourceRoot != nil}
+  /// Clears the value of `sourceRoot`. Subsequent reads from it will return its default value.
+  public mutating func clearSourceRoot() {self._sourceRoot = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+
+  fileprivate var _sourceRoot: String? = nil
 }
 
 public struct Com_Apple_Containerization_Sandbox_V3_MountResponse: Sendable {
@@ -2202,7 +2213,7 @@ extension Com_Apple_Containerization_Sandbox_V3_StopVsockProxyResponse: SwiftPro
 
 extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MountRequest"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}source\0\u{1}destination\0\u{1}options\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}source\0\u{1}destination\0\u{1}options\0\u{3}source_root\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2214,6 +2225,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Mess
       case 2: try { try decoder.decodeSingularStringField(value: &self.source) }()
       case 3: try { try decoder.decodeSingularStringField(value: &self.destination) }()
       case 4: try { try decoder.decodeRepeatedStringField(value: &self.options) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self._sourceRoot) }()
       default: break
       }
     }
@@ -2232,6 +2244,9 @@ extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Mess
     if !self.options.isEmpty {
       try visitor.visitRepeatedStringField(value: self.options, fieldNumber: 4)
     }
+    try { if let v = self._sourceRoot {
+      try visitor.visitSingularStringField(value: v, fieldNumber: 5)
+    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2240,6 +2255,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Mess
     if lhs.source != rhs.source {return false}
     if lhs.destination != rhs.destination {return false}
     if lhs.options != rhs.options {return false}
+    if lhs._sourceRoot != rhs._sourceRoot {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

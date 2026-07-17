@@ -752,7 +752,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 type: request.type,
                 source: request.source,
                 target: request.destination,
-                options: request.options
+                options: request.options,
+                sourceRoot: request.hasSourceRoot ? request.sourceRoot : nil
             )
 
             #if os(Linux)

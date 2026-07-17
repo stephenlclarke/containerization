@@ -332,6 +332,70 @@ struct LinuxContainerTests {
         #expect(!configuration.graphics.hasDisplay)
     }
 
+    @Test func blockMountSubpathStagesASecureBindMount() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "volume-subpath-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(arguments: ["/bin/sh"]),
+                mounts: [
+                    .block(
+                        format: "ext4",
+                        source: "/tmp/volume.img",
+                        destination: "/data",
+                        options: ["ro"],
+                        subpath: "logs/app"
+                    )
+                ]
+            )
+        )
+
+        try await container.create()
+        let vm = try #require(manager.vm)
+        let stageRequest = try #require(
+            vm.agent.mountRequests.first { $0.destination == "/run/container/volume-subpath-test/subpaths/1" }
+        )
+        #expect(stageRequest.type == "none")
+        #expect(stageRequest.source == "logs/app")
+        #expect(stageRequest.options == ["bind", "ro"])
+        #expect(stageRequest.sourceRoot == "/run/container/volume-subpath-test/volumes/1")
+
+        try await container.start()
+        let spec = try #require(vm.agent.createdProcessSpec)
+        let mount = try #require(spec.mounts.first { $0.destination == "/data" })
+        #expect(mount.type == "none")
+        #expect(mount.source == "/run/container/volume-subpath-test/subpaths/1")
+        #expect(mount.options == ["bind", "ro"])
+    }
+
+    @Test func blockMountSubpathRejectsTraversal() async throws {
+        let container = try LinuxContainer(
+            "volume-subpath-traversal-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init(
+                process: .init(arguments: ["/bin/sh"]),
+                mounts: [
+                    .block(
+                        format: "ext4",
+                        source: "/tmp/volume.img",
+                        destination: "/data",
+                        subpath: "../../etc"
+                    )
+                ]
+            )
+        )
+
+        do {
+            try await container.create()
+            Issue.record("Expected a mount subpath traversal error")
+        } catch {
+            #expect(String(describing: error).contains("escapes its volume root"))
+        }
+    }
+
     @available(*, deprecated)
     @Test func legacyGraphicsDeviceOnlyCaseRemainsUsable() {
         var configuration = LinuxContainer.Configuration()
@@ -766,7 +830,8 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
                     type: $0.type,
                     source: $0.source,
                     destination: $0.destination,
-                    options: $0.options
+                    options: $0.options,
+                    sourceSubpath: $0.sourceSubpath
                 )
             }
         }
@@ -808,6 +873,14 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
 }
 
 private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecked Sendable {
+    struct MountRequest: Equatable {
+        var type: String
+        var source: String
+        var destination: String
+        var options: [String]
+        var sourceRoot: String?
+    }
+
     struct WriteRequest: Equatable {
         var path: String
         var data: Data
@@ -824,6 +897,7 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         var stats: [String: Stat] = [:]
         var createdProcessSpec: Spec?
         var writeRequests: [WriteRequest] = []
+        var mountRequests: [MountRequest] = []
     }
 
     private let storage = Mutex<State>(State())
@@ -871,6 +945,10 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         storage.withLock { $0.writeRequests }
     }
 
+    var mountRequests: [MountRequest] {
+        storage.withLock { $0.mountRequests }
+    }
+
     func standardSetup() async throws {}
 
     func close() async throws {}
@@ -883,7 +961,23 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
 
     func setenv(key: String, value: String) async throws {}
 
-    func mount(_ mount: ContainerizationOCI.Mount) async throws {}
+    func mount(_ mount: ContainerizationOCI.Mount) async throws {
+        try await self.mount(mount, sourceRoot: Optional<String>.none)
+    }
+
+    func mount(_ mount: ContainerizationOCI.Mount, sourceRoot: String?) async throws {
+        storage.withLock {
+            $0.mountRequests.append(
+                .init(
+                    type: mount.type,
+                    source: mount.source,
+                    destination: mount.destination,
+                    options: mount.options,
+                    sourceRoot: sourceRoot
+                )
+            )
+        }
+    }
 
     func umount(path: String, flags: Int32) async throws {}
 

@@ -119,7 +119,8 @@ final class CHHotplugProvider: HotplugProvider {
             type: block.type,
             source: "/dev/vd\(letter)",
             destination: block.destination,
-            options: block.options
+            options: block.options,
+            sourceSubpath: block.sourceSubpath
         )
 
         _records.withLock {
