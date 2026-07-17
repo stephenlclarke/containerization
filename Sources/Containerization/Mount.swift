@@ -29,6 +29,28 @@ import Glibc
 #endif
 #endif
 
+/// Optional numeric ownership applied to a private copy of a file mount.
+///
+/// Ownership overrides intentionally apply only to regular-file mounts. They
+/// make the mount a create-time snapshot so the guest can own the copy without
+/// changing the source file on the host.
+public struct FileMountOwnership: Sendable, Equatable {
+    /// The guest user ID to apply to the copied file.
+    public var uid: UInt32?
+    /// The guest group ID to apply to the copied file.
+    public var gid: UInt32?
+
+    /// Creates an ownership override for a regular-file mount.
+    public init(uid: UInt32? = nil, gid: UInt32? = nil) {
+        self.uid = uid
+        self.gid = gid
+    }
+
+    var requestsOwnershipChange: Bool {
+        uid != nil || gid != nil
+    }
+}
+
 /// A filesystem mount exposed to a container.
 public struct Mount: Sendable {
     /// The filesystem or mount type. This is the string
@@ -40,6 +62,8 @@ public struct Mount: Sendable {
     public var destination: String
     /// Filesystem or mount specific options.
     public var options: [String]
+    /// Optional ownership metadata for a private regular-file mount copy.
+    public var fileOwnership: FileMountOwnership?
     /// Runtime specific options. This can be used
     /// as a way to discern what kind of device a vmm
     /// should create for this specific mount (virtioblock
@@ -61,13 +85,15 @@ public struct Mount: Sendable {
         source: String,
         destination: String,
         options: [String],
-        runtimeOptions: RuntimeOptions
+        runtimeOptions: RuntimeOptions,
+        fileOwnership: FileMountOwnership? = nil
     ) {
         self.type = type
         self.source = source
         self.destination = destination
         self.options = options
         self.runtimeOptions = runtimeOptions
+        self.fileOwnership = fileOwnership
     }
 
     /// Mount representing a virtio block device.
@@ -76,14 +102,16 @@ public struct Mount: Sendable {
         source: String,
         destination: String,
         options: [String] = [],
-        runtimeOptions: [String] = []
+        runtimeOptions: [String] = [],
+        fileOwnership: FileMountOwnership? = nil
     ) -> Self {
         .init(
             type: format,
             source: source,
             destination: destination,
             options: options,
-            runtimeOptions: .virtioblk(runtimeOptions)
+            runtimeOptions: .virtioblk(runtimeOptions),
+            fileOwnership: fileOwnership
         )
     }
 
@@ -92,14 +120,16 @@ public struct Mount: Sendable {
         source: String,
         destination: String,
         options: [String] = [],
-        runtimeOptions: [String] = []
+        runtimeOptions: [String] = [],
+        fileOwnership: FileMountOwnership? = nil
     ) -> Self {
         .init(
             type: "virtiofs",
             source: source,
             destination: destination,
             options: options,
-            runtimeOptions: .virtiofs(runtimeOptions)
+            runtimeOptions: .virtiofs(runtimeOptions),
+            fileOwnership: fileOwnership
         )
     }
 
@@ -109,14 +139,16 @@ public struct Mount: Sendable {
         source: String,
         destination: String,
         options: [String] = [],
-        runtimeOptions: [String] = []
+        runtimeOptions: [String] = [],
+        fileOwnership: FileMountOwnership? = nil
     ) -> Self {
         .init(
             type: type,
             source: source,
             destination: destination,
             options: options,
-            runtimeOptions: .any(runtimeOptions)
+            runtimeOptions: .any(runtimeOptions),
+            fileOwnership: fileOwnership
         )
     }
 
@@ -124,14 +156,16 @@ public struct Mount: Sendable {
     public static func sharedMount(
         name: String,
         destination: String,
-        options: [String] = []
+        options: [String] = [],
+        fileOwnership: FileMountOwnership? = nil
     ) -> Self {
         .init(
             type: "none",
             source: name,
             destination: destination,
             options: options,
-            runtimeOptions: .shared
+            runtimeOptions: .shared,
+            fileOwnership: fileOwnership
         )
     }
 
@@ -158,7 +192,8 @@ public struct Mount: Sendable {
             source: to,
             destination: self.destination,
             options: self.options,
-            runtimeOptions: self.runtimeOptions
+            runtimeOptions: self.runtimeOptions,
+            fileOwnership: self.fileOwnership
         )
     }
 

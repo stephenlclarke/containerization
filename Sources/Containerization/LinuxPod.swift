@@ -474,6 +474,7 @@ extension LinuxPod {
                                 vmMounts: containerMounts,
                                 agent: agent
                             )
+                            try await updatedFileMountContext.materializeOwnedFiles(containerID: id, agent: agent)
                         }
 
                         if let dns = config.dns ?? self.config.dns {
@@ -721,6 +722,7 @@ extension LinuxPod {
                                 vmMounts: containerMounts,
                                 agent: agent
                             )
+                            try await ctx.materializeOwnedFiles(containerID: id, agent: agent)
                             fileMountContextUpdates.withLock { $0[id] = ctx }
                         }
                     }

@@ -608,6 +608,65 @@ struct LinuxContainerTests {
         #expect(pausedProcesses == vm.agent.processInfo)
     }
 
+    @Test func ownedFileMountUsesGuestPrivateMaterialization() async throws {
+        let directory = FileManager.default.uniqueTemporaryDirectory(create: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("config.txt")
+        let contents = Data("private configuration".utf8)
+        try contents.write(to: source)
+        try FileManager.default.setAttributes([.posixPermissions: 0o440], ofItemAtPath: source.path)
+
+        var context = try FileMountContext.prepare(mounts: [
+            .share(
+                source: source.path,
+                destination: "/etc/config.txt",
+                options: ["ro"],
+                fileOwnership: .init(uid: 1000, gid: 1001)
+            )
+        ])
+        #expect(context.transformedMounts.isEmpty)
+
+        let agent = RecordingVirtualMachineAgent()
+        try await context.materializeOwnedFiles(containerID: "owned-file-test", agent: agent)
+
+        #expect(
+            agent.writeRequests == [
+                .init(
+                    path: "/run/container/owned-file-test/file-mounts/0",
+                    data: contents,
+                    mode: 0o440,
+                    ownerUID: 1000,
+                    ownerGID: 1001
+                )
+            ])
+        let mounts = context.ociBindMounts()
+        #expect(mounts.count == 1)
+        let mount = try #require(mounts.first)
+        #expect(mount.type == "none")
+        #expect(mount.source == "/run/container/owned-file-test/file-mounts/0")
+        #expect(mount.destination == "/etc/config.txt")
+        #expect(mount.options == ["bind", "ro"])
+    }
+
+    @Test func emptyFileOwnershipKeepsTheUsualFileMountBehavior() throws {
+        let directory = FileManager.default.uniqueTemporaryDirectory(create: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("config.txt")
+        try Data("configuration".utf8).write(to: source)
+
+        let context = try FileMountContext.prepare(mounts: [
+            .share(
+                source: source.path,
+                destination: "/etc/config.txt",
+                fileOwnership: .init()
+            )
+        ])
+
+        #expect(context.transformedMounts.count == 1)
+        #expect(context.preparedMounts.count == 1)
+        #expect(context.preparedMounts[0].ownership == nil)
+    }
+
 }
 
 private struct StubVirtualMachineManager: VirtualMachineManager {
@@ -749,6 +808,14 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
 }
 
 private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecked Sendable {
+    struct WriteRequest: Equatable {
+        var path: String
+        var data: Data
+        var mode: UInt32
+        var ownerUID: UInt32?
+        var ownerGID: UInt32?
+    }
+
     private struct State {
         var processIdentifiers: [Int32] = []
         var processContainerID: String?
@@ -756,6 +823,7 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         var processInfoContainerID: String?
         var stats: [String: Stat] = [:]
         var createdProcessSpec: Spec?
+        var writeRequests: [WriteRequest] = []
     }
 
     private let storage = Mutex<State>(State())
@@ -799,6 +867,10 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         storage.withLock { $0.createdProcessSpec }
     }
 
+    var writeRequests: [WriteRequest] {
+        storage.withLock { $0.writeRequests }
+    }
+
     func standardSetup() async throws {}
 
     func close() async throws {}
@@ -823,7 +895,20 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
 
     func sync() async throws {}
 
-    func writeFile(path: String, data: Data, flags: WriteFileFlags, mode: UInt32) async throws {}
+    func writeFile(
+        path: String,
+        data: Data,
+        flags: WriteFileFlags,
+        mode: UInt32,
+        ownerUID: UInt32?,
+        ownerGID: UInt32?
+    ) async throws {
+        storage.withLock {
+            $0.writeRequests.append(
+                .init(path: path, data: data, mode: mode, ownerUID: ownerUID, ownerGID: ownerGID)
+            )
+        }
+    }
 
     func stat(path: URL) async throws -> Stat {
         guard let stat = storage.withLock({ $0.stats[path.path] }) else {

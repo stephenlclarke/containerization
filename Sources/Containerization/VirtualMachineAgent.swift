@@ -53,7 +53,14 @@ public protocol VirtualMachineAgent: Sendable {
     @discardableResult
     func kill(pid: Int32, signal: Int32) async throws -> Int32
     func sync() async throws
-    func writeFile(path: String, data: Data, flags: WriteFileFlags, mode: UInt32) async throws
+    func writeFile(
+        path: String,
+        data: Data,
+        flags: WriteFileFlags,
+        mode: UInt32,
+        ownerUID: UInt32?,
+        ownerGID: UInt32?
+    ) async throws
     func stat(path: URL) async throws -> ContainerizationOS.Stat
 
     // Process lifecycle
@@ -118,7 +125,14 @@ extension VirtualMachineAgent {
         throw ContainerizationError(.unsupported, message: "configureHosts")
     }
 
-    public func writeFile(path: String, data: Data, flags: WriteFileFlags, mode: UInt32) async throws {
+    public func writeFile(
+        path: String,
+        data: Data,
+        flags: WriteFileFlags,
+        mode: UInt32,
+        ownerUID: UInt32? = nil,
+        ownerGID: UInt32? = nil
+    ) async throws {
         throw ContainerizationError(.unsupported, message: "writeFile")
     }
 

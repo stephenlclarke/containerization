@@ -231,6 +231,10 @@ message WriteFileRequest {
   bytes data = 2;
   uint32 mode = 3;
   WriteFileFlags flags = 4;
+  bool set_owner_uid = 5;
+  uint32 owner_uid = 6;
+  bool set_owner_gid = 7;
+  uint32 owner_gid = 8;
 }
 
 message WriteFileResponse {}

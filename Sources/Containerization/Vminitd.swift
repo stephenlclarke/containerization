@@ -86,12 +86,27 @@ extension Vminitd: VirtualMachineAgent {
         }
     }
 
-    public func writeFile(path: String, data: Data, flags: WriteFileFlags, mode: UInt32) async throws {
+    public func writeFile(
+        path: String,
+        data: Data,
+        flags: WriteFileFlags,
+        mode: UInt32,
+        ownerUID: UInt32? = nil,
+        ownerGID: UInt32? = nil
+    ) async throws {
         _ = try await client.writeFile(
             .with {
                 $0.path = path
                 $0.mode = mode
                 $0.data = data
+                if let ownerUID {
+                    $0.setOwnerUid = true
+                    $0.ownerUid = ownerUID
+                }
+                if let ownerGID {
+                    $0.setOwnerGid = true
+                    $0.ownerGid = ownerGID
+                }
                 $0.flags = .with {
                     $0.append = flags.append
                     $0.createIfMissing = flags.create
