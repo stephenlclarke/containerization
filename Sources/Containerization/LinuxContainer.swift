@@ -86,6 +86,10 @@ public final class LinuxContainer: Container, Sendable {
         public var cpus: Int = 4
         /// The memory in bytes to give to the container.
         public var memoryInBytes: UInt64 = 1024.mib()
+        /// Optional protected memory reservation for the container cgroup.
+        ///
+        /// When omitted, the OCI runtime leaves the reservation unset.
+        public var memoryReservationInBytes: UInt64?
         /// Optional relative CPU scheduling weight for the container cgroup.
         ///
         /// When omitted, the OCI runtime retains its default CPU weight.
@@ -175,6 +179,7 @@ public final class LinuxContainer: Container, Sendable {
             process: LinuxProcessConfiguration,
             cpus: Int = 4,
             memoryInBytes: UInt64 = 1024.mib(),
+            memoryReservationInBytes: UInt64? = nil,
             cpuShares: UInt64? = nil,
             pidsLimit: Int64? = nil,
             blockIO: LinuxBlockIO? = nil,
@@ -204,6 +209,7 @@ public final class LinuxContainer: Container, Sendable {
             self.process = process
             self.cpus = cpus
             self.memoryInBytes = memoryInBytes
+            self.memoryReservationInBytes = memoryReservationInBytes
             self.cpuShares = cpuShares
             self.pidsLimit = pidsLimit
             self.blockIO = blockIO
@@ -512,7 +518,8 @@ public final class LinuxContainer: Container, Sendable {
         spec.linux?.resources = LinuxResources(
             devices: config.deviceCgroupRules,
             memory: LinuxMemory(
-                limit: Int64(config.memoryInBytes)
+                limit: Int64(config.memoryInBytes),
+                reservation: config.memoryReservationInBytes.map(Int64.init)
             ),
             cpu: LinuxCPU(
                 shares: config.cpuShares,
