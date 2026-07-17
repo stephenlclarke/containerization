@@ -182,6 +182,22 @@ struct LinuxContainerTests {
         #expect(specBlockIO.throttleWriteIOPSDevice.first?.rate == 2_000)
     }
 
+    @Test func runtimeSpecIncludesConfiguredMemoryReservation() throws {
+        let container = try LinuxContainer(
+            "memory-reservation-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), memoryReservationInBytes: 512.mib())
+        )
+
+        let memory = try #require(container.generateRuntimeSpec().linux?.resources?.memory)
+        let limit = try #require(memory.limit)
+        let reservation = try #require(memory.reservation)
+
+        #expect(limit == 1024.mib())
+        #expect(reservation == 512.mib())
+    }
+
     @Test func runtimeSpecIncludesConfiguredPidsLimit() throws {
         let container = try LinuxContainer(
             "pids-limit-test",
