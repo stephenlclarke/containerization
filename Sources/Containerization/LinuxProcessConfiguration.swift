@@ -372,6 +372,9 @@ public struct LinuxProcessConfiguration: Sendable {
     public var user: ContainerizationOCI.User = .init()
     /// The rlimits for the container process.
     public var rlimits: [LinuxRLimit] = []
+    /// The adjustment applied to the Linux out-of-memory killer score for the
+    /// container process. `nil` leaves the runtime default unchanged.
+    public var oomScoreAdj: Int?
     /// Whether to set the no_new_privileges bit on the container process. When true, the
     /// process and its children cannot gain additional privileges via setuid/setgid binaries
     /// or file capabilities.
@@ -401,6 +404,7 @@ public struct LinuxProcessConfiguration: Sendable {
         workingDirectory: String = "/",
         user: ContainerizationOCI.User = .init(),
         rlimits: [LinuxRLimit] = [],
+        oomScoreAdj: Int? = nil,
         noNewPrivileges: Bool = false,
         capabilities: LinuxCapabilities = .defaultOCICapabilities,
         terminal: Bool = false,
@@ -413,6 +417,7 @@ public struct LinuxProcessConfiguration: Sendable {
         self.workingDirectory = workingDirectory
         self.user = user
         self.rlimits = rlimits
+        self.oomScoreAdj = oomScoreAdj
         self.noNewPrivileges = noNewPrivileges
         self.capabilities = capabilities
         self.terminal = terminal
@@ -448,6 +453,7 @@ public struct LinuxProcessConfiguration: Sendable {
             cwd: self.workingDirectory,
             env: self.environmentVariables,
             noNewPrivileges: self.noNewPrivileges,
+            oomScoreAdj: self.oomScoreAdj,
             capabilities: self.capabilities.toOCI(),
             user: self.user,
             rlimits: self.rlimits.map { $0.toOCI() },

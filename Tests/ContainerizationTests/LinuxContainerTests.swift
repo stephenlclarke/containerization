@@ -77,6 +77,18 @@ struct LinuxContainerTests {
         #expect(process.arguments == ["/bin/sh", "-c", "echo 'hello'", "&&", "sleep 10"])
     }
 
+    @Test func runtimeSpecIncludesConfiguredOOMScoreAdjustment() throws {
+        let container = try LinuxContainer(
+            "oom-score-adj-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(arguments: ["/bin/sh"], oomScoreAdj: -250))
+        )
+
+        let process = try #require(container.generateRuntimeSpec().process)
+        #expect(process.oomScoreAdj == -250)
+    }
+
     @Test func defaultCapabilitiesAreRestrictedOCISet() {
         // Regression guard against shipping `.allCapabilities` as the default.
         // A default container must not receive CAP_SYS_ADMIN, which would let it
