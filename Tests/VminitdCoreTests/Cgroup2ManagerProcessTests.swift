@@ -23,6 +23,27 @@ import Testing
 @testable import Cgroup
 
 struct Cgroup2ManagerProcessTests {
+    @Test(arguments: [(UInt64(0), UInt64(0)), (1, 1), (2, 1), (512, 59), (1024, 100), (262_144, 10_000)])
+    func cpuSharesConvertToCgroupV2Weight(shares: UInt64, expectedWeight: UInt64) {
+        #expect(Cgroup2Manager.cpuWeight(fromShares: shares) == expectedWeight)
+    }
+
+    @Test func cpuSharesWriteConvertedCgroupV2Weight() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-weight-\(UUID().uuidString)")
+        let group = URL(filePath: "container")
+        let cgroup = root.appending(path: group.path)
+        try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let cpuWeight = cgroup.appending(path: "cpu.weight")
+        try Data().write(to: cpuWeight)
+
+        let manager = Cgroup2Manager(mountPoint: root, group: group)
+        try manager.applyResources(resources: .init(cpu: .init(shares: 512)))
+
+        #expect(try String(contentsOf: cpuWeight, encoding: .utf8) == "59")
+    }
+
     @Test func unlimitedCPUQuotaUsesCgroupMax() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-\(UUID().uuidString)")
         let group = URL(filePath: "container")

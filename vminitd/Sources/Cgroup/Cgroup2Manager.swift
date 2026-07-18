@@ -172,6 +172,25 @@ public struct Cgroup2Manager: Sendable {
         }
     }
 
+    /// Converts the OCI cgroup v1-style relative CPU shares value to cgroup
+    /// v2's CPU weight range. This follows the conversion used by runc.
+    package static func cpuWeight(fromShares shares: UInt64) -> UInt64 {
+        // Zero means that the caller did not set a relative CPU weight.
+        guard shares != 0 else {
+            return 0
+        }
+        if shares <= 2 {
+            return 1
+        }
+        if shares >= 262_144 {
+            return 10_000
+        }
+
+        let logarithm = log2(Double(shares))
+        let exponent = (logarithm * logarithm + 125 * logarithm) / 612 - 7.0 / 34.0
+        return UInt64(ceil(pow(10, exponent)))
+    }
+
     package func toggleSubtreeControllers(controllers: [Cgroup2Controller], enable: Bool) throws {
         let value = controllers.map { (enable ? "+" : "-") + $0.rawValue }.joined(separator: " ")
         let mountComponents = self.mountPoint.pathComponents
@@ -463,6 +482,14 @@ public struct Cgroup2Manager: Sendable {
                 path: self.path,
                 value: value,
                 fileName: "cpu.max"
+            )
+        }
+
+        if let shares = resources.cpu?.shares, shares != 0 {
+            try Self.writeValue(
+                path: self.path,
+                value: String(Self.cpuWeight(fromShares: shares)),
+                fileName: "cpu.weight"
             )
         }
 

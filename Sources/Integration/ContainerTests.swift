@@ -1128,6 +1128,51 @@ extension IntegrationSuite {
         }
     }
 
+    func testCgroupCPUShareWeight() async throws {
+        let id = "test-cgroup-cpu-share-weight"
+
+        let bs = try await bootstrap(id)
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["sleep", "infinity"]
+            config.cpuShares = 512
+            config.bootLog = bs.bootLog
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+
+            let buffer = BufferWriter()
+            let exec = try await container.exec("check-cpu-weight") { config in
+                config.arguments = ["cat", "/sys/fs/cgroup/cpu.weight"]
+                config.stdout = buffer
+            }
+            try await exec.start()
+            let status = try await exec.wait()
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "check-cpu-weight status \(status) != 0")
+            }
+            try await exec.delete()
+
+            guard
+                let cpuWeight = String(data: buffer.data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            else {
+                throw IntegrationError.assert(msg: "failed to parse cpu.weight")
+            }
+            guard cpuWeight == "59" else {
+                throw IntegrationError.assert(msg: "cpu.weight '\(cpuWeight)' != expected '59'")
+            }
+
+            try await container.kill(.kill)
+            try await container.wait()
+            try await container.stop()
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
     func testMemoryEventsOOMKill() async throws {
         let id = "test-memory-events-oom-kill"
 
