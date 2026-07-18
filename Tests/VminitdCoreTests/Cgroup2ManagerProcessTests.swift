@@ -44,6 +44,26 @@ struct Cgroup2ManagerProcessTests {
         #expect(try String(contentsOf: cpuWeight, encoding: .utf8) == "59")
     }
 
+    @Test func cpuSetInitializesMemoryNodesFromParent() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-set-\(UUID().uuidString)")
+        let group = URL(filePath: "container")
+        let cgroup = root.appending(path: group.path)
+        try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try "0".write(to: root.appending(path: "cpuset.mems.effective"), atomically: true, encoding: .utf8)
+        let cpuSet = cgroup.appending(path: "cpuset.cpus")
+        let memoryNodes = cgroup.appending(path: "cpuset.mems")
+        try Data().write(to: cpuSet)
+        try Data().write(to: memoryNodes)
+
+        let manager = Cgroup2Manager(mountPoint: root, group: group)
+        try manager.applyResources(resources: .init(cpu: .init(cpus: "0-1")))
+
+        #expect(try String(contentsOf: memoryNodes, encoding: .utf8) == "0")
+        #expect(try String(contentsOf: cpuSet, encoding: .utf8) == "0-1")
+    }
+
     @Test func unlimitedCPUQuotaUsesCgroupMax() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-\(UUID().uuidString)")
         let group = URL(filePath: "container")

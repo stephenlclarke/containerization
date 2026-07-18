@@ -269,6 +269,19 @@ struct LinuxContainerTests {
         #expect(resources.cpu?.shares == 512)
     }
 
+    @Test func runtimeSpecIncludesConfiguredCPUSet() throws {
+        let container = try LinuxContainer(
+            "cpu-set-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), cpuSet: "0-1")
+        )
+
+        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+
+        #expect(resources.cpu?.cpus == "0-1")
+    }
+
     @Test func runtimeSpecIncludesConfiguredFractionalCPUQuota() throws {
         let container = try LinuxContainer(
             "fractional-cpu-quota-test",

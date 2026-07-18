@@ -100,6 +100,12 @@ public final class LinuxContainer: Container, Sendable {
         ///
         /// When omitted, the OCI runtime retains its default CPU weight.
         public var cpuShares: UInt64?
+        /// Optional Linux CPU-set expression for the container cgroup.
+        ///
+        /// The value uses cgroup v2's `cpuset.cpus` syntax, such as `0-2,4`.
+        /// It constrains the workload to the selected virtual CPUs without
+        /// changing the sandbox VM's configured CPU count.
+        public var cpuSet: String?
         /// Optional CFS quota in microseconds for the container cgroup.
         ///
         /// When no explicit period is set, the OCI runtime uses its normal
@@ -201,6 +207,7 @@ public final class LinuxContainer: Container, Sendable {
             memoryReservationInBytes: Int64? = nil,
             memorySwapLimitInBytes: Int64? = nil,
             cpuShares: UInt64? = nil,
+            cpuSet: String? = nil,
             cpuQuotaInMicroseconds: Int64? = nil,
             cpuPeriodInMicroseconds: UInt64? = nil,
             pidsLimit: Int64? = nil,
@@ -234,6 +241,7 @@ public final class LinuxContainer: Container, Sendable {
             self.memoryReservationInBytes = memoryReservationInBytes
             self.memorySwapLimitInBytes = memorySwapLimitInBytes
             self.cpuShares = cpuShares
+            self.cpuSet = cpuSet
             self.cpuQuotaInMicroseconds = cpuQuotaInMicroseconds
             self.cpuPeriodInMicroseconds = cpuPeriodInMicroseconds
             self.pidsLimit = pidsLimit
@@ -553,7 +561,8 @@ public final class LinuxContainer: Container, Sendable {
             cpu: LinuxCPU(
                 shares: config.cpuShares,
                 quota: config.cpuQuotaInMicroseconds ?? (config.cpuPeriodInMicroseconds == nil ? Int64(config.cpus * 100_000) : nil),
-                period: config.cpuPeriodInMicroseconds ?? 100_000
+                period: config.cpuPeriodInMicroseconds ?? 100_000,
+                cpus: config.cpuSet ?? ""
             ),
             pids: config.pidsLimit.map(LinuxPids.init(limit:)),
             blockIO: config.blockIO?.toOCI()

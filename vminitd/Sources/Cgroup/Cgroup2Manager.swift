@@ -493,6 +493,41 @@ public struct Cgroup2Manager: Sendable {
             )
         }
 
+        if let cpu = resources.cpu, !cpu.cpus.isEmpty || !cpu.mems.isEmpty {
+            if !cpu.mems.isEmpty {
+                try Self.writeValue(
+                    path: self.path,
+                    value: cpu.mems,
+                    fileName: "cpuset.mems"
+                )
+            } else if !cpu.cpus.isEmpty {
+                let parent = self.path.deletingLastPathComponent()
+                let mems = try String(
+                    contentsOf: parent.appending(path: "cpuset.mems.effective"),
+                    encoding: .utf8
+                ).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !mems.isEmpty else {
+                    throw Error.errno(
+                        errno: EINVAL,
+                        message: "parent cgroup \(parent.path) has no effective CPU-set memory nodes"
+                    )
+                }
+                try Self.writeValue(
+                    path: self.path,
+                    value: mems,
+                    fileName: "cpuset.mems"
+                )
+            }
+
+            if !cpu.cpus.isEmpty {
+                try Self.writeValue(
+                    path: self.path,
+                    value: cpu.cpus,
+                    fileName: "cpuset.cpus"
+                )
+            }
+        }
+
         if let pids = resources.pids {
             // The OCI spec defines -1 as unlimited; cgroup v2 expects "max".
             let value = pids.limit < 0 ? "max" : String(pids.limit)

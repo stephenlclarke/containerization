@@ -1173,6 +1173,48 @@ extension IntegrationSuite {
         }
     }
 
+    func testCgroupCPUSet() async throws {
+        let id = "test-cgroup-cpu-set"
+
+        let bs = try await bootstrap(id)
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["sleep", "infinity"]
+            config.cpuSet = "0-1"
+            config.bootLog = bs.bootLog
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+
+            let buffer = BufferWriter()
+            let exec = try await container.exec("check-cpu-set") { config in
+                config.arguments = ["cat", "/sys/fs/cgroup/cpuset.cpus", "/sys/fs/cgroup/cpuset.mems"]
+                config.stdout = buffer
+            }
+            try await exec.start()
+            let status = try await exec.wait()
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "check-cpu-set status \(status) != 0")
+            }
+            try await exec.delete()
+
+            let values = String(data: buffer.data, encoding: .utf8)?
+                .split(separator: "\n")
+                .map(String.init)
+            guard values == ["0-1", "0"] else {
+                throw IntegrationError.assert(msg: "cpuset values \(values ?? []) != expected [0-1, 0]")
+            }
+
+            try await container.kill(.kill)
+            try await container.wait()
+            try await container.stop()
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
     func testMemoryEventsOOMKill() async throws {
         let id = "test-memory-events-oom-kill"
 
