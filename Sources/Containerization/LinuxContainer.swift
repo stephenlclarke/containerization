@@ -96,6 +96,10 @@ public final class LinuxContainer: Container, Sendable {
         /// A value of `-1` leaves swap unlimited; when omitted, the OCI
         /// runtime retains its default swap policy.
         public var memorySwapLimitInBytes: Int64?
+        /// Whether the Linux memory cgroup should disable its OOM killer.
+        ///
+        /// When omitted, the OCI runtime retains its default OOM behavior.
+        public var disableOOMKiller: Bool?
         /// Optional relative CPU scheduling weight for the container cgroup.
         ///
         /// When omitted, the OCI runtime retains its default CPU weight.
@@ -228,6 +232,7 @@ public final class LinuxContainer: Container, Sendable {
             memoryInBytes: UInt64 = 1024.mib(),
             memoryReservationInBytes: Int64? = nil,
             memorySwapLimitInBytes: Int64? = nil,
+            disableOOMKiller: Bool? = nil,
             cpuShares: UInt64? = nil,
             cpuSet: String? = nil,
             cpuQuotaInMicroseconds: Int64? = nil,
@@ -267,6 +272,7 @@ public final class LinuxContainer: Container, Sendable {
             self.memoryInBytes = memoryInBytes
             self.memoryReservationInBytes = memoryReservationInBytes
             self.memorySwapLimitInBytes = memorySwapLimitInBytes
+            self.disableOOMKiller = disableOOMKiller
             self.cpuShares = cpuShares
             self.cpuSet = cpuSet
             self.cpuQuotaInMicroseconds = cpuQuotaInMicroseconds
@@ -614,7 +620,8 @@ public final class LinuxContainer: Container, Sendable {
             memory: LinuxMemory(
                 limit: Int64(config.memoryInBytes),
                 reservation: config.memoryReservationInBytes,
-                swap: config.memorySwapLimitInBytes
+                swap: config.memorySwapLimitInBytes,
+                disableOOMKiller: config.disableOOMKiller
             ),
             cpu: LinuxCPU(
                 shares: config.cpuShares,
