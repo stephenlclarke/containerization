@@ -283,6 +283,39 @@ struct LinuxContainerTests {
         #expect(cpu.period == 100_000)
     }
 
+    @Test func runtimeSpecIncludesConfiguredCPUQuotaAndPeriod() throws {
+        let container = try LinuxContainer(
+            "cpu-quota-period-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(
+                process: .init(),
+                cpus: 1,
+                cpuQuotaInMicroseconds: 50_000,
+                cpuPeriodInMicroseconds: 200_000
+            )
+        )
+
+        let cpu = try #require(container.generateRuntimeSpec().linux?.resources?.cpu)
+
+        #expect(cpu.quota == 50_000)
+        #expect(cpu.period == 200_000)
+    }
+
+    @Test func runtimeSpecRetainsUnlimitedQuotaForConfiguredCPUPeriod() throws {
+        let container = try LinuxContainer(
+            "cpu-period-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), cpus: 1, cpuPeriodInMicroseconds: 200_000)
+        )
+
+        let cpu = try #require(container.generateRuntimeSpec().linux?.resources?.cpu)
+
+        #expect(cpu.quota == nil)
+        #expect(cpu.period == 200_000)
+    }
+
     @Test func runtimeSpecIncludesConfiguredDeviceCgroupRules() throws {
         let deviceRules = [
             LinuxDeviceCgroup(allow: true, type: "c", major: 1, minor: 3, access: "mr"),

@@ -102,10 +102,17 @@ public final class LinuxContainer: Container, Sendable {
         public var cpuShares: UInt64?
         /// Optional CFS quota in microseconds for the container cgroup.
         ///
-        /// The period remains 100 milliseconds. This allows callers to limit
-        /// the workload to a fractional CPU while the sandbox VM retains an
-        /// integral virtual CPU allocation.
+        /// When no explicit period is set, the OCI runtime uses its normal
+        /// CFS period. This allows callers to limit the workload to a
+        /// fractional CPU while the sandbox VM retains an integral virtual
+        /// CPU allocation.
         public var cpuQuotaInMicroseconds: Int64?
+        /// Optional CFS period in microseconds for the container cgroup.
+        ///
+        /// Supplying a period without a quota preserves the cgroup's
+        /// unlimited quota. When neither period nor quota is specified, the
+        /// runtime retains its existing CPU-count-derived limit.
+        public var cpuPeriodInMicroseconds: UInt64?
         /// Optional process count limit for the container cgroup.
         public var pidsLimit: Int64?
         /// Optional block I/O resource limits for the container cgroup.
@@ -195,6 +202,7 @@ public final class LinuxContainer: Container, Sendable {
             memorySwapLimitInBytes: Int64? = nil,
             cpuShares: UInt64? = nil,
             cpuQuotaInMicroseconds: Int64? = nil,
+            cpuPeriodInMicroseconds: UInt64? = nil,
             pidsLimit: Int64? = nil,
             blockIO: LinuxBlockIO? = nil,
             deviceCgroupRules: [LinuxDeviceCgroup] = [],
@@ -227,6 +235,7 @@ public final class LinuxContainer: Container, Sendable {
             self.memorySwapLimitInBytes = memorySwapLimitInBytes
             self.cpuShares = cpuShares
             self.cpuQuotaInMicroseconds = cpuQuotaInMicroseconds
+            self.cpuPeriodInMicroseconds = cpuPeriodInMicroseconds
             self.pidsLimit = pidsLimit
             self.blockIO = blockIO
             self.deviceCgroupRules = deviceCgroupRules
@@ -529,8 +538,10 @@ public final class LinuxContainer: Container, Sendable {
         spec.root?.readonly = self.rootfs.options.contains("ro") && self.writableLayer == nil
 
         // Resource limits.
-        // CPU: quota/period model where period is 100ms (100,000µs). A caller
-        // can override the integral CPU-derived quota for fractional limits.
+        // CPU: use the legacy CPU-count-derived quota only when callers did
+        // not supply either part of the CFS quota/period pair. Supplying only
+        // a period intentionally keeps quota unlimited, matching OCI's
+        // optional CPU resource semantics.
         // Memory: limit in bytes
         spec.linux?.resources = LinuxResources(
             devices: config.deviceCgroupRules,
@@ -541,8 +552,8 @@ public final class LinuxContainer: Container, Sendable {
             ),
             cpu: LinuxCPU(
                 shares: config.cpuShares,
-                quota: config.cpuQuotaInMicroseconds ?? Int64(config.cpus * 100_000),
-                period: 100_000
+                quota: config.cpuQuotaInMicroseconds ?? (config.cpuPeriodInMicroseconds == nil ? Int64(config.cpus * 100_000) : nil),
+                period: config.cpuPeriodInMicroseconds ?? 100_000
             ),
             pids: config.pidsLimit.map(LinuxPids.init(limit:)),
             blockIO: config.blockIO?.toOCI()
