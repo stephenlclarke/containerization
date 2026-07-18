@@ -100,6 +100,12 @@ public final class LinuxContainer: Container, Sendable {
         ///
         /// When omitted, the OCI runtime retains its default CPU weight.
         public var cpuShares: UInt64?
+        /// Optional CFS quota in microseconds for the container cgroup.
+        ///
+        /// The period remains 100 milliseconds. This allows callers to limit
+        /// the workload to a fractional CPU while the sandbox VM retains an
+        /// integral virtual CPU allocation.
+        public var cpuQuotaInMicroseconds: Int64?
         /// Optional process count limit for the container cgroup.
         public var pidsLimit: Int64?
         /// Optional block I/O resource limits for the container cgroup.
@@ -188,6 +194,7 @@ public final class LinuxContainer: Container, Sendable {
             memoryReservationInBytes: Int64? = nil,
             memorySwapLimitInBytes: Int64? = nil,
             cpuShares: UInt64? = nil,
+            cpuQuotaInMicroseconds: Int64? = nil,
             pidsLimit: Int64? = nil,
             blockIO: LinuxBlockIO? = nil,
             deviceCgroupRules: [LinuxDeviceCgroup] = [],
@@ -219,6 +226,7 @@ public final class LinuxContainer: Container, Sendable {
             self.memoryReservationInBytes = memoryReservationInBytes
             self.memorySwapLimitInBytes = memorySwapLimitInBytes
             self.cpuShares = cpuShares
+            self.cpuQuotaInMicroseconds = cpuQuotaInMicroseconds
             self.pidsLimit = pidsLimit
             self.blockIO = blockIO
             self.deviceCgroupRules = deviceCgroupRules
@@ -521,7 +529,8 @@ public final class LinuxContainer: Container, Sendable {
         spec.root?.readonly = self.rootfs.options.contains("ro") && self.writableLayer == nil
 
         // Resource limits.
-        // CPU: quota/period model where period is 100ms (100,000µs) and quota is cpus * period
+        // CPU: quota/period model where period is 100ms (100,000µs). A caller
+        // can override the integral CPU-derived quota for fractional limits.
         // Memory: limit in bytes
         spec.linux?.resources = LinuxResources(
             devices: config.deviceCgroupRules,
@@ -532,7 +541,7 @@ public final class LinuxContainer: Container, Sendable {
             ),
             cpu: LinuxCPU(
                 shares: config.cpuShares,
-                quota: Int64(config.cpus * 100_000),
+                quota: config.cpuQuotaInMicroseconds ?? Int64(config.cpus * 100_000),
                 period: 100_000
             ),
             pids: config.pidsLimit.map(LinuxPids.init(limit:)),

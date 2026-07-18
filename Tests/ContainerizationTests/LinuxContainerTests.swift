@@ -269,6 +269,20 @@ struct LinuxContainerTests {
         #expect(resources.cpu?.shares == 512)
     }
 
+    @Test func runtimeSpecIncludesConfiguredFractionalCPUQuota() throws {
+        let container = try LinuxContainer(
+            "fractional-cpu-quota-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), cpus: 1, cpuQuotaInMicroseconds: 25_000)
+        )
+
+        let cpu = try #require(container.generateRuntimeSpec().linux?.resources?.cpu)
+
+        #expect(cpu.quota == 25_000)
+        #expect(cpu.period == 100_000)
+    }
+
     @Test func runtimeSpecIncludesConfiguredDeviceCgroupRules() throws {
         let deviceRules = [
             LinuxDeviceCgroup(allow: true, type: "c", major: 1, minor: 3, access: "mr"),
