@@ -445,6 +445,35 @@ struct LinuxContainerTests {
             ])
     }
 
+    @Test func runtimeSpecCanUseHostIPCAndUTSNamespaces() throws {
+        let isolatedContainer = try LinuxContainer(
+            "ipc-uts-isolated-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let hostNamespaceContainer = try LinuxContainer(
+            "ipc-uts-host-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), hostIPCNamespace: true, hostUTSNamespace: true)
+        )
+
+        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec().linux?.namespaces)
+        let hostNamespaces = try #require(hostNamespaceContainer.generateRuntimeSpec().linux?.namespaces)
+
+        #expect(isolatedNamespaces.contains { $0.type == .ipc })
+        #expect(isolatedNamespaces.contains { $0.type == .uts })
+        #expect(!hostNamespaces.contains { $0.type == .ipc })
+        #expect(!hostNamespaces.contains { $0.type == .uts })
+        #expect(
+            hostNamespaces.map { $0.type } == [
+                LinuxNamespaceType.cgroup,
+                LinuxNamespaceType.mount,
+                LinuxNamespaceType.pid,
+            ])
+    }
+
     @Test func pauseAndResumeTransitionRunningContainer() async throws {
         let manager = RecordingVirtualMachineManager()
         let container = try LinuxContainer(

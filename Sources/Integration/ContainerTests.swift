@@ -1249,6 +1249,41 @@ extension IntegrationSuite {
         }
     }
 
+    func testHostIPCAndUTSNamespaces() async throws {
+        let id = "test-host-ipc-uts-namespaces"
+
+        let bs = try await bootstrap(id)
+        let buffer = BufferWriter()
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["sh", "-c", "hostname; test -r /proc/sysvipc/shm"]
+            config.process.stdout = buffer
+            config.bootLog = bs.bootLog
+            config.hostIPCNamespace = true
+            config.hostUTSNamespace = true
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+            let status = try await container.wait()
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "host IPC/UTS namespace process status \(status) != 0")
+            }
+
+            guard let hostname = String(data: buffer.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                throw IntegrationError.assert(msg: "host UTS namespace did not expose a hostname")
+            }
+            guard !hostname.isEmpty else {
+                throw IntegrationError.assert(msg: "host UTS namespace did not expose a hostname")
+            }
+
+            try await container.stop()
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
     func testMemoryEventsOOMKill() async throws {
         let id = "test-memory-events-oom-kill"
 

@@ -169,6 +169,12 @@ public final class LinuxContainer: Container, Sendable {
         /// Run the container in the sandbox VM cgroup namespace instead of
         /// creating a private cgroup namespace.
         public var hostCgroupNamespace: Bool = false
+        /// Run the container in the sandbox VM IPC namespace instead of
+        /// creating a private container IPC namespace.
+        public var hostIPCNamespace: Bool = false
+        /// Run the container in the sandbox VM UTS namespace instead of
+        /// creating a private container UTS namespace.
+        public var hostUTSNamespace: Bool = false
         /// Additional CPU cores to allocate for the virtual machine on top
         /// of the container's configured `cpus` value.
         public var cpuOverhead: Int = 1
@@ -233,6 +239,8 @@ public final class LinuxContainer: Container, Sendable {
             useInit: Bool = false,
             hostPIDNamespace: Bool = false,
             hostCgroupNamespace: Bool = false,
+            hostIPCNamespace: Bool = false,
+            hostUTSNamespace: Bool = false,
             cpuOverhead: Int = 1,
             memoryOverhead: UInt64 = 128.mib(),
             graphicsDevice: Bool = false,
@@ -268,6 +276,8 @@ public final class LinuxContainer: Container, Sendable {
             self.useInit = useInit
             self.hostPIDNamespace = hostPIDNamespace
             self.hostCgroupNamespace = hostCgroupNamespace
+            self.hostIPCNamespace = hostIPCNamespace
+            self.hostUTSNamespace = hostUTSNamespace
             self.cpuOverhead = cpuOverhead
             self.memoryOverhead = memoryOverhead
             self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .virtioDevice : .disabled))
@@ -573,17 +583,20 @@ public final class LinuxContainer: Container, Sendable {
             blockIO: config.blockIO?.toOCI()
         )
 
-        var namespaces = [
-            LinuxNamespace(type: .ipc),
-            LinuxNamespace(type: .mount),
-        ]
+        var namespaces: [LinuxNamespace] = []
         if !config.hostCgroupNamespace {
-            namespaces.insert(LinuxNamespace(type: .cgroup), at: 0)
+            namespaces.append(LinuxNamespace(type: .cgroup))
         }
+        if !config.hostIPCNamespace {
+            namespaces.append(LinuxNamespace(type: .ipc))
+        }
+        namespaces.append(LinuxNamespace(type: .mount))
         if !config.hostPIDNamespace {
             namespaces.append(LinuxNamespace(type: .pid))
         }
-        namespaces.append(LinuxNamespace(type: .uts))
+        if !config.hostUTSNamespace {
+            namespaces.append(LinuxNamespace(type: .uts))
+        }
         spec.linux?.namespaces = namespaces
 
         return spec
