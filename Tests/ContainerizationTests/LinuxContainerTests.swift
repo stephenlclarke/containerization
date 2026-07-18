@@ -417,6 +417,34 @@ struct LinuxContainerTests {
             ])
     }
 
+    @Test func runtimeSpecCanUseHostCgroupNamespace() throws {
+        let isolatedContainer = try LinuxContainer(
+            "cgroup-isolated-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let hostCgroupContainer = try LinuxContainer(
+            "cgroup-host-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), hostCgroupNamespace: true)
+        )
+
+        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec().linux?.namespaces)
+        let hostCgroupNamespaces = try #require(hostCgroupContainer.generateRuntimeSpec().linux?.namespaces)
+
+        #expect(isolatedNamespaces.contains { $0.type == .cgroup })
+        #expect(!hostCgroupNamespaces.contains { $0.type == .cgroup })
+        #expect(
+            hostCgroupNamespaces.map { $0.type } == [
+                LinuxNamespaceType.ipc,
+                LinuxNamespaceType.mount,
+                LinuxNamespaceType.pid,
+                LinuxNamespaceType.uts,
+            ])
+    }
+
     @Test func pauseAndResumeTransitionRunningContainer() async throws {
         let manager = RecordingVirtualMachineManager()
         let container = try LinuxContainer(

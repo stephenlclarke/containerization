@@ -166,6 +166,9 @@ public final class LinuxContainer: Container, Sendable {
         /// Run the init process in the sandbox VM PID namespace instead of
         /// creating a private container PID namespace.
         public var hostPIDNamespace: Bool = false
+        /// Run the container in the sandbox VM cgroup namespace instead of
+        /// creating a private cgroup namespace.
+        public var hostCgroupNamespace: Bool = false
         /// Additional CPU cores to allocate for the virtual machine on top
         /// of the container's configured `cpus` value.
         public var cpuOverhead: Int = 1
@@ -229,6 +232,7 @@ public final class LinuxContainer: Container, Sendable {
             ociRuntimePath: String? = nil,
             useInit: Bool = false,
             hostPIDNamespace: Bool = false,
+            hostCgroupNamespace: Bool = false,
             cpuOverhead: Int = 1,
             memoryOverhead: UInt64 = 128.mib(),
             graphicsDevice: Bool = false,
@@ -263,6 +267,7 @@ public final class LinuxContainer: Container, Sendable {
             self.ociRuntimePath = ociRuntimePath
             self.useInit = useInit
             self.hostPIDNamespace = hostPIDNamespace
+            self.hostCgroupNamespace = hostCgroupNamespace
             self.cpuOverhead = cpuOverhead
             self.memoryOverhead = memoryOverhead
             self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .virtioDevice : .disabled))
@@ -569,10 +574,12 @@ public final class LinuxContainer: Container, Sendable {
         )
 
         var namespaces = [
-            LinuxNamespace(type: .cgroup),
             LinuxNamespace(type: .ipc),
             LinuxNamespace(type: .mount),
         ]
+        if !config.hostCgroupNamespace {
+            namespaces.insert(LinuxNamespace(type: .cgroup), at: 0)
+        }
         if !config.hostPIDNamespace {
             namespaces.append(LinuxNamespace(type: .pid))
         }

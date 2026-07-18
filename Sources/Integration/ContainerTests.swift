@@ -1215,6 +1215,40 @@ extension IntegrationSuite {
         }
     }
 
+    func testHostCgroupNamespace() async throws {
+        let id = "test-host-cgroup-namespace"
+
+        let bs = try await bootstrap(id)
+        let buffer = BufferWriter()
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["cat", "/proc/self/cgroup"]
+            config.process.stdout = buffer
+            config.bootLog = bs.bootLog
+            config.hostCgroupNamespace = true
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+            let status = try await container.wait()
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "host cgroup namespace process status \(status) != 0")
+            }
+
+            guard let cgroupPath = String(data: buffer.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                throw IntegrationError.assert(msg: "failed to read host cgroup namespace path")
+            }
+            guard cgroupPath.hasPrefix("0::") else {
+                throw IntegrationError.assert(msg: "host cgroup namespace did not expose a cgroup v2 path: \(cgroupPath)")
+            }
+
+            try await container.stop()
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
     func testMemoryEventsOOMKill() async throws {
         let id = "test-memory-events-oom-kill"
 
