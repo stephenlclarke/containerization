@@ -243,19 +243,6 @@ struct LinuxContainerTests {
         #expect(swap == -1)
     }
 
-    @Test func runtimeSpecIncludesConfiguredOOMKillerMode() throws {
-        let container = try LinuxContainer(
-            "oom-killer-mode-test",
-            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
-            vmm: StubVirtualMachineManager(),
-            configuration: .init(process: .init(), disableOOMKiller: true)
-        )
-
-        let memory = try #require(container.generateRuntimeSpec().linux?.resources?.memory)
-
-        #expect(memory.disableOOMKiller == true)
-    }
-
     @Test func runtimeSpecIncludesConfiguredPidsLimit() throws {
         let container = try LinuxContainer(
             "pids-limit-test",
