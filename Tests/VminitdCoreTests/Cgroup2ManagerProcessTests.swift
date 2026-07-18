@@ -23,6 +23,22 @@ import Testing
 @testable import Cgroup
 
 struct Cgroup2ManagerProcessTests {
+    @Test func unlimitedCPUQuotaUsesCgroupMax() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-\(UUID().uuidString)")
+        let group = URL(filePath: "container")
+        let cgroup = root.appending(path: group.path)
+        try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let cpuMax = cgroup.appending(path: "cpu.max")
+        try Data().write(to: cpuMax)
+
+        let manager = Cgroup2Manager(mountPoint: root, group: group)
+        try manager.applyResources(resources: .init(cpu: .init(quota: -1, period: 100_000)))
+
+        #expect(try String(contentsOf: cpuMax, encoding: .utf8) == "max 100000")
+    }
+
     @Test func processIdentifiersHandleEmptyFiles() throws {
         #expect(try Cgroup2Manager.parseProcessIdentifiers(nil) == [])
         #expect(try Cgroup2Manager.parseProcessIdentifiers("") == [])

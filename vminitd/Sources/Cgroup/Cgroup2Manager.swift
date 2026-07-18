@@ -455,8 +455,10 @@ public struct Cgroup2Manager: Sendable {
         }
 
         if let cpu = resources.cpu, let quota = cpu.quota, let period = cpu.period {
-            // cpu.max format is "quota period"
-            let value = "\(quota) \(period)"
+            // OCI defines a negative quota as unlimited; cgroup v2 uses
+            // "max" for that value. cpu.max format is "quota period".
+            let quotaValue = quota < 0 ? "max" : String(quota)
+            let value = "\(quotaValue) \(period)"
             try Self.writeValue(
                 path: self.path,
                 value: value,
