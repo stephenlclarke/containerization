@@ -159,7 +159,9 @@ struct RunCommand: ParsableCommand {
     private func childSetup(
         spec: ContainerizationOCI.Spec,
         ackPipe: FileDescriptor,
-        syncPipe: FileDescriptor
+        syncPipe: FileDescriptor,
+        userNamespaceReadyDescriptor: Int32? = nil,
+        userNamespaceMappedDescriptor: Int32? = nil
     ) throws {
         guard let process = spec.process else {
             throw App.Failure(message: "no process configuration found in runtime spec")
@@ -170,8 +172,13 @@ struct RunCommand: ParsableCommand {
 
         // Wait for the grandparent to tell us that they acked our pid.
         var pidAckBuffer = [UInt8](repeating: 0, count: App.ackPid.count)
-        let pidAckBytesRead = try pidAckBuffer.withUnsafeMutableBytes { buffer in
-            try ackPipe.read(into: buffer)
+        let pidAckBytesRead: Int
+        do {
+            pidAckBytesRead = try pidAckBuffer.withUnsafeMutableBytes { buffer in
+                try ackPipe.read(into: buffer)
+            }
+        } catch {
+            throw App.Failure(message: "read process acknowledgement: \(error)")
         }
         guard pidAckBytesRead > 0 else {
             throw App.Failure(message: "read ack pipe")
@@ -183,14 +190,18 @@ struct RunCommand: ParsableCommand {
         }
 
         guard unshare(CLONE_NEWCGROUP) == 0 else {
-            throw App.Errno(stage: "unshare(cgroup)")
+            throw App.Failure(message: "create cgroup namespace: \(App.Errno(stage: "unshare(cgroup)"))")
         }
 
         guard setsid() != -1 else {
-            throw App.Errno(stage: "setsid()")
+            throw App.Failure(message: "create session: \(App.Errno(stage: "setsid()"))")
         }
 
-        try childRootSetup(rootfs: root, mounts: spec.mounts)
+        do {
+            try childRootSetup(rootfs: root, mounts: spec.mounts)
+        } catch {
+            throw App.Failure(message: "configure container rootfs: \(error)")
+        }
 
         if process.terminal {
             let pty = try Console()
@@ -254,34 +265,87 @@ struct RunCommand: ParsableCommand {
         // and BEFORE the user/capability change (mount() requires
         // CAP_SYS_ADMIN, which we still have here as root). Mask runs first
         // so a path appearing in both lists is hidden, not just locked.
-        try self.applyMaskedPaths(spec.linux?.maskedPaths ?? [])
-        try self.applyReadonlyPaths(spec.linux?.readonlyPaths ?? [])
+        do {
+            try self.applyMaskedPaths(spec.linux?.maskedPaths ?? [])
+            try self.applyReadonlyPaths(spec.linux?.readonlyPaths ?? [])
+        } catch {
+            throw App.Failure(message: "apply container mount protections: \(error)")
+        }
 
-        // Apply O_CLOEXEC to all file descriptors except stdio.
-        // This ensures that all unwanted fds we may have accidentally
-        // inherited are marked close-on-exec so they stay out of the
-        // container.
-        try App.applyCloseExecOnFDs()
+        // Apply O_CLOEXEC before entering a private user namespace. The
+        // procfs file-descriptor view is owned by the initial namespace in
+        // this guest, while the descriptors themselves remain usable for the
+        // mapping handshake below.
+        do {
+            try App.applyCloseExecOnFDs()
+        } catch {
+            throw App.Failure(message: "enumerate process file descriptors: \(error)")
+        }
 
-        try App.setRLimits(rlimits: process.rlimits)
+        if let userNamespaceReadyDescriptor, let userNamespaceMappedDescriptor {
+            // Mounts and other privileged guest setup must occur while this
+            // process still has capabilities in the sandbox VM's initial user
+            // namespace. The parent maps this new namespace before any
+            // workload credentials or capabilities are applied.
+            guard unshare(CLONE_NEWUSER) == 0 else {
+                throw App.Failure(message: "create user namespace: \(App.Errno(stage: "unshare(user)"))")
+            }
+            do {
+                try sendUserNamespaceMappingSignal(1, to: userNamespaceReadyDescriptor)
+                try waitForUserNamespaceMappingSignal(from: userNamespaceMappedDescriptor, expected: 1)
+            } catch {
+                throw App.Failure(message: "synchronize user namespace mapping: \(error)")
+            }
+        }
 
-        // Prepare capabilities (before user change)
-        let preparedCaps = try App.prepareCapabilities(capabilities: process.capabilities ?? ContainerizationOCI.LinuxCapabilities())
+        do {
+            try App.setRLimits(rlimits: process.rlimits)
+        } catch {
+            throw App.Failure(message: "apply process resource limits: \(error)")
+        }
 
-        // Change stdio to be owned by the requested user.
-        try App.fixStdioPerms(user: process.user)
+        let preparedCaps: ContainerizationOS.LinuxCapabilities?
+        do {
+            // Prepare capabilities (before user change)
+            preparedCaps = try App.prepareCapabilities(capabilities: process.capabilities ?? ContainerizationOCI.LinuxCapabilities())
+        } catch {
+            throw App.Failure(message: "prepare process capabilities: \(error)")
+        }
 
-        // Set uid, gid, and supplementary groups.
-        try App.setPermissions(user: process.user)
+        do {
+            // Change stdio to be owned by the requested user.
+            try App.fixStdioPerms(user: process.user)
+        } catch {
+            throw App.Failure(message: "set process standard-stream ownership: \(error)")
+        }
 
-        // Finish capabilities (after user change)
-        try App.finishCapabilities(preparedCaps)
+        do {
+            // Set uid, gid, and supplementary groups.
+            try App.setPermissions(user: process.user)
+        } catch {
+            throw App.Failure(message: "set process credentials: \(error)")
+        }
 
-        // Set no_new_privs if requested by the OCI spec.
-        try App.setNoNewPrivileges(process: process)
+        do {
+            // Finish capabilities (after user change)
+            try App.finishCapabilities(preparedCaps)
+        } catch {
+            throw App.Failure(message: "finish process capabilities: \(error)")
+        }
 
-        // Finally execve the container process.
-        try App.exec(process: process, currentEnv: process.env)
+        do {
+            // Set no_new_privs if requested by the OCI spec.
+            try App.setNoNewPrivileges(process: process)
+        } catch {
+            throw App.Failure(message: "set no-new-privileges: \(error)")
+        }
+
+        do {
+            // Finally execve the container process.
+            try App.exec(process: process, currentEnv: process.env)
+        } catch {
+            throw App.Failure(message: "exec container process: \(error)")
+        }
     }
 
     private func setupNamespaces(namespaces: [ContainerizationOCI.LinuxNamespace]?) throws -> Int32 {
@@ -324,16 +388,90 @@ struct RunCommand: ParsableCommand {
         return unshareFlags
     }
 
-    private func execInNamespace(spec: ContainerizationOCI.Spec) throws {
-        let syncPipe = FileDescriptor(rawValue: 3)
-        let ackPipe = FileDescriptor(rawValue: 4)
-
-        let unshareFlags = try setupNamespaces(namespaces: spec.linux?.namespaces)
-
-        guard unshare(unshareFlags) == 0 else {
-            throw App.Errno(stage: "unshare(\(unshareFlags))")
+    private func writeUserNamespaceFile(path: String, contents: String) throws {
+        let fd = open(path, O_WRONLY | O_CLOEXEC)
+        guard fd >= 0 else {
+            throw App.Errno(stage: "open(\(path))")
         }
+        defer { close(fd) }
 
+        let bytes = Array(contents.utf8)
+        let bytesWritten = write(fd, bytes, bytes.count)
+        guard bytesWritten == bytes.count else {
+            throw App.Errno(stage: "write(\(path))")
+        }
+    }
+
+    private func writeUserNamespaceMappings(
+        _ mappings: [ContainerizationOCI.LinuxIDMapping],
+        to path: String
+    ) throws {
+        let contents = mappings
+            .map { "\($0.containerID) \($0.hostID) \($0.size)" }
+            .joined(separator: "\n")
+        try writeUserNamespaceFile(path: path, contents: "\(contents)\n")
+    }
+
+    private func configureUserNamespaceMappings(
+        for processID: Int32,
+        linux: ContainerizationOCI.Linux
+    ) throws {
+        let processPath = "/proc/\(processID)"
+
+        if !linux.gidMappings.isEmpty {
+            // A mapper with CAP_SETGID in the parent namespace may write the
+            // GID map without disabling setgroups. Preserve that capability
+            // so the OCI process can apply its supplementary groups. An
+            // unprivileged mapper must instead deny setgroups before writing
+            // gid_map, so retry through that kernel-required fallback.
+            do {
+                try writeUserNamespaceMappings(linux.gidMappings, to: "\(processPath)/gid_map")
+            } catch {
+                do {
+                    try writeUserNamespaceFile(path: "\(processPath)/setgroups", contents: "deny\n")
+                    try writeUserNamespaceMappings(linux.gidMappings, to: "\(processPath)/gid_map")
+                } catch {
+                    throw App.Failure(message: "configure user namespace gid map: \(error)")
+                }
+            }
+        }
+        if !linux.uidMappings.isEmpty {
+            do {
+                try writeUserNamespaceMappings(linux.uidMappings, to: "\(processPath)/uid_map")
+            } catch {
+                throw App.Failure(message: "configure user namespace uid map: \(error)")
+            }
+        }
+    }
+
+    private func sendUserNamespaceMappingSignal(_ signal: UInt8, to descriptor: Int32) throws {
+        var signal = signal
+        let count = withUnsafeBytes(of: &signal) { bytes in
+            write(descriptor, bytes.baseAddress, bytes.count)
+        }
+        guard count == 1 else {
+            throw App.Errno(stage: "write(user namespace mapping signal)")
+        }
+    }
+
+    private func waitForUserNamespaceMappingSignal(from descriptor: Int32, expected: UInt8) throws {
+        var signal: UInt8 = 0
+        let count = withUnsafeMutableBytes(of: &signal) { bytes in
+            read(descriptor, bytes.baseAddress, bytes.count)
+        }
+        guard count >= 0 else {
+            throw App.Errno(stage: "read(user namespace mapping signal)")
+        }
+        guard count == 1, signal == expected else {
+            throw App.Failure(message: "invalid user namespace mapping synchronization")
+        }
+    }
+
+    private func startContainerProcess(
+        spec: ContainerizationOCI.Spec,
+        syncPipe: FileDescriptor,
+        ackPipe: FileDescriptor
+    ) throws {
         let processID = fork()
         guard processID != -1 else {
             try? syncPipe.close()
@@ -342,7 +480,11 @@ struct RunCommand: ParsableCommand {
         }
 
         if processID == 0 {  // child
-            try childSetup(spec: spec, ackPipe: ackPipe, syncPipe: syncPipe)
+            try childSetup(
+                spec: spec,
+                ackPipe: ackPipe,
+                syncPipe: syncPipe
+            )
         } else {  // parent process
             // Setup cgroup before child enters cgroup namespace
             if let linux = spec.linux {
@@ -364,6 +506,192 @@ struct RunCommand: ParsableCommand {
                 _ = try syncPipe.write(bytes)
             }
         }
+    }
+
+    private func startContainerProcessInNamespaceRunner(
+        spec: ContainerizationOCI.Spec,
+        syncPipe: FileDescriptor,
+        ackPipe: FileDescriptor,
+        userNamespaceReadyDescriptor: Int32,
+        userNamespaceMappedDescriptor: Int32,
+        mappingProcessDescriptor: Int32
+    ) throws {
+        let processID = fork()
+        guard processID != -1 else {
+            throw App.Errno(stage: "fork(user namespace container)")
+        }
+
+        if processID == 0 {
+            close(mappingProcessDescriptor)
+            do {
+                try childSetup(
+                    spec: spec,
+                    ackPipe: ackPipe,
+                    syncPipe: syncPipe,
+                    userNamespaceReadyDescriptor: userNamespaceReadyDescriptor,
+                    userNamespaceMappedDescriptor: userNamespaceMappedDescriptor
+                )
+            } catch {
+                throw App.Failure(message: "private user namespace child setup: \(error)")
+            }
+            return
+        }
+
+        var childPID = processID
+        let count = withUnsafeBytes(of: &childPID) { bytes in
+            write(mappingProcessDescriptor, bytes.baseAddress, bytes.count)
+        }
+        guard count == MemoryLayout<Int32>.size else {
+            throw App.Errno(stage: "write(user namespace container process ID)")
+        }
+    }
+
+    private func startContainerWithPrivateUserNamespace(
+        spec: ContainerizationOCI.Spec,
+        unshareFlags: Int32,
+        syncPipe: FileDescriptor,
+        ackPipe: FileDescriptor,
+        linux: ContainerizationOCI.Linux
+    ) throws {
+        var readyDescriptors: [Int32] = [0, 0]
+        guard pipe(&readyDescriptors) == 0 else {
+            throw App.Errno(stage: "pipe(user namespace ready)")
+        }
+
+        var mappedDescriptors: [Int32] = [0, 0]
+        guard pipe(&mappedDescriptors) == 0 else {
+            close(readyDescriptors[0])
+            close(readyDescriptors[1])
+            throw App.Errno(stage: "pipe(user namespace mapped)")
+        }
+
+        var processDescriptors: [Int32] = [0, 0]
+        guard pipe(&processDescriptors) == 0 else {
+            close(readyDescriptors[0])
+            close(readyDescriptors[1])
+            close(mappedDescriptors[0])
+            close(mappedDescriptors[1])
+            throw App.Errno(stage: "pipe(user namespace process)")
+        }
+
+        let runnerPID = fork()
+        guard runnerPID != -1 else {
+            close(readyDescriptors[0])
+            close(readyDescriptors[1])
+            close(mappedDescriptors[0])
+            close(mappedDescriptors[1])
+            close(processDescriptors[0])
+            close(processDescriptors[1])
+            throw App.Errno(stage: "fork(user namespace runner)")
+        }
+
+        if runnerPID == 0 {
+            close(readyDescriptors[0])
+            close(mappedDescriptors[1])
+            close(processDescriptors[0])
+            defer {
+                close(readyDescriptors[1])
+                close(mappedDescriptors[0])
+                close(processDescriptors[1])
+            }
+
+            let runnerFlags = unshareFlags & ~(CLONE_NEWUSER | CLONE_NEWCGROUP)
+            guard unshare(runnerFlags) == 0 else {
+                throw App.Errno(stage: "unshare(\(runnerFlags))")
+            }
+            try startContainerProcessInNamespaceRunner(
+                spec: spec,
+                syncPipe: syncPipe,
+                ackPipe: ackPipe,
+                userNamespaceReadyDescriptor: readyDescriptors[1],
+                userNamespaceMappedDescriptor: mappedDescriptors[0],
+                mappingProcessDescriptor: processDescriptors[1]
+            )
+            return
+        }
+
+        close(readyDescriptors[1])
+        close(mappedDescriptors[0])
+        close(processDescriptors[1])
+        defer {
+            close(readyDescriptors[0])
+            close(mappedDescriptors[1])
+            close(processDescriptors[0])
+        }
+
+        var containerProcessID: Int32 = 0
+        let count = withUnsafeMutableBytes(of: &containerProcessID) { bytes in
+            read(processDescriptors[0], bytes.baseAddress, bytes.count)
+        }
+        guard count == MemoryLayout<Int32>.size else {
+            _ = kill(runnerPID, SIGKILL)
+            throw App.Failure(message: "read user namespace container process ID")
+        }
+
+        do {
+            let cgroupPath = linux.cgroupsPath
+            if !cgroupPath.isEmpty {
+                do {
+                    let cgroupManager = try Cgroup2Manager.load(group: URL(filePath: cgroupPath))
+                    if let resources = linux.resources {
+                        try cgroupManager.applyResources(resources: resources)
+                    }
+                    try cgroupManager.addProcess(pid: containerProcessID)
+                } catch {
+                    throw App.Failure(message: "configure private user namespace cgroup: \(error)")
+                }
+            }
+
+            var childPID = containerProcessID
+            do {
+                try withUnsafeBytes(of: &childPID) { bytes in
+                    _ = try syncPipe.write(bytes)
+                }
+            } catch {
+                throw App.Failure(message: "signal private user namespace container PID: \(error)")
+            }
+            try waitForUserNamespaceMappingSignal(from: readyDescriptors[0], expected: 1)
+            try configureUserNamespaceMappings(for: containerProcessID, linux: linux)
+            try sendUserNamespaceMappingSignal(1, to: mappedDescriptors[1])
+        } catch {
+            _ = kill(runnerPID, SIGKILL)
+            _ = kill(containerProcessID, SIGKILL)
+            throw error
+        }
+    }
+
+    private func execInNamespace(spec: ContainerizationOCI.Spec) throws {
+        let syncPipe = FileDescriptor(rawValue: 3)
+        let ackPipe = FileDescriptor(rawValue: 4)
+
+        let unshareFlags = try setupNamespaces(namespaces: spec.linux?.namespaces)
+
+        let linux = spec.linux
+        let hasMappings = !(linux?.uidMappings.isEmpty ?? true) || !(linux?.gidMappings.isEmpty ?? true)
+        let createsPrivateUserNamespace = unshareFlags & CLONE_NEWUSER != 0
+        guard !hasMappings || createsPrivateUserNamespace else {
+            throw App.Failure(message: "OCI UID/GID mappings require a private user namespace")
+        }
+
+        if createsPrivateUserNamespace, hasMappings, let linux {
+            try startContainerWithPrivateUserNamespace(
+                spec: spec,
+                unshareFlags: unshareFlags,
+                syncPipe: syncPipe,
+                ackPipe: ackPipe,
+                linux: linux
+            )
+            return
+        }
+
+        guard unshare(unshareFlags) == 0 else {
+            throw App.Errno(stage: "unshare(\(unshareFlags))")
+        }
+        try startContainerProcess(
+            spec: spec,
+            syncPipe: syncPipe,
+            ackPipe: ackPipe
+        )
     }
 
     private func mountRootfs(rootfs: String, mounts: [ContainerizationOCI.Mount]) throws {

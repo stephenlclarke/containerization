@@ -124,17 +124,17 @@ extension App {
     static func setPermissions(user: ContainerizationOCI.User) throws {
         if user.additionalGids.count > 0 {
             guard setgroups(user.additionalGids.count, user.additionalGids) == 0 else {
-                throw App.Errno(stage: "setgroups()")
+                throw App.Failure(message: "set supplementary groups: \(App.Errno(stage: "setgroups()"))")
             }
         }
         guard setgid(user.gid) == 0 else {
-            throw App.Errno(stage: "setgid()")
+            throw App.Failure(message: "set group ID: \(App.Errno(stage: "setgid()"))")
         }
         // NOTE: setuid has to be done last because once the uid has been
         // changed, then the process will lose privilege to set the group
         // and supplementary groups
         guard setuid(user.uid) == 0 else {
-            throw App.Errno(stage: "setuid()")
+            throw App.Failure(message: "set user ID: \(App.Errno(stage: "setuid()"))")
         }
     }
 

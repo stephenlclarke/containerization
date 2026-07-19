@@ -474,6 +474,28 @@ struct LinuxContainerTests {
             ])
     }
 
+    @Test func runtimeSpecCanUsePrivateGuestUserNamespace() throws {
+        let container = try LinuxContainer(
+            "private-user-namespace-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), privateUserNamespace: true)
+        )
+
+        let linux = try #require(container.generateRuntimeSpec().linux)
+        #expect(linux.namespaces.contains { $0.type == .user && $0.path.isEmpty })
+        let uidMapping = try #require(linux.uidMappings.first)
+        let gidMapping = try #require(linux.gidMappings.first)
+        #expect(linux.uidMappings.count == 1)
+        #expect(linux.gidMappings.count == 1)
+        #expect(uidMapping.containerID == 0)
+        #expect(uidMapping.hostID == 0)
+        #expect(uidMapping.size == UInt32.max)
+        #expect(gidMapping.containerID == 0)
+        #expect(gidMapping.hostID == 0)
+        #expect(gidMapping.size == UInt32.max)
+    }
+
     @Test func pauseAndResumeTransitionRunningContainer() async throws {
         let manager = RecordingVirtualMachineManager()
         let container = try LinuxContainer(

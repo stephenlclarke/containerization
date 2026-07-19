@@ -175,6 +175,12 @@ public final class LinuxContainer: Container, Sendable {
         /// Run the container in the sandbox VM UTS namespace instead of
         /// creating a private container UTS namespace.
         public var hostUTSNamespace: Bool = false
+        /// Run the container in a private user namespace inside the sandbox VM.
+        ///
+        /// The container receives an identity mapping for the guest's usable
+        /// UID and GID range. This isolates Linux credentials and capabilities
+        /// within the guest; it does not create or join a macOS user namespace.
+        public var privateUserNamespace: Bool = false
         /// Additional CPU cores to allocate for the virtual machine on top
         /// of the container's configured `cpus` value.
         public var cpuOverhead: Int = 1
@@ -241,6 +247,7 @@ public final class LinuxContainer: Container, Sendable {
             hostCgroupNamespace: Bool = false,
             hostIPCNamespace: Bool = false,
             hostUTSNamespace: Bool = false,
+            privateUserNamespace: Bool = false,
             cpuOverhead: Int = 1,
             memoryOverhead: UInt64 = 128.mib(),
             graphicsDevice: Bool = false,
@@ -278,6 +285,7 @@ public final class LinuxContainer: Container, Sendable {
             self.hostCgroupNamespace = hostCgroupNamespace
             self.hostIPCNamespace = hostIPCNamespace
             self.hostUTSNamespace = hostUTSNamespace
+            self.privateUserNamespace = privateUserNamespace
             self.cpuOverhead = cpuOverhead
             self.memoryOverhead = memoryOverhead
             self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .virtioDevice : .disabled))
@@ -596,6 +604,16 @@ public final class LinuxContainer: Container, Sendable {
         }
         if !config.hostUTSNamespace {
             namespaces.append(LinuxNamespace(type: .uts))
+        }
+        if config.privateUserNamespace {
+            namespaces.append(LinuxNamespace(type: .user))
+            let guestIdentityMapping = LinuxIDMapping(
+                containerID: 0,
+                hostID: 0,
+                size: UInt32.max
+            )
+            spec.linux?.uidMappings = [guestIdentityMapping]
+            spec.linux?.gidMappings = [guestIdentityMapping]
         }
         spec.linux?.namespaces = namespaces
 

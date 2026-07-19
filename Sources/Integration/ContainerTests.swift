@@ -1284,6 +1284,43 @@ extension IntegrationSuite {
         }
     }
 
+    func testPrivateUserNamespace() async throws {
+        let id = "test-private-user-namespace"
+
+        let bs = try await bootstrap(id)
+        let buffer = BufferWriter()
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = [
+                "sh", "-c",
+                "test \"$(readlink /proc/self/ns/user)\" != \"user:[4026531837]\" && awk '{print $1 \" \" $2 \" \" $3}' /proc/self/uid_map /proc/self/gid_map",
+            ]
+            config.process.stdout = buffer
+            config.bootLog = bs.bootLog
+            config.privateUserNamespace = true
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+            let status = try await container.wait()
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "private user namespace process status \(status) != 0")
+            }
+
+            let mappings = String(data: buffer.data, encoding: .utf8)?
+                .split(separator: "\n")
+                .map(String.init)
+            guard mappings == ["0 0 4294967295", "0 0 4294967295"] else {
+                throw IntegrationError.assert(msg: "private user namespace mappings \(mappings ?? []) != identity mappings")
+            }
+
+            try await container.stop()
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
     func testMemoryEventsOOMKill() async throws {
         let id = "test-memory-events-oom-kill"
 

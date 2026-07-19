@@ -71,7 +71,7 @@ struct ExecCommand: ParsableCommand {
         }
         try Self.enterNS(
             pidFd: pidFd,
-            nsType: CLONE_NEWCGROUP | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS
+            nsType: CLONE_NEWUSER | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS
         )
 
         let processID = fork()
