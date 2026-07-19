@@ -21,6 +21,7 @@ import FoundationEssentials
 import LCShim
 import Logging
 import SystemPackage
+import VminitdCore
 
 #if canImport(Musl)
 import Musl
@@ -55,8 +56,29 @@ struct ExecCommand: ParsableCommand {
         }
     }
 
-    static func enterNS(pidFd: Int32, nsType: Int32) throws {
-        guard setns(pidFd, nsType) == 0 else {
+    static func userNamespaceMatchesCurrent(parentPid: Int) throws -> Bool {
+        var currentNamespace = stat()
+        guard stat("/proc/self/ns/user", &currentNamespace) == 0 else {
+            throw App.Errno(stage: "stat(/proc/self/ns/user)")
+        }
+
+        let targetPath = "/proc/\(parentPid)/ns/user"
+        var targetNamespace = stat()
+        guard stat(targetPath, &targetNamespace) == 0 else {
+            throw App.Errno(stage: "stat(\(targetPath))")
+        }
+
+        return currentNamespace.st_dev == targetNamespace.st_dev
+            && currentNamespace.st_ino == targetNamespace.st_ino
+    }
+
+    static func enterNS(pidFd: Int32, parentPid: Int, nsType: Int32) throws {
+        let flags = LinuxNamespaceEntry.flags(
+            requestedFlags: nsType,
+            userNamespaceFlag: CLONE_NEWUSER,
+            targetUserNamespaceMatchesCurrent: try userNamespaceMatchesCurrent(parentPid: parentPid)
+        )
+        guard setns(pidFd, flags) == 0 else {
             throw App.Errno(stage: "setns(fd)")
         }
     }
@@ -71,6 +93,7 @@ struct ExecCommand: ParsableCommand {
         }
         try Self.enterNS(
             pidFd: pidFd,
+            parentPid: parentPid,
             nsType: CLONE_NEWUSER | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS
         )
 
