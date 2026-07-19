@@ -23,7 +23,10 @@ rejected before a runtime specification is produced.
 
 ## Reproduction
 
-On an Apple-silicon macOS checkout, construct a `LinuxContainer` with `Configuration(cgroupParent: "workloads/build")`. Before this change its generated OCI specification has no way to differ from `/container/<container-id>`.
+On an Apple-silicon macOS checkout, construct a `LinuxContainer` with
+`Configuration(cgroupParent: "workloads/build")`. Before this change its
+generated OCI specification has no way to differ from
+`/container/<container-id>`.
 
 ## Scope and ownership
 
