@@ -445,6 +445,34 @@ struct LinuxContainerTests {
             ])
     }
 
+    @Test func runtimeSpecPlacesContainerUnderRelativeCgroupParent() throws {
+        let container = try LinuxContainer(
+            "cgroup-parent-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), cgroupParent: "build/interactive")
+        )
+
+        let linux = try #require(container.generateRuntimeSpec().linux)
+        #expect(linux.cgroupsPath == "/container/build/interactive/cgroup-parent-test")
+    }
+
+    @Test func cgroupParentRejectsAbsoluteAndTraversalPaths() {
+        for parent in ["", "/root", ".", "..", "build/../escape", "build//interactive", "build/"] {
+            var configuration = LinuxContainer.Configuration()
+            configuration.cgroupParent = parent
+
+            #expect(throws: ContainerizationError.self) {
+                try LinuxContainer(
+                    "cgroup-parent-invalid",
+                    rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+                    vmm: StubVirtualMachineManager(),
+                    configuration: configuration
+                )
+            }
+        }
+    }
+
     @Test func runtimeSpecCanUseHostIPCAndUTSNamespaces() throws {
         let isolatedContainer = try LinuxContainer(
             "ipc-uts-isolated-test",

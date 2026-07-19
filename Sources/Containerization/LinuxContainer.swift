@@ -169,6 +169,13 @@ public final class LinuxContainer: Container, Sendable {
         /// Run the container in the sandbox VM cgroup namespace instead of
         /// creating a private cgroup namespace.
         public var hostCgroupNamespace: Bool = false
+        /// Optional relative parent for the container cgroup inside the sandbox VM.
+        ///
+        /// The runtime creates the container's leaf cgroup below `/container` and
+        /// never accepts an absolute path or a traversal component. This changes
+        /// only the Linux guest cgroup hierarchy; it does not expose a macOS host
+        /// cgroup.
+        public var cgroupParent: String?
         /// Run the container in the sandbox VM IPC namespace instead of
         /// creating a private container IPC namespace.
         public var hostIPCNamespace: Bool = false
@@ -245,6 +252,7 @@ public final class LinuxContainer: Container, Sendable {
             useInit: Bool = false,
             hostPIDNamespace: Bool = false,
             hostCgroupNamespace: Bool = false,
+            cgroupParent: String? = nil,
             hostIPCNamespace: Bool = false,
             hostUTSNamespace: Bool = false,
             privateUserNamespace: Bool = false,
@@ -283,6 +291,7 @@ public final class LinuxContainer: Container, Sendable {
             self.useInit = useInit
             self.hostPIDNamespace = hostPIDNamespace
             self.hostCgroupNamespace = hostCgroupNamespace
+            self.cgroupParent = cgroupParent
             self.hostIPCNamespace = hostIPCNamespace
             self.hostUTSNamespace = hostUTSNamespace
             self.privateUserNamespace = privateUserNamespace
@@ -506,6 +515,7 @@ public final class LinuxContainer: Container, Sendable {
                 message: "container id length \(id.count) exceeds maximum of \(Self.maxIDLength) characters"
             )
         }
+        try Self.validateCgroupParent(configuration.cgroupParent)
         if let writableLayer {
             guard writableLayer.isBlock else {
                 throw ContainerizationError(
@@ -525,7 +535,7 @@ public final class LinuxContainer: Container, Sendable {
         self.writableLayer = writableLayer
     }
 
-    private static func createDefaultRuntimeSpec(_ id: String) -> Spec {
+    private static func createDefaultRuntimeSpec(_ id: String, cgroupParent: String?) -> Spec {
         .init(
             process: .init(),
             hostname: id,
@@ -535,13 +545,38 @@ public final class LinuxContainer: Container, Sendable {
             ),
             linux: .init(
                 resources: .init(),
-                cgroupsPath: "/container/\(id)"
+                cgroupsPath: cgroupPath(id: id, parent: cgroupParent)
             )
         )
     }
 
+    private static func cgroupPath(id: String, parent: String?) -> String {
+        guard let parent else {
+            return "/container/\(id)"
+        }
+        return "/container/\(parent)/\(id)"
+    }
+
+    private static func validateCgroupParent(_ parent: String?) throws {
+        guard let parent else {
+            return
+        }
+
+        let components = parent.split(separator: "/", omittingEmptySubsequences: false)
+        guard
+            !parent.isEmpty,
+            !parent.hasPrefix("/"),
+            components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
+        else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "cgroup parent must be a non-empty relative path without empty, '.' or '..' components"
+            )
+        }
+    }
+
     func generateRuntimeSpec() -> Spec {
-        var spec = Self.createDefaultRuntimeSpec(id)
+        var spec = Self.createDefaultRuntimeSpec(id, cgroupParent: config.cgroupParent)
 
         // Process toggles.
         spec.process = config.process.toOCI()
