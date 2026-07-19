@@ -406,7 +406,8 @@ struct RunCommand: ParsableCommand {
         _ mappings: [ContainerizationOCI.LinuxIDMapping],
         to path: String
     ) throws {
-        let contents = mappings
+        let contents =
+            mappings
             .map { "\($0.containerID) \($0.hostID) \($0.size)" }
             .joined(separator: "\n")
         try writeUserNamespaceFile(path: path, contents: "\(contents)\n")
