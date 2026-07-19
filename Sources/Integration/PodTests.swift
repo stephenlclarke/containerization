@@ -847,7 +847,7 @@ extension IntegrationSuite {
             config.cpus = 4
             config.memoryInBytes = 1024.mib()
             config.bootLog = bs.bootLog
-            config.shareProcessNamespace = true
+            config.sharedNamespaces = [.process]
         }
 
         // First container runs a long-running process
@@ -880,6 +880,54 @@ extension IntegrationSuite {
         let output = String(data: psBuffer.data, encoding: .utf8) ?? ""
         guard output.contains("sleep 300") else {
             throw IntegrationError.assert(msg: "ps output should contain 'sleep 300', got: '\(output)'")
+        }
+    }
+
+    func testPodSharedIPCNamespace() async throws {
+        let id = "test-pod-shared-ipc-namespace"
+
+        let bs = try await bootstrap(id)
+        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
+            config.cpus = 4
+            config.memoryInBytes = 1024.mib()
+            config.bootLog = bs.bootLog
+            config.sharedNamespaces = [.interprocessCommunication]
+        }
+
+        let firstNamespace = BufferWriter()
+        try await pod.addContainer("container1", rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "container1")) { config in
+            config.process.arguments = ["/bin/sh", "-c", "readlink /proc/self/ns/ipc"]
+            config.process.stdout = firstNamespace
+        }
+
+        let secondNamespace = BufferWriter()
+        try await pod.addContainer("container2", rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "container2")) { config in
+            config.process.arguments = ["/bin/sh", "-c", "readlink /proc/self/ns/ipc"]
+            config.process.stdout = secondNamespace
+        }
+
+        do {
+            try await pod.create()
+            try await pod.startContainer("container1")
+            let firstStatus = try await pod.waitContainer("container1")
+            try await pod.startContainer("container2")
+            let secondStatus = try await pod.waitContainer("container2")
+            try await pod.stop()
+
+            guard firstStatus.exitCode == 0, secondStatus.exitCode == 0 else {
+                throw IntegrationError.assert(
+                    msg: "shared IPC namespace workloads should succeed (statuses: \(firstStatus), \(secondStatus))"
+                )
+            }
+
+            let first = String(data: firstNamespace.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let second = String(data: secondNamespace.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let first, !first.isEmpty, first == second else {
+                throw IntegrationError.assert(msg: "IPC namespace identifiers should match, got '\(first ?? "nil")' and '\(second ?? "nil")'")
+            }
+        } catch {
+            try? await pod.stop()
+            throw error
         }
     }
 
@@ -1826,7 +1874,7 @@ extension IntegrationSuite {
             config.cpus = 4
             config.memoryInBytes = 1024.mib()
             config.bootLog = bs.bootLog
-            config.shareProcessNamespace = true
+            config.sharedNamespaces = [.process]
         }
 
         try await pod.addContainer("container1", rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "container1")) { config in

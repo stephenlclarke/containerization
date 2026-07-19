@@ -49,9 +49,49 @@ public final class LinuxPod: Sendable {
         public var virtualization: Bool = false
         /// Optional file path to store serial boot logs.
         public var bootLog: BootLog?
-        /// Whether containers in the pod should share a PID namespace.
-        /// When enabled, all containers can see each other's processes.
-        public var shareProcessNamespace: Bool = false
+        /// Linux namespaces that every workload in the pod joins.
+        ///
+        /// The selected namespaces are owned by an internal pause workload so
+        /// they remain available while individual workloads stop and start.
+        /// This is limited to the experimental pod API; it does not change the
+        /// VM-wide network configuration.
+        public struct NamespaceSharing: OptionSet, Sendable, Hashable {
+            public let rawValue: UInt8
+
+            public init(rawValue: UInt8) {
+                self.rawValue = rawValue
+            }
+
+            /// Share the Linux PID namespace between pod workloads.
+            ///
+            /// Workloads can observe and signal one another's processes.
+            public static let process = Self(rawValue: 1 << 0)
+
+            /// Share the Linux IPC namespace between pod workloads.
+            ///
+            /// This includes System V IPC objects and POSIX message queues.
+            public static let interprocessCommunication = Self(rawValue: 1 << 1)
+        }
+
+        /// Linux namespaces shared by every workload in the pod.
+        ///
+        /// The default keeps each workload's PID and IPC namespaces private.
+        public var sharedNamespaces: NamespaceSharing = []
+
+        /// Compatibility accessor for sharing the PID namespace.
+        ///
+        /// Prefer ``sharedNamespaces`` with ``NamespaceSharing/process`` for
+        /// new code.
+        public var shareProcessNamespace: Bool {
+            get { self.sharedNamespaces.contains(.process) }
+            set {
+                if newValue {
+                    self.sharedNamespaces.insert(.process)
+                } else {
+                    self.sharedNamespaces.remove(.process)
+                }
+            }
+        }
         /// The default hostname for all containers in the pod.
         /// Individual containers can override this by setting their own `hostname` configuration.
         public var hostname: String?
@@ -608,7 +648,7 @@ extension LinuxPod {
 
             do {
                 let containers = state.containers
-                let shareProcessNamespace = self.config.shareProcessNamespace
+                let sharedNamespaces = self.config.sharedNamespaces
                 let pauseProcessHolder = Mutex<LinuxProcess?>(nil)
                 let fileMountContextUpdates = Mutex<[String: FileMountContext]>([:])
 
@@ -651,8 +691,9 @@ extension LinuxPod {
                         }
                     }
 
-                    // Create pause container if PID namespace sharing is enabled
-                    if shareProcessNamespace {
+                    // The pause container owns every shared namespace so it
+                    // stays available while individual workloads restart.
+                    if !sharedNamespaces.isEmpty {
                         let pauseID = "pause-\(self.id)"
                         let pauseRootfsPath = "/run/container/\(pauseID)/rootfs"
 
@@ -902,29 +943,31 @@ extension LinuxPod {
 
                 spec.mounts = cleanAndSortMounts(mounts)
 
-                // Configure namespaces for the container
-                var namespaces: [LinuxNamespace] = [
-                    LinuxNamespace(type: .cgroup),
-                    LinuxNamespace(type: .ipc),
-                    LinuxNamespace(type: .mount),
-                    LinuxNamespace(type: .uts),
-                ]
+                let pausePID = state.pauseProcess?.pid
+                let namespaces = Self.containerNamespaces(
+                    sharedNamespaces: self.config.sharedNamespaces,
+                    pausePID: pausePID
+                )
+                if let pausePID {
+                    for namespace in namespaces where !namespace.path.isEmpty {
+                        let description: String
+                        switch namespace.type {
+                        case .ipc:
+                            description = "IPC"
+                        case .pid:
+                            description = "PID"
+                        default:
+                            continue
+                        }
 
-                // Either join pause container's pid ns or create a new one
-                if self.config.shareProcessNamespace, let pausePID = state.pauseProcess?.pid {
-                    let nsPath = "/proc/\(pausePID)/ns/pid"
-
-                    self.logger?.debug(
-                        "Container joining pause PID namespace",
-                        metadata: [
-                            "container": "\(containerID)",
-                            "pausePID": "\(pausePID)",
-                            "nsPath": "\(nsPath)",
-                        ])
-
-                    namespaces.append(LinuxNamespace(type: .pid, path: nsPath))
-                } else {
-                    namespaces.append(LinuxNamespace(type: .pid))
+                        self.logger?.debug(
+                            "Container joining pause \(description) namespace",
+                            metadata: [
+                                "container": "\(containerID)",
+                                "pausePID": "\(pausePID)",
+                                "nsPath": "\(namespace.path)",
+                            ])
+                    }
                 }
 
                 spec.linux?.namespaces = namespaces
@@ -1335,5 +1378,36 @@ extension LinuxPod {
 
         try await relayManager.start(port: port, socket: socket)
         try await relayAgent.relaySocket(port: port, configuration: socket)
+    }
+}
+
+extension LinuxPod {
+    /// Produces the OCI namespace list for a workload in this pod.
+    ///
+    /// The pause workload owns selected namespaces. A missing pause process
+    /// leaves the workload private; creation establishes the pause process
+    /// before a configured shared namespace can reach this point.
+    package static func containerNamespaces(
+        sharedNamespaces: Configuration.NamespaceSharing,
+        pausePID: Int32?
+    ) -> [LinuxNamespace] {
+        var namespaces: [LinuxNamespace] = [
+            LinuxNamespace(type: .cgroup),
+            LinuxNamespace(type: .mount),
+            LinuxNamespace(type: .uts),
+        ]
+
+        for (type, sharing) in [
+            (.ipc, Configuration.NamespaceSharing.interprocessCommunication),
+            (.pid, Configuration.NamespaceSharing.process),
+        ] as [(LinuxNamespaceType, Configuration.NamespaceSharing)] {
+            if sharedNamespaces.contains(sharing), let pausePID {
+                namespaces.append(LinuxNamespace(type: type, path: "/proc/\(pausePID)/ns/\(type.rawValue)"))
+            } else {
+                namespaces.append(LinuxNamespace(type: type))
+            }
+        }
+
+        return namespaces
     }
 }
