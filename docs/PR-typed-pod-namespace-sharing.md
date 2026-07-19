@@ -63,9 +63,10 @@ All commands passed. The coverage report records all branches in
 namespace selections. The three guest tests passed against the freshly built,
 signed integration binary and initfs.
 
-The repository-wide `make swift-fmt-check` currently reports a pre-existing
-formatting issue in `vminitd/Sources/vmexec/RunCommand.swift`; this change's
-four files pass strict formatting independently.
+The repository-wide formatter issue that originally affected
+`vminitd/Sources/vmexec/RunCommand.swift` is fixed separately in
+[`PR-vmexec-user-namespace-format.md`](PR-vmexec-user-namespace-format.md).
+This handoff's four changed files pass strict formatting independently.
 
 ## Upstream review checklist
 
