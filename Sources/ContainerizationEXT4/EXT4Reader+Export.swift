@@ -19,71 +19,46 @@ import Foundation
 import SystemPackage
 
 extension EXT4.EXT4Reader {
+    /// Exports the complete filesystem as a portable archive.
     public func export(archive: FilePath) throws {
+        try export(archive: archive, subtree: FilePath("/"))
+    }
+
+    /// Exports the contents of a directory in this filesystem as a portable archive.
+    ///
+    /// The selected directory is the archive root, so its children appear at the
+    /// archive root instead of beneath the directory's original path. This keeps
+    /// the operation useful for materializing a filesystem subtree elsewhere.
+    public func export(archive: FilePath, subtree: FilePath) throws {
+        let source = subtree.lexicallyNormalized()
+        let (_, sourceInode) = try stat(source, followSymlinks: false)
+        guard sourceInode.mode.isDir() else {
+            throw EXT4.PathIOError.notADirectory(source.description)
+        }
+        guard let sourceNode = tree.lookup(path: source) else {
+            throw EXT4.PathIOError.notFound(source.description)
+        }
+
         let config = ArchiveWriterConfiguration(
             format: .paxRestricted, filter: .none, options: [Options.xattrformat(.schily)])
         let writer = try ArchiveWriter(configuration: config)
         try writer.open(file: archive.url)
-        var items = self.tree.root.pointee.children
-        let hardlinkedInodes = Set(self.hardlinks.values)
+        var items = sourceNode.pointee.children.map { (node: $0, archivePath: FilePath($0.pointee.name)) }
         var hardlinkTargets: [EXT4.InodeNumber: FilePath] = [:]
 
         while items.count > 0 {
-            let itemPtr = items.removeFirst()
+            let (itemPtr, archivePath) = items.removeFirst()
             let item = itemPtr.pointee
             let inode = try self.getInode(number: item.inode)
-            let entry = WriteEntry()
+            let entry = try archiveEntry(for: inode, path: archivePath)
             let mode = inode.mode
             let size: UInt64 = (UInt64(inode.sizeHigh) << 32) | UInt64(inode.sizeLow)
-            entry.permissions = mode_t(mode)
-            guard let path = item.path else {
-                continue
-            }
-            if hardlinkedInodes.contains(item.inode) {
-                hardlinkTargets[item.inode] = path
-            }
-            guard self.hardlinks[path] == nil else {
-                continue
-            }
-            var attributes: [EXT4.ExtendedAttribute] = []
-            let buffer: [UInt8] = EXT4.tupleToArray(inode.inlineXattrs)
-            if !buffer.allZeros {
-                try attributes.append(contentsOf: Self.readInlineExtendedAttributes(from: buffer))
-            }
-            if inode.xattrBlockLow != 0 {
-                let block = inode.xattrBlockLow
-                try self.seek(block: block)
-                guard let buffer = try self.handle.read(upToCount: Int(self.blockSize)) else {
-                    throw EXT4.Error.couldNotReadBlock(block)
-                }
-                try attributes.append(contentsOf: Self.readBlockExtendedAttributes(from: [UInt8](buffer)))
-            }
-
-            var xattrs: [String: Data] = [:]
-            for attribute in attributes {
-                guard attribute.fullName != "system.data" else {
-                    continue
-                }
-                xattrs[attribute.fullName] = Data(attribute.value)
-            }
-
-            let pathStr = path.description
-            entry.path = pathStr
-            entry.size = Int64(size)
-            entry.group = gid_t(inode.gidHigh) << 16 | gid_t(inode.gid)
-            entry.owner = uid_t(inode.uidHigh) << 16 | uid_t(inode.uid)
-            entry.creationDate = Date(fsTimestamp: UInt64(inode.crtimeExtra) << 32 | UInt64(inode.crtime))
-            entry.modificationDate = Date(fsTimestamp: UInt64(inode.mtimeExtra) << 32 | UInt64(inode.mtime))
-            entry.contentAccessDate = Date(fsTimestamp: UInt64(inode.atimeExtra) << 32 | UInt64(inode.atime))
-            entry.xattrs = xattrs
+            hardlinkTargets[item.inode] = archivePath
 
             if mode.isDir() {
                 entry.fileType = .directory
                 for child in item.children {
-                    items.append(child)
-                }
-                if pathStr == "" {
-                    continue
+                    items.append((node: child, archivePath: archivePath.join(child.pointee.name)))
                 }
                 try writer.writeEntry(entry: entry, data: nil)
             } else if mode.isReg() {
@@ -144,23 +119,101 @@ extension EXT4.EXT4Reader {
                 continue
             }
         }
-        for (path, number) in self.hardlinks {
-            guard let targetPath = hardlinkTargets[number] else {
+        for (path, number) in self.hardlinks.sorted(by: { $0.key.description < $1.key.description }) {
+            guard let archivePath = archivePath(for: path, beneath: source) else {
                 continue
             }
             let inode = try self.getInode(number: number)
-            let entry = WriteEntry()
-            entry.path = path.description
-            entry.hardlink = targetPath.description
-            entry.permissions = mode_t(inode.mode)
-            entry.group = gid_t(inode.gidHigh) << 16 | gid_t(inode.gid)
-            entry.owner = uid_t(inode.uidHigh) << 16 | uid_t(inode.uid)
-            entry.creationDate = Date(fsTimestamp: UInt64(inode.crtimeExtra) << 32 | UInt64(inode.crtime))
-            entry.modificationDate = Date(fsTimestamp: UInt64(inode.mtimeExtra) << 32 | UInt64(inode.mtime))
-            entry.contentAccessDate = Date(fsTimestamp: UInt64(inode.atimeExtra) << 32 | UInt64(inode.atime))
-            try writer.writeEntry(entry: entry, data: nil)
+            let entry = try archiveEntry(for: inode, path: archivePath)
+            if let targetPath = hardlinkTargets[number] {
+                entry.hardlink = targetPath.description
+                try writer.writeEntry(entry: entry, data: nil)
+            } else {
+                // The primary name for a hard link can live outside the selected
+                // subtree. Materialize its first in-subtree name as a regular file
+                // so the archive does not reference a path that it does not contain.
+                entry.fileType = .regular
+                let size = (UInt64(inode.sizeHigh) << 32) | UInt64(inode.sizeLow)
+                try writer.writeEntry(entry: entry, data: try fileData(inode: number, size: size))
+                hardlinkTargets[number] = archivePath
+            }
         }
         try writer.finishEncoding()
+    }
+
+    private func archiveEntry(for inode: EXT4.Inode, path: FilePath) throws -> WriteEntry {
+        let entry = WriteEntry()
+        var attributes: [EXT4.ExtendedAttribute] = []
+        let inlineAttributes: [UInt8] = EXT4.tupleToArray(inode.inlineXattrs)
+        if !inlineAttributes.allZeros {
+            try attributes.append(contentsOf: Self.readInlineExtendedAttributes(from: inlineAttributes))
+        }
+        if inode.xattrBlockLow != 0 {
+            let block = inode.xattrBlockLow
+            try self.seek(block: block)
+            guard let buffer = try self.handle.read(upToCount: Int(self.blockSize)) else {
+                throw EXT4.Error.couldNotReadBlock(block)
+            }
+            try attributes.append(contentsOf: Self.readBlockExtendedAttributes(from: [UInt8](buffer)))
+        }
+
+        var xattrs: [String: Data] = [:]
+        for attribute in attributes where attribute.fullName != "system.data" {
+            xattrs[attribute.fullName] = Data(attribute.value)
+        }
+
+        let size = (UInt64(inode.sizeHigh) << 32) | UInt64(inode.sizeLow)
+        entry.path = path.description
+        entry.size = Int64(size)
+        entry.permissions = mode_t(inode.mode)
+        entry.group = gid_t(inode.gidHigh) << 16 | gid_t(inode.gid)
+        entry.owner = uid_t(inode.uidHigh) << 16 | uid_t(inode.uid)
+        entry.creationDate = Date(fsTimestamp: UInt64(inode.crtimeExtra) << 32 | UInt64(inode.crtime))
+        entry.modificationDate = Date(fsTimestamp: UInt64(inode.mtimeExtra) << 32 | UInt64(inode.mtime))
+        entry.contentAccessDate = Date(fsTimestamp: UInt64(inode.atimeExtra) << 32 | UInt64(inode.atime))
+        entry.xattrs = xattrs
+        return entry
+    }
+
+    private func fileData(inode: EXT4.InodeNumber, size: UInt64) throws -> Data {
+        var data = Data()
+        var remaining = size
+        for blockRange in try getExtents(inode: inode) ?? [] {
+            for dataBlock in blockRange.start..<blockRange.end {
+                guard remaining > 0 else {
+                    return data
+                }
+                try seek(block: dataBlock)
+                let count = min(remaining, blockSize)
+                guard let dataBytes = try handle.read(upToCount: Int(count)) else {
+                    throw EXT4.Error.couldNotReadBlock(dataBlock)
+                }
+                data.append(dataBytes)
+                remaining -= UInt64(dataBytes.count)
+            }
+        }
+        return data
+    }
+
+    /// Returns an archive-relative path when `path` is inside `root`.
+    private func archivePath(for path: FilePath, beneath root: FilePath) -> FilePath? {
+        let rootComponents = normalizedPathComponents(root)
+        let pathComponents = normalizedPathComponents(path)
+        guard pathComponents.starts(with: rootComponents) else {
+            return nil
+        }
+        let relativeComponents = pathComponents.dropFirst(rootComponents.count)
+        guard !relativeComponents.isEmpty else {
+            return nil
+        }
+        return FilePath(relativeComponents.joined(separator: "/"))
+    }
+
+    /// Normalizes FilePath components for containment comparisons.
+    private func normalizedPathComponents(_ path: FilePath) -> [String] {
+        path.lexicallyNormalized().items.filter { component in
+            component != "/" && component != "." && !component.isEmpty
+        }
     }
 
     @available(*, deprecated, renamed: "readInlineExtendedAttributes(from:)")
