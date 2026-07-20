@@ -851,6 +851,59 @@ extension IntegrationSuite {
         }
     }
 
+    private static let virtioGPURenderNode = "/dev/dri/renderD128"
+    private static let unavailableVirtioGPURenderNodeMessage =
+        "required guest device not found: \(virtioGPURenderNode)"
+
+    /// Converts the known unavailable-guest-kernel graphics condition into an explicit skip.
+    private func skipWhenVirtioGPURenderNodeIsUnavailable(_ error: Error) throws {
+        guard let error = error as? ContainerizationError,
+            error.code == .notFound,
+            error.message.contains(Self.unavailableVirtioGPURenderNodeMessage)
+        else {
+            throw error
+        }
+
+        throw SkipTest(
+            reason: "the selected Linux guest kernel does not expose the virtio-GPU render node \(Self.virtioGPURenderNode)"
+        )
+    }
+
+    func testVirtioGPUCapabilityClassification() throws {
+        do {
+            try skipWhenVirtioGPURenderNodeIsUnavailable(
+                ContainerizationError(.notFound, message: Self.unavailableVirtioGPURenderNodeMessage)
+            )
+            throw IntegrationError.assert(msg: "missing virtio-GPU render node should skip")
+        } catch let error as SkipTest {
+            guard error.reason.contains(Self.virtioGPURenderNode) else {
+                throw IntegrationError.assert(msg: "skip reason did not identify the virtio-GPU render node")
+            }
+        }
+
+        do {
+            try skipWhenVirtioGPURenderNodeIsUnavailable(
+                ContainerizationError(.notFound, message: "required guest device not found: /dev/null")
+            )
+            throw IntegrationError.assert(msg: "an unrelated guest device should not skip")
+        } catch is ContainerizationError {
+        }
+
+        do {
+            try skipWhenVirtioGPURenderNodeIsUnavailable(
+                ContainerizationError(.invalidArgument, message: Self.unavailableVirtioGPURenderNodeMessage)
+            )
+            throw IntegrationError.assert(msg: "a different containerization error code should not skip")
+        } catch is ContainerizationError {
+        }
+
+        do {
+            try skipWhenVirtioGPURenderNodeIsUnavailable(IntegrationError.noOutput)
+            throw IntegrationError.assert(msg: "a non-containerization error should not skip")
+        } catch is IntegrationError {
+        }
+    }
+
     func testContainerVirtioGraphicsDeviceAttachesVirtioGPU() async throws {
         let id = "test-container-virtio-graphics"
 
@@ -912,7 +965,7 @@ extension IntegrationSuite {
             try? await container.kill(.kill)
             _ = try? await container.wait()
             try? await container.stop()
-            throw error
+            try skipWhenVirtioGPURenderNodeIsUnavailable(error)
         }
     }
 
@@ -931,13 +984,20 @@ extension IntegrationSuite {
             config.bootLog = bs.bootLog
         }
 
-        try await container.create()
-        try await container.start()
-        let status = try await container.wait()
-        try await container.stop()
+        do {
+            try await container.create()
+            try await container.start()
+            let status = try await container.wait()
+            try await container.stop()
 
-        guard status.exitCode == 0 else {
-            throw IntegrationError.assert(msg: "non-root virtio-gpu render-node smoke test failed: \(status)")
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "non-root virtio-gpu render-node smoke test failed: \(status)")
+            }
+        } catch {
+            try? await container.kill(.kill)
+            _ = try? await container.wait()
+            try? await container.stop()
+            try skipWhenVirtioGPURenderNodeIsUnavailable(error)
         }
     }
 

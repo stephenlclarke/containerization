@@ -603,6 +603,7 @@ struct IntegrationSuite: AsyncParsableCommand {
                 Test("container manager", testContainerManagerCreate),
                 Test("container reuse", testContainerReuse),
                 Test("container /dev/console", testContainerDevConsole),
+                Test("container virtio graphics capability classification", testVirtioGPUCapabilityClassification),
                 Test("container virtio graphics device attachment", testContainerVirtioGraphicsDeviceAttachesVirtioGPU),
                 Test("container virtio graphics non-root render access", testContainerVirtioGraphicsDeviceAllowsNonRootRenderAccess),
 

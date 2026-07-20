@@ -31,9 +31,12 @@ Containerization provides APIs to:
 - Configure OCI Linux runtime controls such as device cgroup rules and
   pre-resolved device nodes for generated runtime specs.
 - Attach an optional virtio-gpu device to Virtualization.framework-backed
-  container VMs. The in-repo kernel configs enable the matching Linux DRM
-  driver; this is paravirtual graphics-device support, not proof of
-  hardware-accelerated rendering and not vendor GPU passthrough.
+  container VMs. A guest kernel with the matching Linux DRM driver exposes the
+  render node; this is paravirtual graphics-device support, not proof of
+  hardware-accelerated rendering and not vendor GPU passthrough. Integration
+  smoke tests skip with a clear capability result when the selected guest
+  kernel does not expose `/dev/dri/renderD128`; unit tests still cover the
+  graphics configuration contract independently of the guest kernel artifact.
 - [Spawn and interact with containerized processes](./Sources/Containerization/LinuxProcess.swift).
 - Use Rosetta 2 for running linux/amd64 containers on Apple silicon.
 
