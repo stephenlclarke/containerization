@@ -25,7 +25,8 @@ struct OCITests {
     @Test func config() {
         let config = ContainerizationOCI.ImageConfig(
             labels: ["com.example.role": "transformer"],
-            exposedPorts: ["8080/tcp": [:]]
+            exposedPorts: ["8080/tcp": [:]],
+            volumes: ["/var/lib/transformer": [:]],
         )
         let rootfs = ContainerizationOCI.Rootfs(type: "foo", diffIDs: ["diff1", "diff2"])
         let history = ContainerizationOCI.History()
@@ -34,6 +35,7 @@ struct OCITests {
         #expect(image.rootfs.type == "foo")
         #expect(image.config?.labels == ["com.example.role": "transformer"])
         #expect(image.config?.exposedPorts == ["8080/tcp": [:]])
+        #expect(image.config?.volumes == ["/var/lib/transformer": [:]])
     }
 
     @Test func configDecodesDockerExposedPorts() throws {
@@ -43,6 +45,10 @@ struct OCITests {
                   "ExposedPorts": {
                     "80/tcp": {},
                     "8443/udp": {}
+                  },
+                  "Volumes": {
+                    "/var/lib/cache": {},
+                    "/var/lib/state": {}
                   }
                 }
             """
@@ -51,6 +57,16 @@ struct OCITests {
 
         #expect(config.labels == ["com.example.role": "transformer"])
         #expect(config.exposedPorts == ["80/tcp": [:], "8443/udp": [:]])
+        #expect(config.volumes == ["/var/lib/cache": [:], "/var/lib/state": [:]])
+    }
+
+    @Test func configRoundTripsDockerVolumeDeclarations() throws {
+        let original = ContainerizationOCI.ImageConfig(volumes: ["/var/lib/state": [:]])
+
+        let encoded = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(ContainerizationOCI.ImageConfig.self, from: encoded)
+
+        #expect(decoded.volumes == ["/var/lib/state": [:]])
     }
 
     @Test func descriptor() {

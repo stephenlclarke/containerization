@@ -28,6 +28,7 @@ public struct ImageConfig: Codable, Sendable {
         case workingDir = "WorkingDir"
         case labels = "Labels"
         case exposedPorts = "ExposedPorts"
+        case volumes = "Volumes"
         case stopSignal = "StopSignal"
     }
 
@@ -53,13 +54,18 @@ public struct ImageConfig: Codable, Sendable {
     /// "port/protocol", for example "8080/tcp".
     public let exposedPorts: [String: [String: String]]?
 
+    /// volumes contains Docker image config volume declarations keyed by
+    /// container destination, for example `"/var/lib/data": {}`.
+    public let volumes: [String: [String: String]]?
+
     /// stopSignal contains the system call signal that will be sent to the container to exit.
     public let stopSignal: String?
 
     public init(
         user: String? = nil, env: [String]? = nil, entrypoint: [String]? = nil, cmd: [String]? = nil,
         workingDir: String? = nil, labels: [String: String]? = nil,
-        exposedPorts: [String: [String: String]]? = nil, stopSignal: String? = nil
+        exposedPorts: [String: [String: String]]? = nil, volumes: [String: [String: String]]? = nil,
+        stopSignal: String? = nil,
     ) {
         self.user = user
         self.env = env
@@ -68,6 +74,7 @@ public struct ImageConfig: Codable, Sendable {
         self.workingDir = workingDir
         self.labels = labels
         self.exposedPorts = exposedPorts
+        self.volumes = volumes
         self.stopSignal = stopSignal
     }
 }
