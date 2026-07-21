@@ -29,6 +29,8 @@ public final class NATNetworkInterface: Interface, Sendable {
     public let guestInterfaceName: String?
     public let ipv4Address: CIDRv4
     public let ipv4Gateway: IPv4Address?
+    public let ipv6Address: CIDRv6?
+    public let ipv6Gateway: IPv6Address?
     public let additionalIPAddresses: [CIDR]
     public let macAddress: MACAddress?
     public let mtu: UInt32
@@ -42,6 +44,8 @@ public final class NATNetworkInterface: Interface, Sendable {
         ipv4Address: CIDRv4,
         ipv4Gateway: IPv4Address?,
         reference: sending vmnet_network_ref,
+        ipv6Address: CIDRv6? = nil,
+        ipv6Gateway: IPv6Address? = nil,
         macAddress: MACAddress? = nil,
         mtu: UInt32 = 1500,
         guestInterfaceName: String? = nil,
@@ -50,6 +54,8 @@ public final class NATNetworkInterface: Interface, Sendable {
         self.guestInterfaceName = guestInterfaceName
         self.ipv4Address = ipv4Address
         self.ipv4Gateway = ipv4Gateway
+        self.ipv6Address = ipv6Address
+        self.ipv6Gateway = ipv6Gateway
         self.additionalIPAddresses = additionalIPAddresses
         self.macAddress = macAddress
         self.mtu = mtu
@@ -68,6 +74,8 @@ public final class NATNetworkInterface: Interface, Sendable {
         self.guestInterfaceName = guestInterfaceName
         self.ipv4Address = ipv4Address
         self.ipv4Gateway = ipv4Gateway
+        self.ipv6Address = nil
+        self.ipv6Gateway = nil
         self.additionalIPAddresses = additionalIPAddresses
         self.macAddress = macAddress
         self.mtu = mtu
