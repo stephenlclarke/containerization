@@ -345,6 +345,7 @@ public final class LinuxContainer: Container, Sendable {
             let relayManager: UnixSocketRelayManager
             var vendedProcesses: [String: LinuxProcess]
             let fileMountContext: FileMountContext
+            let stagedSubpathMounts: [Int: String]
 
             init(_ state: CreatedState, process: LinuxProcess) {
                 self.vm = state.vm
@@ -352,6 +353,7 @@ public final class LinuxContainer: Container, Sendable {
                 self.process = process
                 self.vendedProcesses = [:]
                 self.fileMountContext = state.fileMountContext
+                self.stagedSubpathMounts = state.stagedSubpathMounts
             }
 
             init(_ state: PausedState) {
@@ -360,6 +362,7 @@ public final class LinuxContainer: Container, Sendable {
                 self.process = state.process
                 self.vendedProcesses = state.vendedProcesses
                 self.fileMountContext = state.fileMountContext
+                self.stagedSubpathMounts = state.stagedSubpathMounts
             }
         }
 
@@ -369,6 +372,7 @@ public final class LinuxContainer: Container, Sendable {
             let process: LinuxProcess
             var vendedProcesses: [String: LinuxProcess]
             let fileMountContext: FileMountContext
+            let stagedSubpathMounts: [Int: String]
 
             init(_ state: StartedState) {
                 self.vm = state.vm
@@ -376,6 +380,7 @@ public final class LinuxContainer: Container, Sendable {
                 self.process = state.process
                 self.vendedProcesses = state.vendedProcesses
                 self.fileMountContext = state.fileMountContext
+                self.stagedSubpathMounts = state.stagedSubpathMounts
             }
         }
 
@@ -1354,15 +1359,18 @@ extension LinuxContainer {
 
             let vm: any VirtualMachineInstance
             let relayManager: UnixSocketRelayManager
+            let stagedSubpathMounts: [Int: String]
 
             let startedState = try? state.startedState("stop")
             if let startedState {
                 vm = startedState.vm
                 relayManager = startedState.relayManager
+                stagedSubpathMounts = startedState.stagedSubpathMounts
             } else {
                 let createdState = try state.createdState("stop")
                 vm = createdState.vm
                 relayManager = createdState.relayManager
+                stagedSubpathMounts = createdState.stagedSubpathMounts
             }
 
             var firstError: Error?
@@ -1408,6 +1416,18 @@ extension LinuxContainer {
                         path: Self.guestRootfsPath(self.id),
                         flags: 0
                     )
+
+                    // The rootfs unmount releases the OCI bind-mount targets,
+                    // but the source bind mounts staged under /run remain live.
+                    // Remove each staged subpath before its backing volume so
+                    // vminitd can delete the container root without EBUSY.
+                    for (index, stagedPath) in stagedSubpathMounts.sorted(by: { $0.key > $1.key }) {
+                        try await agent.umount(path: stagedPath, flags: 0)
+                        try await agent.umount(
+                            path: Self.guestSubpathVolumePath(self.id, index: index),
+                            flags: 0
+                        )
+                    }
 
                     // If we have a writable layer, we also need to unmount the lower and upper layers.
                     if self.writableLayer != nil {

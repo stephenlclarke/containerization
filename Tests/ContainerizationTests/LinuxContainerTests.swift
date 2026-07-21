@@ -636,6 +636,14 @@ struct LinuxContainerTests {
         #expect(mount.type == "none")
         #expect(mount.source == "/run/container/volume-subpath-test/subpaths/1")
         #expect(mount.options == ["bind", "ro"])
+
+        try await container.stop()
+        #expect(
+            vm.agent.umountRequests == [
+                "/run/container/volume-subpath-test/rootfs",
+                "/run/container/volume-subpath-test/subpaths/1",
+                "/run/container/volume-subpath-test/volumes/1",
+            ])
     }
 
     @Test func blockMountSubpathRejectsTraversal() async throws {
@@ -1166,6 +1174,7 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         var createdProcessSpec: Spec?
         var writeRequests: [WriteRequest] = []
         var mountRequests: [MountRequest] = []
+        var umountRequests: [String] = []
     }
 
     private let storage = Mutex<State>(State())
@@ -1217,6 +1226,10 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         storage.withLock { $0.mountRequests }
     }
 
+    var umountRequests: [String] {
+        storage.withLock { $0.umountRequests }
+    }
+
     func standardSetup() async throws {}
 
     func close() async throws {}
@@ -1247,7 +1260,9 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         }
     }
 
-    func umount(path: String, flags: Int32) async throws {}
+    func umount(path: String, flags: Int32) async throws {
+        storage.withLock { $0.umountRequests.append(path) }
+    }
 
     func mkdir(path: String, all: Bool, perms: UInt32) async throws {}
 
