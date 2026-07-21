@@ -133,6 +133,8 @@ public final class LinuxContainer: Container, Sendable {
         public var hostname: String?
         /// The system control options for the container.
         public var sysctl: [String: String] = [:]
+        /// OCI annotations for the container runtime specification.
+        public var annotations: [String: String] = [:]
         /// The network interfaces for the container.
         public var interfaces: [any Interface] = []
         /// The Unix domain socket relays to setup for the container.
@@ -239,6 +241,7 @@ public final class LinuxContainer: Container, Sendable {
             guestDevices: [LinuxGuestDeviceRequest] = [],
             hostname: String? = nil,
             sysctl: [String: String] = [:],
+            annotations: [String: String] = [:],
             interfaces: [any Interface] = [],
             sockets: [UnixSocketConfiguration] = [],
             mounts: [Mount] = LinuxContainer.defaultMounts(),
@@ -278,6 +281,7 @@ public final class LinuxContainer: Container, Sendable {
             self.guestDevices = guestDevices
             self.hostname = hostname
             self.sysctl = sysctl
+            self.annotations = annotations
             self.interfaces = interfaces
             self.sockets = sockets
             self.mounts = mounts
@@ -591,6 +595,7 @@ public final class LinuxContainer: Container, Sendable {
         if let hostname = config.hostname {
             spec.hostname = hostname
         }
+        spec.annotations = config.annotations.isEmpty ? nil : config.annotations
 
         // Linux toggles.
         spec.linux?.sysctl = config.sysctl

@@ -89,6 +89,21 @@ struct LinuxContainerTests {
         #expect(process.oomScoreAdj == -250)
     }
 
+    @Test func runtimeSpecIncludesConfiguredAnnotations() throws {
+        let annotations = [
+            "com.example.owner": "platform",
+            "com.example.purpose": "local-development",
+        ]
+        let container = try LinuxContainer(
+            "annotations-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init(process: .init(), annotations: annotations)
+        )
+
+        #expect(container.generateRuntimeSpec().annotations == annotations)
+    }
+
     @Test func defaultCapabilitiesAreRestrictedOCISet() {
         // Regression guard against shipping `.allCapabilities` as the default.
         // A default container must not receive CAP_SYS_ADMIN, which would let it
