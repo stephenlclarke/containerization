@@ -29,6 +29,13 @@ then restored the standard generated-source license header. This produces both
 the Apple `nonisolated` generated declarations and the fork’s existing schema
 fields with no hand-edited generated message definitions.
 
+While this slice was being finalized, fork `main` also received
+`9a3c5b4db57013256b681df9d90fe1a9235fcd03`, an independent merge of the same
+Apple commit. Its resulting source tree differs from this slice’s upstream
+merge only by the same generated-file header restoration. The signed
+reconciliation merge retains that concurrent history without changing the
+validated source content.
+
 ## Validation
 
 ```console
@@ -56,3 +63,7 @@ Compose prerelease and is not re-asserted as a new result here.
   (`merge: integrate apple containerization dependency update`)
 - `62291e3b44309a70bb3b4b3f02df5977835c3f6a`
   (`fix(build): retain generated protobuf license header`)
+- `9a3c5b4db57013256b681df9d90fe1a9235fcd03`
+  (`chore(upstream): merge apple containerization main`; concurrent `main` update)
+- `e2d60675f55074cc01e319eee1c21556d9a28474`
+  (`merge: reconcile containerization upstream sync`)

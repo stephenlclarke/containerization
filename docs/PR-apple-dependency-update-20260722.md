@@ -60,6 +60,11 @@ annotations. Regenerating from the fork’s existing protobuf source keeps that
 maintenance current without losing macOS runtime capabilities consumed by the
 Compose layer.
 
+The fork `main` advanced independently with a merge of the same Apple commit
+during this slice. The final signed reconciliation merge preserves that history
+and has no additional source-content delta beyond the already validated header
+restoration.
+
 ### Testing
 
 - [x] Tested locally on macOS
@@ -75,3 +80,7 @@ Compose layer.
   (`merge: integrate apple containerization dependency update`)
 - `62291e3b44309a70bb3b4b3f02df5977835c3f6a`
   (`fix(build): retain generated protobuf license header`)
+- `9a3c5b4db57013256b681df9d90fe1a9235fcd03`
+  (`chore(upstream): merge apple containerization main`; concurrent `main` update)
+- `e2d60675f55074cc01e319eee1c21556d9a28474`
+  (`merge: reconcile containerization upstream sync`)
