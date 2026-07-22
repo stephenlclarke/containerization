@@ -1,19 +1,3 @@
-//===----------------------------------------------------------------------===//
-// Copyright © 2025-2026 Apple Inc. and the Containerization project authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//   https://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//===----------------------------------------------------------------------===//
-
 // DO NOT EDIT.
 // swift-format-ignore-file
 // swiftlint:disable all
@@ -36,13 +20,13 @@ import SwiftProtobuf
 // incompatible with the version of SwiftProtobuf to which you are linking.
 // Please ensure that you are building against the same version of the API
 // that was used to generate this file.
-fileprivate struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
+fileprivate nonisolated struct _GeneratedWithProtocGenSwiftVersion: SwiftProtobuf.ProtobufAPIVersionCheck {
   struct _2: SwiftProtobuf.ProtobufAPIVersion_2 {}
   typealias Version = _2
 }
 
 /// Categories of statistics that can be requested.
-public enum Com_Apple_Containerization_Sandbox_V3_StatCategory: SwiftProtobuf.Enum, Swift.CaseIterable {
+public nonisolated enum Com_Apple_Containerization_Sandbox_V3_StatCategory: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
   case process // = 1
@@ -96,7 +80,7 @@ public enum Com_Apple_Containerization_Sandbox_V3_StatCategory: SwiftProtobuf.En
 
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_Stdio: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_Stdio: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -137,7 +121,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_Stdio: Sendable {
   fileprivate var _stderrPort: Int32? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SetupEmulatorRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SetupEmulatorRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -161,7 +145,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SetupEmulatorRequest: Sendab
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SetupEmulatorResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SetupEmulatorResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -171,7 +155,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SetupEmulatorResponse: Senda
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SetTimeRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SetTimeRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -185,7 +169,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SetTimeRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SetTimeResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SetTimeResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -195,7 +179,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SetTimeResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SysctlRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SysctlRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -207,7 +191,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SysctlRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SysctlResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SysctlResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -217,7 +201,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SysctlResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -241,7 +225,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest: Sendable 
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public enum Action: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public nonisolated enum Action: SwiftProtobuf.Enum, Swift.CaseIterable {
     public typealias RawValue = Int
     case into // = 0
     case outOf // = 1
@@ -280,7 +264,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest: Sendable 
   fileprivate var _guestSocketPermissions: UInt32? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -290,7 +274,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse: Sendable
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_StopVsockProxyRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_StopVsockProxyRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -302,7 +286,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_StopVsockProxyRequest: Senda
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_StopVsockProxyResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_StopVsockProxyResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -312,7 +296,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_StopVsockProxyResponse: Send
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_MountRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_MountRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -341,7 +325,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_MountRequest: Sendable {
   fileprivate var _sourceRoot: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_MountResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_MountResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -351,7 +335,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_MountResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_UmountRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_UmountRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -365,7 +349,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_UmountRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_UmountResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_UmountResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -375,7 +359,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_UmountResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SetenvRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SetenvRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -398,7 +382,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SetenvRequest: Sendable {
   fileprivate var _value: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SetenvResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SetenvResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -408,7 +392,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SetenvResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_GetenvRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_GetenvRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -420,7 +404,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_GetenvRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_GetenvResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_GetenvResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -441,7 +425,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_GetenvResponse: Sendable {
   fileprivate var _value: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_CreateProcessRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_CreateProcessRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -516,7 +500,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CreateProcessRequest: Sendab
   fileprivate var _options: Data? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_CreateProcessResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_CreateProcessResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -526,7 +510,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CreateProcessResponse: Senda
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_WaitProcessRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_WaitProcessRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -549,7 +533,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_WaitProcessRequest: Sendable
   fileprivate var _containerID: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_WaitProcessResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_WaitProcessResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -572,7 +556,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_WaitProcessResponse: Sendabl
   fileprivate var _exitedAt: SwiftProtobuf.Google_Protobuf_Timestamp? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -599,7 +583,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest: Sendab
   fileprivate var _containerID: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ResizeProcessResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ResizeProcessResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -609,40 +593,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ResizeProcessResponse: Senda
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_DeleteProcessRequest: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var id: String = String()
-
-  public var containerID: String {
-    get {_containerID ?? String()}
-    set {_containerID = newValue}
-  }
-  /// Returns true if `containerID` has been explicitly set.
-  public var hasContainerID: Bool {self._containerID != nil}
-  /// Clears the value of `containerID`. Subsequent reads from it will return its default value.
-  public mutating func clearContainerID() {self._containerID = nil}
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-
-  fileprivate var _containerID: String? = nil
-}
-
-public struct Com_Apple_Containerization_Sandbox_V3_DeleteProcessResponse: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-public struct Com_Apple_Containerization_Sandbox_V3_StartProcessRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_DeleteProcessRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -665,7 +616,40 @@ public struct Com_Apple_Containerization_Sandbox_V3_StartProcessRequest: Sendabl
   fileprivate var _containerID: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_StartProcessResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_DeleteProcessResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_StartProcessRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var containerID: String {
+    get {_containerID ?? String()}
+    set {_containerID = newValue}
+  }
+  /// Returns true if `containerID` has been explicitly set.
+  public var hasContainerID: Bool {self._containerID != nil}
+  /// Clears the value of `containerID`. Subsequent reads from it will return its default value.
+  public mutating func clearContainerID() {self._containerID = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _containerID: String? = nil
+}
+
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_StartProcessResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -677,7 +661,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_StartProcessResponse: Sendab
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_KillProcessRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_KillProcessRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -702,7 +686,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_KillProcessRequest: Sendable
   fileprivate var _containerID: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_KillProcessResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_KillProcessResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -714,7 +698,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_KillProcessResponse: Sendabl
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -737,7 +721,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinRequest: Se
   fileprivate var _containerID: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -747,7 +731,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse: S
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_MkdirRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_MkdirRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -763,7 +747,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_MkdirRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_MkdirResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_MkdirResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -773,7 +757,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_MkdirResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -803,7 +787,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: Sendable {
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public struct WriteFileFlags: Sendable {
+  public nonisolated struct WriteFileFlags: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -824,7 +808,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: Sendable {
   fileprivate var _flags: Com_Apple_Containerization_Sandbox_V3_WriteFileRequest.WriteFileFlags? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -834,7 +818,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: Sendable 
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_CopyRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_CopyRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -871,7 +855,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CopyRequest: Sendable {
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public enum Direction: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public nonisolated enum Direction: SwiftProtobuf.Enum, Swift.CaseIterable {
     public typealias RawValue = Int
 
     /// Copy from host into guest.
@@ -912,7 +896,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CopyRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_CopyResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_CopyResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -940,7 +924,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CopyResponse: Sendable {
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public enum Status: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public nonisolated enum Status: SwiftProtobuf.Enum, Swift.CaseIterable {
     public typealias RawValue = Int
 
     /// Transfer metadata (first message for COPY_OUT: is_archive, total_size).
@@ -981,7 +965,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CopyResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_StatRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_StatRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -993,7 +977,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_StatRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_Stat: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_Stat: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1067,7 +1051,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_Stat: Sendable {
   fileprivate var _ctime: SwiftProtobuf.Google_Protobuf_Timestamp? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_StatResponse: @unchecked Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_StatResponse: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1094,7 +1078,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_StatResponse: @unchecked Sen
   fileprivate var _storage = _StorageClass.defaultInstance
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_FiTrimParams: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_FiTrimParams: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1111,12 +1095,12 @@ public struct Com_Apple_Containerization_Sandbox_V3_FiTrimParams: Sendable {
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public enum OneOf_Schedule: Equatable, Sendable {
+  public nonisolated enum OneOf_Schedule: Equatable, Sendable {
     case oneShot(Com_Apple_Containerization_Sandbox_V3_FiTrimParams.OneShot)
 
   }
 
-  public struct OneShot: Sendable {
+  public nonisolated struct OneShot: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1129,7 +1113,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FiTrimParams: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_FiFreezeParams: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_FiFreezeParams: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1139,7 +1123,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FiFreezeParams: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_FiThawParams: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_FiThawParams: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1149,7 +1133,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FiThawParams: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_FiTrimResult: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_FiTrimResult: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1161,7 +1145,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FiTrimResult: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1196,7 +1180,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest: 
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public enum OneOf_Operation: Equatable, Sendable {
+  public nonisolated enum OneOf_Operation: Equatable, Sendable {
     case trim(Com_Apple_Containerization_Sandbox_V3_FiTrimParams)
     case freeze(Com_Apple_Containerization_Sandbox_V3_FiFreezeParams)
     case thaw(Com_Apple_Containerization_Sandbox_V3_FiThawParams)
@@ -1206,7 +1190,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest: 
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1223,7 +1207,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse:
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public enum OneOf_Result: Equatable, Sendable {
+  public nonisolated enum OneOf_Result: Equatable, Sendable {
     case trim(Com_Apple_Containerization_Sandbox_V3_FiTrimResult)
 
   }
@@ -1231,7 +1215,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse:
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1266,7 +1250,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: Sendable {
   fileprivate var _newName: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1276,7 +1260,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpLinkSetResponse: Sendable 
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1301,7 +1285,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest: Sendable {
   fileprivate var _ipv6Address: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpAddrAddResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpAddrAddResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1311,7 +1295,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpAddrAddResponse: Sendable 
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1348,7 +1332,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkRequest: Senda
   fileprivate var _srcIpv6Addr: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1358,7 +1342,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkResponse: Send
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1383,7 +1367,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultRequest: Se
   fileprivate var _ipv6Gateway: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1393,7 +1377,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultResponse: S
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ConfigureDnsRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ConfigureDnsRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1422,7 +1406,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ConfigureDnsRequest: Sendabl
   fileprivate var _domain: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ConfigureDnsResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ConfigureDnsResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1432,7 +1416,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ConfigureDnsResponse: Sendab
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1452,7 +1436,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest: Senda
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
-  public struct HostsEntry: Sendable {
+  public nonisolated struct HostsEntry: Sendable {
     // SwiftProtobuf.Message conformance is added in an extension below. See the
     // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
     // methods supported on all messages.
@@ -1482,7 +1466,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest: Senda
   fileprivate var _comment: String? = nil
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1492,7 +1476,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse: Send
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SyncRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SyncRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1502,7 +1486,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SyncRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_SyncResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_SyncResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1512,7 +1496,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_SyncResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_KillRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_KillRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1526,7 +1510,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_KillRequest: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_KillResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_KillResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1538,7 +1522,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_KillResponse: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1554,7 +1538,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest: 
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1566,7 +1550,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse:
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ContainerStats: @unchecked Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ContainerStats: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1633,7 +1617,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ContainerStats: @unchecked S
   fileprivate var _storage = _StorageClass.defaultInstance
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ProcessStats: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ProcessStats: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1648,7 +1632,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ProcessStats: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1660,7 +1644,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest: S
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1674,7 +1658,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: 
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1700,7 +1684,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: Sendab
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_MemoryStats: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_MemoryStats: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1742,7 +1726,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_MemoryStats: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_CPUStats: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_CPUStats: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1764,7 +1748,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_CPUStats: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_BlockIOStats: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_BlockIOStats: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1776,7 +1760,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_BlockIOStats: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_BlockIOEntry: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_BlockIOEntry: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1798,7 +1782,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_BlockIOEntry: Sendable {
   public init() {}
 }
 
-public struct Com_Apple_Containerization_Sandbox_V3_NetworkStats: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_NetworkStats: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1823,7 +1807,7 @@ public struct Com_Apple_Containerization_Sandbox_V3_NetworkStats: Sendable {
 }
 
 /// Memory event counters from cgroup2's memory.events file.
-public struct Com_Apple_Containerization_Sandbox_V3_MemoryEventStats: Sendable {
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_MemoryEventStats: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -1853,13 +1837,13 @@ public struct Com_Apple_Containerization_Sandbox_V3_MemoryEventStats: Sendable {
 
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
-fileprivate let _protobuf_package = "com.apple.containerization.sandbox.v3"
+fileprivate nonisolated let _protobuf_package = "com.apple.containerization.sandbox.v3"
 
-extension Com_Apple_Containerization_Sandbox_V3_StatCategory: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_StatCategory: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0STAT_CATEGORY_UNSPECIFIED\0\u{1}STAT_CATEGORY_PROCESS\0\u{1}STAT_CATEGORY_MEMORY\0\u{1}STAT_CATEGORY_CPU\0\u{1}STAT_CATEGORY_BLOCK_IO\0\u{1}STAT_CATEGORY_NETWORK\0\u{1}STAT_CATEGORY_MEMORY_EVENTS\0")
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_Stdio: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_Stdio: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Stdio"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}stdinPort\0\u{1}stdoutPort\0\u{1}stderrPort\0")
 
@@ -1903,7 +1887,7 @@ extension Com_Apple_Containerization_Sandbox_V3_Stdio: SwiftProtobuf.Message, Sw
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SetupEmulatorRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SetupEmulatorRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetupEmulatorRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}binary_path\0\u{1}name\0\u{1}type\0\u{1}offset\0\u{1}magic\0\u{1}mask\0\u{1}flags\0")
 
@@ -1963,7 +1947,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SetupEmulatorRequest: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SetupEmulatorResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SetupEmulatorResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetupEmulatorResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -1982,7 +1966,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SetupEmulatorResponse: SwiftProt
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SetTimeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SetTimeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetTimeRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}sec\0\u{1}usec\0")
 
@@ -2017,7 +2001,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SetTimeRequest: SwiftProtobuf.Me
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SetTimeResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SetTimeResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetTimeResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2036,7 +2020,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SetTimeResponse: SwiftProtobuf.M
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SysctlRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SysctlRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SysctlRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}settings\0")
 
@@ -2066,7 +2050,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SysctlRequest: SwiftProtobuf.Mes
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SysctlResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SysctlResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SysctlResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2085,7 +2069,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SysctlResponse: SwiftProtobuf.Me
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProxyVsockRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}vsock_port\0\u{1}guestPath\0\u{1}guestSocketPermissions\0\u{1}action\0")
 
@@ -2139,11 +2123,11 @@ extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest: SwiftProtobuf
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest.Action: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest.Action: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0INTO\0\u{1}OUT_OF\0")
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProxyVsockResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2162,7 +2146,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse: SwiftProtobu
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_StopVsockProxyRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_StopVsockProxyRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StopVsockProxyRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0")
 
@@ -2192,7 +2176,7 @@ extension Com_Apple_Containerization_Sandbox_V3_StopVsockProxyRequest: SwiftProt
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_StopVsockProxyResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_StopVsockProxyResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StopVsockProxyResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2211,7 +2195,7 @@ extension Com_Apple_Containerization_Sandbox_V3_StopVsockProxyResponse: SwiftPro
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MountRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}type\0\u{1}source\0\u{1}destination\0\u{1}options\0\u{3}source_root\0")
 
@@ -2232,6 +2216,10 @@ extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Mess
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
     if !self.type.isEmpty {
       try visitor.visitSingularStringField(value: self.type, fieldNumber: 1)
     }
@@ -2261,7 +2249,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MountRequest: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_MountResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_MountResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MountResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2280,7 +2268,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MountResponse: SwiftProtobuf.Mes
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_UmountRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_UmountRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UmountRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}flags\0")
 
@@ -2315,7 +2303,7 @@ extension Com_Apple_Containerization_Sandbox_V3_UmountRequest: SwiftProtobuf.Mes
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_UmountResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_UmountResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".UmountResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2334,7 +2322,7 @@ extension Com_Apple_Containerization_Sandbox_V3_UmountResponse: SwiftProtobuf.Me
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SetenvRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SetenvRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetenvRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}key\0\u{1}value\0")
 
@@ -2373,7 +2361,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SetenvRequest: SwiftProtobuf.Mes
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SetenvResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SetenvResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetenvResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2392,7 +2380,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SetenvResponse: SwiftProtobuf.Me
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_GetenvRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_GetenvRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetenvRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}key\0")
 
@@ -2422,7 +2410,7 @@ extension Com_Apple_Containerization_Sandbox_V3_GetenvRequest: SwiftProtobuf.Mes
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_GetenvResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_GetenvResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GetenvResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}value\0")
 
@@ -2456,7 +2444,7 @@ extension Com_Apple_Containerization_Sandbox_V3_GetenvResponse: SwiftProtobuf.Me
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CreateProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CreateProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateProcessRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}containerID\0\u{1}stdin\0\u{1}stdout\0\u{1}stderr\0\u{1}ociRuntimePath\0\u{1}configuration\0\u{1}options\0")
 
@@ -2525,7 +2513,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CreateProcessRequest: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CreateProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CreateProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CreateProcessResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2544,7 +2532,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CreateProcessResponse: SwiftProt
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_WaitProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_WaitProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WaitProcessRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}containerID\0")
 
@@ -2583,7 +2571,7 @@ extension Com_Apple_Containerization_Sandbox_V3_WaitProcessRequest: SwiftProtobu
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_WaitProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_WaitProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WaitProcessResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}exitCode\0\u{3}exited_at\0")
 
@@ -2622,7 +2610,7 @@ extension Com_Apple_Containerization_Sandbox_V3_WaitProcessResponse: SwiftProtob
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ResizeProcessRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}containerID\0\u{1}rows\0\u{1}columns\0")
 
@@ -2671,7 +2659,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ResizeProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ResizeProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ResizeProcessResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2690,7 +2678,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ResizeProcessResponse: SwiftProt
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_DeleteProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_DeleteProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DeleteProcessRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}containerID\0")
 
@@ -2729,7 +2717,7 @@ extension Com_Apple_Containerization_Sandbox_V3_DeleteProcessRequest: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_DeleteProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_DeleteProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DeleteProcessResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2748,7 +2736,7 @@ extension Com_Apple_Containerization_Sandbox_V3_DeleteProcessResponse: SwiftProt
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_StartProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_StartProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartProcessRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}containerID\0")
 
@@ -2787,7 +2775,7 @@ extension Com_Apple_Containerization_Sandbox_V3_StartProcessRequest: SwiftProtob
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_StartProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_StartProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StartProcessResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pid\0")
 
@@ -2817,7 +2805,7 @@ extension Com_Apple_Containerization_Sandbox_V3_StartProcessResponse: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_KillProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_KillProcessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".KillProcessRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}containerID\0\u{1}signal\0")
 
@@ -2861,7 +2849,7 @@ extension Com_Apple_Containerization_Sandbox_V3_KillProcessRequest: SwiftProtobu
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_KillProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_KillProcessResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".KillProcessResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}result\0")
 
@@ -2891,7 +2879,7 @@ extension Com_Apple_Containerization_Sandbox_V3_KillProcessResponse: SwiftProtob
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CloseProcessStdinRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}containerID\0")
 
@@ -2930,7 +2918,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinRequest: SwiftP
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CloseProcessStdinResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -2949,7 +2937,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse: Swift
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_MkdirRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_MkdirRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MkdirRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}all\0\u{1}perms\0")
 
@@ -2989,7 +2977,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MkdirRequest: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_MkdirResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_MkdirResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MkdirResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3008,7 +2996,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MkdirResponse: SwiftProtobuf.Mes
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WriteFileRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}data\0\u{1}mode\0\u{1}flags\0\u{3}set_owner_uid\0\u{3}owner_uid\0\u{3}set_owner_gid\0\u{3}owner_gid\0")
 
@@ -3077,7 +3065,7 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest: SwiftProtobuf.
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest.WriteFileFlags: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest.WriteFileFlags: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = Com_Apple_Containerization_Sandbox_V3_WriteFileRequest.protoMessageName + ".WriteFileFlags"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}create_parent_dirs\0\u{1}append\0\u{3}create_if_missing\0")
 
@@ -3117,7 +3105,7 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileRequest.WriteFileFlags:
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".WriteFileResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3136,7 +3124,7 @@ extension Com_Apple_Containerization_Sandbox_V3_WriteFileResponse: SwiftProtobuf
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CopyRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}direction\0\u{1}path\0\u{1}mode\0\u{3}create_parents\0\u{3}vsock_port\0\u{3}is_archive\0\u{3}follow_symlink\0\u{3}preserve_ownership\0\u{1}uid\0\u{1}gid\0")
 
@@ -3211,11 +3199,11 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyRequest: SwiftProtobuf.Messa
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CopyRequest.Direction: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CopyRequest.Direction: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0COPY_IN\0\u{1}COPY_OUT\0")
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CopyResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CopyResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CopyResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}status\0\u{3}is_archive\0\u{3}total_size\0\u{1}error\0\u{1}mode\0\u{1}uid\0\u{1}gid\0")
 
@@ -3275,11 +3263,11 @@ extension Com_Apple_Containerization_Sandbox_V3_CopyResponse: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CopyResponse.Status: SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CopyResponse.Status: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0METADATA\0\u{1}COMPLETE\0")
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_StatRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_StatRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StatRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0")
 
@@ -3309,7 +3297,7 @@ extension Com_Apple_Containerization_Sandbox_V3_StatRequest: SwiftProtobuf.Messa
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_Stat: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_Stat: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Stat"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}dev\0\u{1}ino\0\u{1}mode\0\u{1}nlink\0\u{1}uid\0\u{1}gid\0\u{1}rdev\0\u{1}size\0\u{1}blksize\0\u{1}blocks\0\u{1}atime\0\u{1}mtime\0\u{1}ctime\0")
 
@@ -3403,7 +3391,7 @@ extension Com_Apple_Containerization_Sandbox_V3_Stat: SwiftProtobuf.Message, Swi
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_StatResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_StatResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".StatResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}stat\0\u{1}error\0")
 
@@ -3480,7 +3468,7 @@ extension Com_Apple_Containerization_Sandbox_V3_StatResponse: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_FiTrimParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_FiTrimParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FiTrimParams"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}one_shot\0")
 
@@ -3526,7 +3514,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FiTrimParams: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_FiTrimParams.OneShot: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_FiTrimParams.OneShot: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = Com_Apple_Containerization_Sandbox_V3_FiTrimParams.protoMessageName + ".OneShot"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3545,7 +3533,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FiTrimParams.OneShot: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_FiFreezeParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_FiFreezeParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FiFreezeParams"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3564,7 +3552,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FiFreezeParams: SwiftProtobuf.Me
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_FiThawParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_FiThawParams: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FiThawParams"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3583,7 +3571,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FiThawParams: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_FiTrimResult: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_FiTrimResult: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FiTrimResult"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}trimmed_bytes\0")
 
@@ -3613,7 +3601,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FiTrimResult: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FilesystemOperationRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}path\0\u{1}trim\0\u{1}freeze\0\u{1}thaw\0")
 
@@ -3702,7 +3690,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest: Swif
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".FilesystemOperationResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}trim\0")
 
@@ -3748,7 +3736,7 @@ extension Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse: Swi
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpLinkSetRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}up\0\u{1}mtu\0\u{3}new_name\0")
 
@@ -3797,7 +3785,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetRequest: SwiftProtobuf.
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpLinkSetResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3816,7 +3804,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpLinkSetResponse: SwiftProtobuf
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpAddrAddRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}ipv4Address\0\u{1}ipv6Address\0")
 
@@ -3860,7 +3848,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpAddrAddRequest: SwiftProtobuf.
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpAddrAddResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpAddrAddResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpAddrAddResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3879,7 +3867,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpAddrAddResponse: SwiftProtobuf
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpRouteAddLinkRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}dstIpv4Addr\0\u{1}srcIpv4Addr\0\u{1}dstIpv6Addr\0\u{1}srcIpv6Addr\0")
 
@@ -3933,7 +3921,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkRequest: SwiftProt
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpRouteAddLinkResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -3952,7 +3940,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkResponse: SwiftPro
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpRouteAddDefaultRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}ipv4Gateway\0\u{1}ipv6Gateway\0")
 
@@ -3996,7 +3984,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultRequest: SwiftP
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".IpRouteAddDefaultResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -4015,7 +4003,7 @@ extension Com_Apple_Containerization_Sandbox_V3_IpRouteAddDefaultResponse: Swift
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ConfigureDnsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ConfigureDnsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConfigureDnsRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}location\0\u{1}nameservers\0\u{1}domain\0\u{1}searchDomains\0\u{1}options\0")
 
@@ -4069,7 +4057,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ConfigureDnsRequest: SwiftProtob
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ConfigureDnsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ConfigureDnsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConfigureDnsResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -4088,7 +4076,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ConfigureDnsResponse: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConfigureHostsRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}location\0\u{1}entries\0\u{1}comment\0")
 
@@ -4132,7 +4120,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest: SwiftProt
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest.HostsEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest.HostsEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest.protoMessageName + ".HostsEntry"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}ipAddress\0\u{1}hostnames\0\u{1}comment\0")
 
@@ -4176,7 +4164,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest.HostsEntry
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConfigureHostsResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -4195,7 +4183,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse: SwiftPro
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SyncRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SyncRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SyncRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -4214,7 +4202,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SyncRequest: SwiftProtobuf.Messa
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_SyncResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_SyncResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SyncResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
 
@@ -4233,7 +4221,7 @@ extension Com_Apple_Containerization_Sandbox_V3_SyncResponse: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_KillRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_KillRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".KillRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pid\0\u{2}\u{2}signal\0")
 
@@ -4268,7 +4256,7 @@ extension Com_Apple_Containerization_Sandbox_V3_KillRequest: SwiftProtobuf.Messa
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_KillResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_KillResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".KillResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}result\0")
 
@@ -4298,7 +4286,7 @@ extension Com_Apple_Containerization_Sandbox_V3_KillResponse: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerStatisticsRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}container_ids\0\u{1}categories\0")
 
@@ -4333,7 +4321,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest: Swif
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerStatisticsResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}containers\0")
 
@@ -4363,7 +4351,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse: Swi
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerStats"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}container_id\0\u{1}process\0\u{1}memory\0\u{1}cpu\0\u{3}block_io\0\u{1}networks\0\u{3}memory_events\0")
 
@@ -4475,7 +4463,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: SwiftProtobuf.Me
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ProcessStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ProcessStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ProcessStats"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}current\0\u{1}limit\0")
 
@@ -4510,7 +4498,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ProcessStats: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerProcessesRequest"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}container_id\0")
 
@@ -4540,7 +4528,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesRequest: Swift
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerProcessesResponse"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}pids\0\u{1}processes\0")
 
@@ -4575,7 +4563,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessesResponse: Swif
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerProcessInfo"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}uid\0\u{1}pid\0\u{1}ppid\0\u{1}cpu\0\u{3}start_time\0\u{1}tty\0\u{1}time\0\u{1}command\0")
 
@@ -4640,7 +4628,7 @@ extension Com_Apple_Containerization_Sandbox_V3_ContainerProcessInfo: SwiftProto
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_MemoryStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_MemoryStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MemoryStats"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}usage_bytes\0\u{3}limit_bytes\0\u{3}swap_usage_bytes\0\u{3}swap_limit_bytes\0\u{3}cache_bytes\0\u{3}kernel_stack_bytes\0\u{3}slab_bytes\0\u{3}page_faults\0\u{3}major_page_faults\0\u{3}inactive_file\0\u{1}anon\0\u{3}workingset_refault_anon\0\u{3}workingset_refault_file\0\u{3}pgsteal_kswapd\0\u{3}pgsteal_direct\0\u{3}pgsteal_khugepaged\0")
 
@@ -4745,7 +4733,7 @@ extension Com_Apple_Containerization_Sandbox_V3_MemoryStats: SwiftProtobuf.Messa
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_CPUStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_CPUStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".CPUStats"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}usage_usec\0\u{3}user_usec\0\u{3}system_usec\0\u{3}throttling_periods\0\u{3}throttled_periods\0\u{3}throttled_time_usec\0")
 
@@ -4800,7 +4788,7 @@ extension Com_Apple_Containerization_Sandbox_V3_CPUStats: SwiftProtobuf.Message,
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_BlockIOStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_BlockIOStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".BlockIOStats"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}devices\0")
 
@@ -4830,7 +4818,7 @@ extension Com_Apple_Containerization_Sandbox_V3_BlockIOStats: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_BlockIOEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_BlockIOEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".BlockIOEntry"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}major\0\u{1}minor\0\u{3}read_bytes\0\u{3}write_bytes\0\u{3}read_operations\0\u{3}write_operations\0")
 
@@ -4885,7 +4873,7 @@ extension Com_Apple_Containerization_Sandbox_V3_BlockIOEntry: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_NetworkStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_NetworkStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".NetworkStats"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}receivedPackets\0\u{1}transmittedPackets\0\u{1}receivedBytes\0\u{1}transmittedBytes\0\u{1}receivedErrors\0\u{1}transmittedErrors\0")
 
@@ -4945,7 +4933,7 @@ extension Com_Apple_Containerization_Sandbox_V3_NetworkStats: SwiftProtobuf.Mess
   }
 }
 
-extension Com_Apple_Containerization_Sandbox_V3_MemoryEventStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_MemoryEventStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MemoryEventStats"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}low\0\u{1}high\0\u{1}max\0\u{1}oom\0\u{3}oom_kill\0\u{3}oom_group_kill\0")
 
