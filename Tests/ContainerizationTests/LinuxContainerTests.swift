@@ -564,6 +564,39 @@ struct LinuxContainerTests {
         #expect(vm.resumeCalls == 1)
     }
 
+    @Test func createStopsVirtualMachineAfterStartFailure() async throws {
+        let startError = ContainerizationError(.internalError, message: "start failed")
+        let manager = RecordingVirtualMachineManager(startError: startError)
+        let container = try LinuxContainer(
+            "start-failure-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init()
+        )
+
+        do {
+            try await container.create()
+            Issue.record("expected create to fail")
+        } catch let error as ContainerizationError {
+            #expect(error.code == .internalError)
+            #expect(error.description.contains("start failed"))
+        }
+
+        let vm = try #require(manager.vm)
+        #expect(vm.startCalls == 1)
+        #expect(vm.stopCalls == 1)
+        #expect(vm.state == .stopped)
+
+        do {
+            try await container.create()
+            Issue.record("expected the failed container state to remain terminal")
+        } catch let error as ContainerizationError {
+            #expect(error.code == .internalError)
+            #expect(error.description.contains("start failed"))
+        }
+        #expect(vm.startCalls == 1)
+    }
+
     @Test func graphicsConfigurationIsForwardedToVM() async throws {
         let manager = RecordingVirtualMachineManager()
         let container = try LinuxContainer(
@@ -1059,13 +1092,21 @@ private func linuxDeviceID(major: UInt64, minor: UInt64) -> UInt64 {
 
 private final class RecordingVirtualMachineManager: VirtualMachineManager, @unchecked Sendable {
     private let state = Mutex<RecordingVirtualMachineInstance?>(nil)
+    private let startError: ContainerizationError?
+
+    init(startError: ContainerizationError? = nil) {
+        self.startError = startError
+    }
 
     var vm: RecordingVirtualMachineInstance? {
         state.withLock { $0 }
     }
 
     func create(config: some VMCreationConfig) async throws -> any VirtualMachineInstance {
-        let vm = RecordingVirtualMachineInstance(configuration: config.configuration)
+        let vm = RecordingVirtualMachineInstance(
+            configuration: config.configuration,
+            startError: startError
+        )
         state.withLock { $0 = vm }
         return vm
     }
@@ -1076,11 +1117,14 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
 
     private struct State {
         var value: VirtualMachineInstanceState = .unknown
+        var startCalls = 0
+        var stopCalls = 0
         var pauseCalls = 0
         var resumeCalls = 0
     }
 
     private let storage = Mutex<State>(State())
+    private let startError: ContainerizationError?
     let agent = RecordingVirtualMachineAgent()
 
     let configuration: VMConfiguration
@@ -1094,12 +1138,24 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
         storage.withLock { $0.pauseCalls }
     }
 
+    var startCalls: Int {
+        storage.withLock { $0.startCalls }
+    }
+
+    var stopCalls: Int {
+        storage.withLock { $0.stopCalls }
+    }
+
     var resumeCalls: Int {
         storage.withLock { $0.resumeCalls }
     }
 
-    init(configuration: VMConfiguration) {
+    init(
+        configuration: VMConfiguration,
+        startError: ContainerizationError? = nil
+    ) {
         self.configuration = configuration
+        self.startError = startError
         self.mounts = configuration.mountsByID.mapValues { mounts in
             mounts.map {
                 AttachedFilesystem(
@@ -1126,11 +1182,18 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
     }
 
     func start() async throws {
+        storage.withLock { $0.startCalls += 1 }
+        if let startError {
+            throw startError
+        }
         storage.withLock { $0.value = .running }
     }
 
     func stop() async throws {
-        storage.withLock { $0.value = .stopped }
+        storage.withLock {
+            $0.stopCalls += 1
+            $0.value = .stopped
+        }
     }
 
     func pause() async throws {
