@@ -55,7 +55,7 @@ public actor ManagedContainer {
             path: Self.craftBundlePath(id: id),
             spec: spec
         )
-        log.debug("created bundle with spec \(spec)")
+        log.debug("created bundle with spec \(spec.redactingEnvironmentValues())")
 
         let cgManager = Cgroup2Manager(
             group: URL(filePath: cgroupsPath),
