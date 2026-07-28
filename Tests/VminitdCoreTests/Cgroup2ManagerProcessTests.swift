@@ -51,7 +51,8 @@ struct Cgroup2ManagerProcessTests {
         try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try "0".write(to: root.appending(path: "cpuset.mems.effective"), atomically: true, encoding: .utf8)
+        let parent = cgroup.deletingLastPathComponent()
+        try "0".write(to: parent.appending(path: "cpuset.mems.effective"), atomically: true, encoding: .utf8)
         let cpuSet = cgroup.appending(path: "cpuset.cpus")
         let memoryNodes = cgroup.appending(path: "cpuset.mems")
         try Data().write(to: cpuSet)
