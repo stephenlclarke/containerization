@@ -32,6 +32,30 @@ import struct ContainerizationOCI.Spec
 
 struct LinuxContainerTests {
 
+    @Test func archiveCopyRejectsNonPositiveChunkSizeBeforeContainerState() async throws {
+        let container = try LinuxContainer(
+            "copy-chunk-size-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+
+        await #expect(throws: ContainerizationError.self) {
+            try await container.copyIn(
+                archive: .nullDevice,
+                to: URL(filePath: "/tmp"),
+                chunkSize: 0
+            )
+        }
+        await #expect(throws: ContainerizationError.self) {
+            try await container.copyOut(
+                from: URL(filePath: "/tmp"),
+                to: .nullDevice,
+                chunkSize: -1
+            )
+        }
+    }
+
     @Test func processInitFromImageConfigWithAllFields() {
         let imageConfig = ImageConfig(
             user: "appuser",

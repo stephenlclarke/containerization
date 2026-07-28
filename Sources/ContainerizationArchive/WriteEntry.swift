@@ -119,6 +119,11 @@ extension WriteEntry {
         }
     }
 
+    /// Records a non-hole data range for sparse-file archive formats.
+    public func addSparseData(offset: Int64, length: Int64) {
+        archive_entry_sparse_add_entry(underlying, offset, length)
+    }
+
     /// The string representation of the permissions of the entry
     public var strmode: String? {
         if let cstr = archive_entry_strmode(underlying) {
@@ -298,7 +303,7 @@ extension WriteEntry {
         if let d = date {
             let ti = d.timeIntervalSince1970
             let seconds = floor(ti)
-            let nsec = max(0, min(1_000_000_000, ti - seconds * 1_000_000_000))
+            let nsec = max(0, min(999_999_999, (ti - seconds) * 1_000_000_000))
             setter(underlying, time_t(seconds), CLong(nsec))
         } else {
             unset(underlying)

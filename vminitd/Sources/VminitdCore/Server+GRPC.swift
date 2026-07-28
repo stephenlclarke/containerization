@@ -569,15 +569,21 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             try FileManager.default.createDirectory(at: destURL, withIntermediateDirectories: true)
 
             let fileHandle = FileHandle(fileDescriptor: sockFd, closeOnDealloc: false)
-            let reader = try ArchiveReader(format: .pax, filter: .gzip, fileHandle: fileHandle)
-            return try reader.extractContents(to: destURL)
+            let reader =
+                request.isArchive
+                ? try ArchiveReader(fileHandle: fileHandle)
+                : try ArchiveReader(format: .pax, filter: .gzip, fileHandle: fileHandle)
+            return try reader.extractContents(
+                to: destURL,
+                preserveOwnership: request.preserveOwnership
+            )
         }
 
         if !rejected.isEmpty {
-            log.info("copy: archive extracted", metadata: ["path": "\(path)", "rejectedCount": "\(rejected.count)"])
-            for rejectedPath in rejected {
-                log.error("copy: rejected archive path", metadata: ["path": "\(rejectedPath)"])
-            }
+            throw RPCError(
+                code: .invalidArgument,
+                message: "copy: rejected unsafe archive paths: \(rejected.joined(separator: ", "))"
+            )
         }
 
         log.debug("copy: copyIn complete", metadata: ["path": "\(path)", "isArchive": "\(isArchive)"])
@@ -596,7 +602,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
             throw RPCError(code: .notFound, message: "copy: path not found '\(path)'")
         }
-        let isArchive = isDirectory.boolValue
+        let sourceIsDirectory = isDirectory.boolValue
+        let isArchive = sourceIsDirectory || request.isArchive
 
         // Determine metadata for single files.
         var totalSize: UInt64 = 0
@@ -642,9 +649,24 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
             if isArchive {
                 let fileURL = URL(fileURLWithPath: path)
-                let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: .gzip))
+                let filter: Filter = request.isArchive ? .none : .gzip
+                let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: filter))
                 try writer.open(fileDescriptor: sock.fileDescriptor)
-                try writer.archiveDirectory(fileURL)
+                if !request.isArchive {
+                    try writer.archiveDirectory(fileURL)
+                } else if sourceIsDirectory, request.copyContents || FilePath(path).lastComponent == nil {
+                    try writer.archiveDirectory(
+                        fileURL,
+                        includeExternalSymlinks: true
+                    )
+                } else {
+                    let filePath = FilePath(path)
+                    try writer.archive(
+                        [filePath],
+                        base: filePath.removingLastComponent(),
+                        includeExternalSymlinks: true
+                    )
+                }
                 try writer.finishEncoding()
             } else {
                 let srcFd = open(path, O_RDONLY)

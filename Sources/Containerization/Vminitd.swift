@@ -570,7 +570,7 @@ extension Vminitd {
 
     /// Metadata received from the guest during a copy operation.
     public struct CopyMetadata: Sendable {
-        /// Whether the data on the vsock channel is a tar+gzip archive.
+        /// Whether the data on the vsock channel is a tar archive.
         public let isArchive: Bool
         /// Total size in bytes (0 if unknown, e.g. for archives).
         public let totalSize: UInt64
@@ -636,6 +636,7 @@ extension Vminitd {
         preserveOwnership: Bool = false,
         uid: UInt32 = 0,
         gid: UInt32 = 0,
+        copyContents: Bool = false,
         onMetadata: @Sendable @escaping (CopyMetadata) -> Void = { _ in }
     ) async throws {
         let request = Com_Apple_Containerization_Sandbox_V3_CopyRequest.with {
@@ -649,6 +650,7 @@ extension Vminitd {
             $0.preserveOwnership = preserveOwnership
             $0.uid = uid
             $0.gid = gid
+            $0.copyContents = copyContents
         }
 
         try await client.copy(

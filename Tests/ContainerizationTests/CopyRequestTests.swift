@@ -27,6 +27,7 @@ struct CopyRequestTests {
             $0.preserveOwnership = true
             $0.uid = 501
             $0.gid = 20
+            $0.copyContents = true
         }
 
         let bytes: [UInt8] = try request.serializedBytes()
@@ -39,6 +40,7 @@ struct CopyRequestTests {
         #expect(decoded.preserveOwnership)
         #expect(decoded.uid == 501)
         #expect(decoded.gid == 20)
+        #expect(decoded.copyContents)
     }
 
     @Test func copyResponseRoundTripsSingleFileMetadata() throws {

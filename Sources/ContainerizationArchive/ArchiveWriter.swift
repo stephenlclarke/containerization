@@ -18,11 +18,25 @@ import CArchive
 import Foundation
 import SystemPackage
 
+#if os(macOS)
+private let archiveSeekData: CInt = 4
+private let archiveSeekHole: CInt = 3
+#else
+private let archiveSeekData: CInt = 3
+private let archiveSeekHole: CInt = 4
+#endif
+
 /// A class responsible for writing archives in various formats.
 public final class ArchiveWriter {
     private static let chunkSize = 4 * 1024 * 1024
 
     var underlying: OpaquePointer?
+    private var hardlinks: [FileIdentity: String] = [:]
+
+    private struct FileIdentity: Hashable {
+        let device: UInt64
+        let inode: UInt64
+    }
 
     /// Initialize a new `ArchiveWriter` with the given configuration.
     /// This method attempts to initialize an empty archive in memory, failing which it throws a `unableToCreateArchive` error.
@@ -179,7 +193,11 @@ extension ArchiveWriter {
 }
 
 extension ArchiveWriter {
-    private func archive(_ relativePath: FilePath, dirPath: FilePath) throws {
+    private func archive(
+        _ relativePath: FilePath,
+        dirPath: FilePath,
+        includeExternalSymlinks: Bool
+    ) throws {
         let fm = FileManager.default
 
         let fullPath = dirPath.appending(relativePath.string)
@@ -209,13 +227,13 @@ extension ArchiveWriter {
         }
 
         #if os(macOS)
-        let created = Date(timeIntervalSince1970: Double(statInfo.st_ctimespec.tv_sec))
-        let access = Date(timeIntervalSince1970: Double(statInfo.st_atimespec.tv_sec))
-        let modified = Date(timeIntervalSince1970: Double(statInfo.st_mtimespec.tv_sec))
+        let created = Self.date(statInfo.st_ctimespec)
+        let access = Self.date(statInfo.st_atimespec)
+        let modified = Self.date(statInfo.st_mtimespec)
         #else
-        let created = Date(timeIntervalSince1970: Double(statInfo.st_ctim.tv_sec))
-        let access = Date(timeIntervalSince1970: Double(statInfo.st_atim.tv_sec))
-        let modified = Date(timeIntervalSince1970: Double(statInfo.st_mtim.tv_sec))
+        let created = Self.date(statInfo.st_ctim)
+        let access = Self.date(statInfo.st_atim)
+        let modified = Self.date(statInfo.st_mtim)
         #endif
 
         let entry = WriteEntry()
@@ -224,7 +242,7 @@ extension ArchiveWriter {
             // Resolve the target relative to the symlink's parent, not the archive root.
             let symlinkParent = fullPath.removingLastComponent()
             let resolvedFull = symlinkParent.appending(targetPath).lexicallyNormalized()
-            guard resolvedFull.starts(with: dirPath) else {
+            guard includeExternalSymlinks || resolvedFull.starts(with: dirPath) else {
                 return
             }
             entry.symlinkTarget = targetPath
@@ -240,6 +258,20 @@ extension ArchiveWriter {
         entry.owner = uid
         entry.permissions = mode
         if type == .regular {
+            let identity = FileIdentity(
+                device: UInt64(statInfo.st_dev),
+                inode: UInt64(statInfo.st_ino)
+            )
+            if statInfo.st_nlink > 1, let target = hardlinks[identity] {
+                entry.hardlink = target
+                entry.size = 0
+                try self.writeEntry(entry: entry, data: nil)
+                return
+            }
+            if statInfo.st_nlink > 1 {
+                hardlinks[identity] = relativePath.string
+            }
+
             let buf = UnsafeMutableRawBufferPointer.allocate(byteCount: Self.chunkSize, alignment: 1)
             guard let baseAddress = buf.baseAddress else {
                 throw ArchiveError.failedToCreateArchive("cannot create temporary buffer of size \(Self.chunkSize)")
@@ -251,10 +283,17 @@ extension ArchiveWriter {
                 throw ArchiveError.failedToCreateArchive("cannot open file \(fullPath.string) for reading: \(err)")
             }
             defer { close(fd) }
+            for extent in try Self.sparseDataExtents(fd: fd, size: size) ?? [] {
+                entry.addSparseData(offset: extent.offset, length: extent.length)
+            }
+            _ = lseek(fd, 0, SEEK_SET)
             try self.writeHeader(entry: entry)
             while true {
                 let n = read(fd, baseAddress, Self.chunkSize)
                 if n == 0 { break }
+                if n < 0, errno == EINTR {
+                    continue
+                }
                 if n < 0 {
                     let err = POSIXErrorCode(rawValue: errno) ?? .EIO
                     throw ArchiveError.failedToCreateArchive("failed to read from file \(fullPath.string): \(err)")
@@ -269,7 +308,10 @@ extension ArchiveWriter {
 
     /// Recursively archives the content of a directory. Regular files, symlinks and directories are added into the archive.
     /// Note: Symlinks are added to the archive if both the source and target for the symlink are both contained in the top level directory.
-    public func archiveDirectory(_ dir: URL) throws {
+    public func archiveDirectory(
+        _ dir: URL,
+        includeExternalSymlinks: Bool = false
+    ) throws {
         let fm = FileManager.default
         let dirPath = FilePath(dir.path)
 
@@ -291,22 +333,30 @@ extension ArchiveWriter {
         rootEntry.group = rootStat.st_gid
         rootEntry.permissions = rootStat.st_mode
         #if os(macOS)
-        rootEntry.creationDate = Date(timeIntervalSince1970: Double(rootStat.st_ctimespec.tv_sec))
-        rootEntry.contentAccessDate = Date(timeIntervalSince1970: Double(rootStat.st_atimespec.tv_sec))
-        rootEntry.modificationDate = Date(timeIntervalSince1970: Double(rootStat.st_mtimespec.tv_sec))
+        rootEntry.creationDate = Self.date(rootStat.st_ctimespec)
+        rootEntry.contentAccessDate = Self.date(rootStat.st_atimespec)
+        rootEntry.modificationDate = Self.date(rootStat.st_mtimespec)
         #else
-        rootEntry.creationDate = Date(timeIntervalSince1970: Double(rootStat.st_ctim.tv_sec))
-        rootEntry.contentAccessDate = Date(timeIntervalSince1970: Double(rootStat.st_atim.tv_sec))
-        rootEntry.modificationDate = Date(timeIntervalSince1970: Double(rootStat.st_mtim.tv_sec))
+        rootEntry.creationDate = Self.date(rootStat.st_ctim)
+        rootEntry.contentAccessDate = Self.date(rootStat.st_atim)
+        rootEntry.modificationDate = Self.date(rootStat.st_mtim)
         #endif
-        try self.writeHeader(entry: rootEntry)
+        try self.writeEntry(entry: rootEntry, data: nil)
 
         for case let relativePath as String in enumerator {
-            try archive(FilePath(relativePath), dirPath: dirPath)
+            try archive(
+                FilePath(relativePath),
+                dirPath: dirPath,
+                includeExternalSymlinks: includeExternalSymlinks
+            )
         }
     }
 
-    public func archive(_ paths: [FilePath], base: FilePath) throws {
+    public func archive(
+        _ paths: [FilePath],
+        base: FilePath,
+        includeExternalSymlinks: Bool = false
+    ) throws {
         let fm = FileManager.default
         let base = base.lexicallyNormalized()
 
@@ -318,22 +368,98 @@ extension ArchiveWriter {
             let relativePath = path.components.dropFirst(base.components.count)
                 .reduce(into: FilePath("")) { $0.append($1) }
 
-            var isDir: ObjCBool = false
-            _ = fm.fileExists(atPath: path.string, isDirectory: &isDir)
-            if isDir.boolValue {
+            var pathStat = stat()
+            guard lstat(path.string, &pathStat) == 0 else {
+                let err = POSIXErrorCode(rawValue: errno) ?? .EINVAL
+                throw ArchiveError.failedToCreateArchive(
+                    "lstat failed for '\(path)': \(POSIXError(err))"
+                )
+            }
+            if (pathStat.st_mode & S_IFMT) == S_IFDIR {
                 guard let enumerator = fm.enumerator(atPath: path.string) else {
                     throw POSIXError(.ENOTDIR)
                 }
 
-                try archive(relativePath, dirPath: base)
+                try archive(
+                    relativePath,
+                    dirPath: base,
+                    includeExternalSymlinks: includeExternalSymlinks
+                )
                 for case let child as String in enumerator {
                     let childPath = relativePath.appending(child)
 
-                    try archive(childPath, dirPath: base)
+                    try archive(
+                        childPath,
+                        dirPath: base,
+                        includeExternalSymlinks: includeExternalSymlinks
+                    )
                 }
             } else {
-                try archive(relativePath, dirPath: base)
+                try archive(
+                    relativePath,
+                    dirPath: base,
+                    includeExternalSymlinks: includeExternalSymlinks
+                )
             }
         }
+    }
+
+    private static func date(_ value: timespec) -> Date {
+        Date(
+            timeIntervalSince1970:
+                TimeInterval(value.tv_sec) + TimeInterval(value.tv_nsec) / 1_000_000_000
+        )
+    }
+
+    private static func sparseDataExtents(
+        fd: Int32,
+        size: Int64
+    ) throws -> [(offset: Int64, length: Int64)]? {
+        guard size > 0 else {
+            return nil
+        }
+
+        var extents: [(offset: Int64, length: Int64)] = []
+        var position: Int64 = 0
+        while position < size {
+            errno = 0
+            let dataOffset = lseek(fd, off_t(position), archiveSeekData)
+            if dataOffset < 0 {
+                if errno == ENXIO {
+                    if extents.isEmpty {
+                        return [(offset: size, length: 0)]
+                    }
+                    break
+                }
+                if errno == EINVAL || errno == ENOTSUP {
+                    return nil
+                }
+                throw ArchiveError.failedToCreateArchive(
+                    "failed to locate sparse-file data: \(POSIXErrorCode(rawValue: errno) ?? .EIO)"
+                )
+            }
+
+            let holeOffset = lseek(fd, dataOffset, archiveSeekHole)
+            guard holeOffset >= 0 else {
+                if errno == EINVAL || errno == ENOTSUP {
+                    return nil
+                }
+                throw ArchiveError.failedToCreateArchive(
+                    "failed to locate sparse-file hole: \(POSIXErrorCode(rawValue: errno) ?? .EIO)"
+                )
+            }
+
+            let end = Swift.min(Int64(holeOffset), size)
+            extents.append((offset: Int64(dataOffset), length: end - Int64(dataOffset)))
+            position = end
+        }
+
+        guard
+            !extents.isEmpty,
+            extents.count != 1 || extents[0].offset != 0 || extents[0].length != size
+        else {
+            return nil
+        }
+        return extents
     }
 }
