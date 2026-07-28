@@ -20,6 +20,12 @@ import Testing
 @testable import ContainerizationOCI
 
 struct AuthChallengeTests {
+    private struct CustomAuthentication: Authentication {
+        func token() async throws -> String {
+            "Bearer token"
+        }
+    }
+
     internal struct TestCase: Sendable {
         let input: String
         let expected: AuthenticateChallenge
@@ -54,5 +60,31 @@ struct AuthChallengeTests {
         let challenges = RegistryClient.parseWWWAuthenticateHeaders(headers: [testCase.input])
         #expect(challenges.count == 1)
         #expect(challenges[0] == testCase.expected)
+    }
+
+    @Test func basicChallengeWithCredentialsReportsAuthenticationFailure() throws {
+        let challenges = RegistryClient.parseWWWAuthenticateHeaders(headers: ["Basic realm=\"IssueRegistry\""])
+        let reason = RegistryClient.authenticationFailureReason(
+            authentication: BasicAuthentication(username: "issue-user", password: "wrong-password"),
+            challenges: challenges)
+
+        #expect(reason == "access denied or wrong credentials")
+    }
+
+    @Test func basicChallengeWithoutCredentialsDoesNotReportAuthenticationFailure() throws {
+        let challenges = RegistryClient.parseWWWAuthenticateHeaders(headers: ["Basic realm=\"IssueRegistry\""])
+        let reason = RegistryClient.authenticationFailureReason(authentication: nil, challenges: challenges)
+
+        #expect(reason == nil)
+    }
+
+    @Test func basicChallengeWithCustomAuthenticationDoesNotReportBasicFailure() throws {
+        let challenges = RegistryClient.parseWWWAuthenticateHeaders(headers: ["Basic realm=\"IssueRegistry\""])
+        let reason = RegistryClient.authenticationFailureReason(
+            authentication: CustomAuthentication(),
+            challenges: challenges
+        )
+
+        #expect(reason == nil)
     }
 }
