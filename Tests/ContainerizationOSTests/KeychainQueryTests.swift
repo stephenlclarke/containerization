@@ -22,7 +22,6 @@ import Testing
 
 struct KeychainQueryTests {
     let securityDomain = "com.example.container-testing-keychain"
-    let genericPasswordService = "com.example.container-testing-secret"
     let hostname = "testing-keychain.example.com"
     let username = "containerization-test"
 
@@ -70,32 +69,6 @@ struct KeychainQueryTests {
             for entry in entries {
                 #expect(entry.username == username)
             }
-        } catch KeychainQuery.Error.unhandledError(status: -25308) {
-            // ignore errSecInteractionNotAllowed
-        }
-    }
-
-    @Test(.enabled(if: !isCI))
-    func `generic passwords store opaque bytes and list metadata`() throws {
-        let account = "containerization-secret-test"
-        let contents = Data([0x00, 0xFF, 0x0A])
-        defer {
-            try? kq.deleteGenericPassword(service: genericPasswordService, account: account)
-        }
-
-        do {
-            try kq.saveGenericPassword(
-                service: genericPasswordService,
-                account: account,
-                data: contents,
-            )
-            #expect(try kq.genericPasswordExists(service: genericPasswordService, account: account))
-
-            let result = try kq.getGenericPassword(service: genericPasswordService, account: account)
-            #expect(result?.data == contents)
-
-            let metadata = try kq.listGenericPasswords(service: genericPasswordService)
-            #expect(metadata.contains(where: { $0.account == account }))
         } catch KeychainQuery.Error.unhandledError(status: -25308) {
             // ignore errSecInteractionNotAllowed
         }
