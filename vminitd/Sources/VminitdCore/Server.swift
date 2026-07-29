@@ -126,6 +126,7 @@ public final class Initd: Sendable {
                 ),
                 services: [self] + additionalServices
             )
+            let dnsProxy = GuestDNSProxy(group: self.group, log: self.log)
 
             log.info(
                 "gRPC API serving on vsock",
@@ -134,10 +135,11 @@ public final class Initd: Sendable {
                 ])
 
             group.addTask { try await server.serve() }
+            group.addTask { try await dnsProxy.run() }
 
+            defer { group.cancelAll() }
             try await group.next()
             log.info("closing gRPC server")
-            group.cancelAll()
         }
     }
 }

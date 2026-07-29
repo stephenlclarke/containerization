@@ -106,17 +106,19 @@ public final class CHVirtualMachineInstance: Sendable {
     private let timeSyncer: TimeSyncer
     let logger: Logger?
 
-    /// Pre-bound vsock listener pool for stdio. apple/container's
+    /// Pre-bound vsock listener pool for host services and stdio. apple/container's
     /// `--virtualization` mode hands the cloud-hypervisor child process a
     /// snapshotted filesystem view at fork time, so files written under the
     /// per-VM workDir AFTER cloud-hypervisor starts are invisible to CH.
-    /// We work around this by binding a fixed range of `vsock.sock_<port>`
+    /// We work around this by binding the fixed host-service ports and a range of
+    /// `vsock.sock_<port>`
     /// listener files BEFORE launching CH; `vm.listen(_:)` then consumes
     /// pre-bound entries from this pool instead of binding on demand.
     /// Range covers `LinuxContainer.hostVsockPorts` initial value
     /// (`0x10000000`) through the next `stdioPoolSize` sequential ports —
     /// enough for `[stdin,stdout,stderr] x N` processes per VM. Bump
     /// `stdioPoolSize` if you need more concurrent stdio streams than that.
+    static let hostServicePorts = [DNSProxyProtocol.hostVsockPort]
     static let stdioPoolBase: UInt32 = 0x1000_0000
     static let stdioPoolSize: Int = 16
     private struct PreboundListener: Sendable {
@@ -124,7 +126,7 @@ public final class CHVirtualMachineInstance: Sendable {
         let listenFd: Int32
         let path: URL
     }
-    private let _stdioPool: Mutex<[UInt32: PreboundListener]>
+    private let _preboundListeners: Mutex<[UInt32: PreboundListener]>
 
     public convenience init(
         group: (any EventLoopGroup)? = nil,
@@ -219,7 +221,7 @@ public final class CHVirtualMachineInstance: Sendable {
         self.lock = .init()
         self.timeSyncer = .init(logger: logger)
         self._state = Mutex(.stopped)
-        self._stdioPool = Mutex([:])
+        self._preboundListeners = Mutex([:])
     }
 
     /// Mutate the mount registry. Forwards to the hotplug provider, which
@@ -250,10 +252,10 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
                 }
                 let finalConfig = vmConfig
 
-                // Pre-bind the stdio vsock listener pool before launching CH.
+                // Pre-bind host-service and stdio vsock listeners before launching CH.
                 // CH inherits a fs snapshot at fork time and is blind to
-                // anything we add to workDir after — see `_stdioPool` doc.
-                try self.prebindStdioPool()
+                // anything we add to workDir after — see `_preboundListeners` doc.
+                try self.prebindVsockListeners()
 
                 try await self.chProcess.start()
 
@@ -294,9 +296,9 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
         // by an in-flight hotplug. Empty if neither ran.
         await self.hotplug.shutdown()
 
-        // Close pre-bound stdio listener fds the start path opened in
-        // prebindStdioPool. Files unlink with workDir below.
-        let leftover = self._stdioPool.withLock { pool -> [PreboundListener] in
+        // Close pre-bound listener fds the start path opened in
+        // prebindVsockListeners. Files unlink with workDir below.
+        let leftover = self._preboundListeners.withLock { pool -> [PreboundListener] in
             let entries = Array(pool.values)
             pool.removeAll()
             return entries
@@ -348,10 +350,9 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
             // before `group.shutdownGracefully()` below.
             try? await self.client.shutdown()
 
-            // Close any listening fds for stdio ports the test never
-            // consumed. The files themselves are removed when workDir is
-            // unlinked below.
-            let leftover = self._stdioPool.withLock { pool -> [PreboundListener] in
+            // Close any pre-bound listener fds that were never consumed.
+            // The files themselves are removed when workDir is unlinked below.
+            let leftover = self._preboundListeners.withLock { pool -> [PreboundListener] in
                 let entries = Array(pool.values)
                 pool.removeAll()
                 return entries
@@ -406,14 +407,15 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
     }
 
     public func listen(_ port: UInt32) throws -> VsockListener {
-        // Consume from the pre-bound pool (see `_stdioPool` doc).
-        let prebound = _stdioPool.withLock { $0.removeValue(forKey: port) }
+        // Consume from the pre-bound pool (see `_preboundListeners` doc).
+        let prebound = _preboundListeners.withLock { $0.removeValue(forKey: port) }
         guard let prebound else {
+            let hostServicePorts = Self.hostServicePorts.map(String.init).joined(separator: ", ")
             throw ContainerizationError(
                 .invalidArgument,
-                message: "vsock port \(port) was not pre-bound; only ports "
+                message: "vsock port \(port) was not pre-bound; host-service ports [\(hostServicePorts)] and stdio ports "
                     + "\(Self.stdioPoolBase)..<\(Self.stdioPoolBase + UInt32(Self.stdioPoolSize)) "
-                    + "are available for stdio. Increase CHVirtualMachineInstance.stdioPoolSize "
+                    + "are available. Increase CHVirtualMachineInstance.stdioPoolSize "
                     + "if you need more concurrent stdio streams per VM."
             )
         }
@@ -444,19 +446,20 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
         return listener
     }
 
-    /// Bind every port in `stdioPoolBase..<stdioPoolBase+stdioPoolSize` as
+    /// Bind every fixed host-service port and every port in
+    /// `stdioPoolBase..<stdioPoolBase+stdioPoolSize` as
     /// a listening UDS at `<workDir>/vsock.sock_<port>`. Must run before
     /// `chProcess.start()` so the files end up in CH's snapshot view of
     /// the workDir. Files for ports never consumed are removed during
     /// `stop()` along with the rest of `workDir`; the listening fds are
     /// closed there too.
-    private func prebindStdioPool() throws {
+    private func prebindVsockListeners() throws {
         let base = workDir.appendingPathComponent("vsock.sock")
         var pool: [UInt32: PreboundListener] = [:]
-        pool.reserveCapacity(Self.stdioPoolSize)
+        pool.reserveCapacity(Self.hostServicePorts.count + Self.stdioPoolSize)
         do {
-            for offset in 0..<UInt32(Self.stdioPoolSize) {
-                let port = Self.stdioPoolBase + offset
+            let stdioPorts = (0..<UInt32(Self.stdioPoolSize)).map { Self.stdioPoolBase + $0 }
+            for port in Self.hostServicePorts + stdioPorts {
                 let path = chVsockListenSocketPath(baseSocket: base, port: port)
                 let fd = try chVsockBindListener(at: path)
                 pool[port] = PreboundListener(port: port, listenFd: fd, path: path)
@@ -470,8 +473,14 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
             }
             throw error
         }
-        _stdioPool.withLock { $0 = pool }
-        logger?.debug("vsock stdio pool prebound \(pool.count) ports starting at \(Self.stdioPoolBase)")
+        _preboundListeners.withLock { $0 = pool }
+        logger?.debug(
+            "vsock listeners prebound \(pool.count) ports",
+            metadata: [
+                "hostServicePorts": "\(Self.hostServicePorts)",
+                "stdioBase": "\(Self.stdioPoolBase)",
+                "stdioCount": "\(Self.stdioPoolSize)",
+            ])
     }
 
     public func hotplug(_ block: Mount, id: String) async throws -> AttachedFilesystem {
