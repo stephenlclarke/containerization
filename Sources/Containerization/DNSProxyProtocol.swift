@@ -18,7 +18,9 @@ import Foundation
 
 /// Framing shared by the guest DNS proxy and its host-side resolver.
 public enum DNSProxyProtocol {
-    public static let guestAddress = "127.0.0.11"
+    // Linux sends loopback UDP replies from this address, and connected clients reject
+    // replies sourced from a different loopback alias.
+    public static let guestAddress = "127.0.0.1"
     public static let guestPort = 53
     public static let hostVsockPort: UInt32 = 1025
     public static let maximumMessageLength = 4096
