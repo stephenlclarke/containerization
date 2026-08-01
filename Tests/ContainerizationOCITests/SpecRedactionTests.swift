@@ -19,9 +19,96 @@ import Testing
 
 @testable import ContainerizationOCI
 
+@Suite("Spec redaction")
 struct SpecRedactionTests {
-    @Test func processEnvironmentValuesAreRedacted() {
-        let process = ContainerizationOCI.Process(
+    private static let secret = "hunter2"
+    private static let hookSecret = "abc123"
+
+    private func spec() -> Spec {
+        Spec(
+            hooks: Hooks(
+                prestart: [],
+                createRuntime: [],
+                createContainer: [],
+                startContainer: [],
+                poststart: [Hook(path: "/hook", args: [], env: ["HOOK_TOKEN=\(Self.hookSecret)"], timeout: nil)],
+                poststop: []
+            ),
+            process: Process(env: ["PATH=/usr/bin", "PASSWORD=\(Self.secret)", "INHERIT_ME"])
+        )
+    }
+
+    @Test func interpolatingASpecNeverRendersEnvironmentValues() {
+        let rendered = "\(spec())"
+        #expect(!rendered.contains(Self.secret))
+        #expect(!rendered.contains(Self.hookSecret))
+        #expect(rendered.contains("PASSWORD=<redacted>"))
+        #expect(rendered.contains("HOOK_TOKEN=<redacted>"))
+    }
+
+    @Test func everyTextRenderingIsRedacted() {
+        let s = spec()
+        for rendered in ["\(s)", String(describing: s), String(reflecting: s)] {
+            #expect(!rendered.contains(Self.secret))
+            #expect(!rendered.contains(Self.hookSecret))
+        }
+    }
+
+    @Test func variableNamesSurviveSoLogsStayUseful() {
+        let rendered = "\(spec())"
+        #expect(rendered.contains("PATH="))
+        #expect(rendered.contains("PASSWORD="))
+    }
+
+    @Test func inheritedEntriesArePreserved() {
+        #expect("\(spec())".contains("INHERIT_ME"))
+    }
+
+    @Test(arguments: [
+        "EMPTY=",
+        "CONNECTION=postgres://user:pw@host/db?sslmode=require",
+    ])
+    func valuesAreMaskedWholeIncludingAnyFurtherEquals(_ entry: String) {
+        let name = String(entry[entry.startIndex..<entry.firstIndex(of: "=")!])
+        let rendered = "\(Process(env: [entry]))"
+        #expect(rendered.contains("\(name)=<redacted>"))
+        if let value = entry.split(separator: "=", maxSplits: 1).last, entry.hasSuffix(String(value)), value != name {
+            #expect(!rendered.contains(String(value)))
+        }
+    }
+
+    @Test func encodingIsUnaffected() throws {
+        let data = try JSONEncoder().encode(spec())
+        let json = String(decoding: data, as: UTF8.self)
+        #expect(json.contains(Self.secret))
+        #expect(json.contains(Self.hookSecret))
+
+        let decoded = try JSONDecoder().decode(Spec.self, from: data)
+        #expect(decoded.process?.env == ["PATH=/usr/bin", "PASSWORD=\(Self.secret)", "INHERIT_ME"])
+        #expect(decoded.hooks?.poststart.first?.env == ["HOOK_TOKEN=\(Self.hookSecret)"])
+    }
+
+    @Test func theValuesRemainAvailableToCallers() {
+        #expect(spec().process?.env.contains("PASSWORD=\(Self.secret)") == true)
+    }
+
+    @Test func renderingIsNonMutating() {
+        let s = spec()
+        _ = "\(s)"
+        #expect(s.process?.env == ["PATH=/usr/bin", "PASSWORD=\(Self.secret)", "INHERIT_ME"])
+    }
+
+    @Test func theOtherFieldsAreStillRendered() {
+        let rendered = "\(Process(args: ["/bin/sh"], cwd: "/work", env: ["A=b"], terminal: true))"
+        #expect(rendered.contains("cwd:"))
+        #expect(rendered.contains("/work"))
+        #expect(rendered.contains("args:"))
+        #expect(rendered.contains("/bin/sh"))
+        #expect(rendered.contains("terminal:"))
+    }
+
+    @Test func processEnvironmentValuesCanBeRedactedExplicitly() {
+        let process = Process(
             args: ["python3", "-m", "http.server"],
             cwd: "/app",
             env: [
@@ -43,32 +130,16 @@ struct SpecRedactionTests {
                 "TOKEN=<redacted>",
                 "INHERITED_NO_VALUE",
             ])
-        // Everything except env is untouched.
         #expect(redacted.args == process.args)
         #expect(redacted.cwd == process.cwd)
-        // The original is not mutated.
         #expect(process.env.contains("MY_SUPER_SECRET_PASSWORD=guest"))
     }
 
-    @Test func redactedProcessRendersWithoutSecretValues() {
-        // Mirrors the report in issue #518: interpolating the process into a
-        // log message must not expose environment variable values.
-        let process = ContainerizationOCI.Process(
-            args: ["echo", "hello"],
-            env: ["MY_OTHER_SECRET_PASSWORD=abc123"]
-        )
-
-        let logged = "\(process.redactingEnvironmentValues())"
-
-        #expect(!logged.contains("abc123"))
-        #expect(logged.contains("MY_OTHER_SECRET_PASSWORD"))
-    }
-
-    @Test func specRedactsProcessAndHookEnvironments() {
+    @Test func specRedactsProcessAndHookEnvironmentsExplicitly() {
         let hook = Hook(
             path: "/usr/local/bin/hook",
             args: ["hook"],
-            env: ["HOOK_SECRET=hunter2"],
+            env: ["HOOK_SECRET=\(Self.hookSecret)"],
             timeout: nil
         )
         let spec = Spec(
@@ -80,27 +151,24 @@ struct SpecRedactionTests {
                 poststart: [hook],
                 poststop: [hook]
             ),
-            process: ContainerizationOCI.Process(env: ["MY_SUPER_SECRET_PASSWORD=guest"]),
+            process: Process(env: ["MY_SUPER_SECRET_PASSWORD=\(Self.secret)"]),
             hostname: "web",
             mounts: [Mount(type: "proc", source: "proc", destination: "/proc")]
         )
 
         let redacted = spec.redactingEnvironmentValues()
-
         let logged = "\(redacted)"
-        #expect(!logged.contains("guest"))
-        #expect(!logged.contains("hunter2"))
+
+        #expect(!logged.contains(Self.secret))
+        #expect(!logged.contains(Self.hookSecret))
         #expect(logged.contains("MY_SUPER_SECRET_PASSWORD"))
         #expect(logged.contains("HOOK_SECRET"))
-
-        // Everything except environments is untouched.
         #expect(redacted.hostname == spec.hostname)
         #expect(redacted.mounts.count == spec.mounts.count)
         #expect(redacted.process?.env == ["MY_SUPER_SECRET_PASSWORD=<redacted>"])
         #expect(redacted.hooks?.prestart.first?.env == ["HOOK_SECRET=<redacted>"])
         #expect(redacted.hooks?.poststop.first?.env == ["HOOK_SECRET=<redacted>"])
-        // The original is not mutated.
-        #expect(spec.process?.env == ["MY_SUPER_SECRET_PASSWORD=guest"])
+        #expect(spec.process?.env == ["MY_SUPER_SECRET_PASSWORD=\(Self.secret)"])
     }
 
     @Test func specWithoutProcessOrHooksIsUnchanged() {
