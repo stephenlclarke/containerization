@@ -40,7 +40,7 @@ Containerization provides APIs to:
 - [Spawn and interact with containerized processes](./Sources/Containerization/LinuxProcess.swift).
 - Use Rosetta 2 for running linux/amd64 containers on Apple silicon.
 
-Please view the [API documentation](https://apple.github.io/containerization/documentation/) for information on the Swift packages that Containerization provides.
+View the fork's [DocC API reference](https://stephenlclarke.github.io/api/containerization/) for information on the Swift packages that Containerization provides. The [Apple upstream API reference](https://apple.github.io/containerization/documentation/) remains available for comparison.
 
 ## Design
 
@@ -180,6 +180,8 @@ If you'd like to build your own kernel please see the instructions in the [kerne
 Run `make pre-commit` to install a pre-commit hook that ensures that your changes have correct formatting and license headers when you run `git commit`.
 
 ## Documentation
+
+The published [DocC API reference](https://stephenlclarke.github.io/api/containerization/) is part of the integrated container developer documentation.
 
 Generate the API documentation for local viewing with:
 
