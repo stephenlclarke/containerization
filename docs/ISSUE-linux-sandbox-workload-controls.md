@@ -42,6 +42,9 @@ remains active.
   freezer while the VM and sibling workloads continue running.
 - Pause/resume returns only after the kernel reports the requested freezer
   state, and invalid lifecycle transitions fail without changing host state.
+- Running and paused workloads accept live updates to the OCI cgroup resource
+  fields supported by the guest without recreating the workload or affecting
+  siblings.
 - Existing `LinuxPod` callers and pod-wide PID/IPC sharing remain source
   compatible.
 
@@ -61,11 +64,14 @@ remains active.
    No operation exists.
 6. Attempt to pause only the second container. The old API can pause only the
    entire virtual machine, including the first container.
+7. Attempt to change the running container's CPU, memory, cpuset, or PIDs
+   controls. The old API has no live workload-resource operation.
 
 ## Scope boundary
 
 This issue covers generic Containerization workload mechanics. It does not
 parse Docker or Compose policy, allocate IPAM addresses, create veth
 endpoints, or define an Engine lifecycle ledger. Those remain responsibilities
-of the higher-level authority and follow-on guest network APIs. Live resource
-updates remain a follow-on workload-control operation.
+of the higher-level authority and follow-on guest network APIs. Durable
+compare-and-swap, rollback, read-back, and crash reconciliation for resource
+updates remain higher-level authority responsibilities.

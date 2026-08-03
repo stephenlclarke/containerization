@@ -7,7 +7,9 @@
 This handoff covers the Apple-shaped code commit
 [`88fc904eda6223f061f17c3195c872f0232666d0`](https://github.com/stephenlclarke/containerization/commit/88fc904eda6223f061f17c3195c872f0232666d0)
 and the independent lifecycle follow-up
-[`1105266d0992c47d056a72a6d418cd13f11056af`](https://github.com/stephenlclarke/containerization/commit/1105266d0992c47d056a72a6d418cd13f11056af).
+[`1105266d0992c47d056a72a6d418cd13f11056af`](https://github.com/stephenlclarke/containerization/commit/1105266d0992c47d056a72a6d418cd13f11056af),
+plus the live-resource primitive
+[`06b59532edc87e20198a5a9d9206980f78fb65fb`](https://github.com/stephenlclarke/containerization/commit/06b59532edc87e20198a5a9d9206980f78fb65fb).
 
 ## Summary
 
@@ -41,6 +43,12 @@ only after that acknowledgement. Stop and whole-sandbox shutdown thaw a
 paused workload before terminating it; neither path needs to pause or resume
 the VM.
 
+`updateContainerResources` applies typed OCI cgroup resource changes to a
+running or paused workload through the same guest-owned cgroup manager used
+at process creation. It is intentionally a low-level workload primitive:
+authority-owned desired state, revision fencing, read-back, rollback, and
+crash reconciliation remain outside this generic library.
+
 ## Compatibility
 
 - Existing `LinuxPod` source continues to compile.
@@ -66,7 +74,7 @@ the VM.
   namespace paths, and missing/self donor rejection.
 - `Sources/Containerization/SandboxContext/` and
   `Sources/Containerization/Vminitd.swift` carry the generated guest RPC and
-  host client operations for workload pause/resume.
+  host client operations for workload pause/resume and live resource updates.
 - `vminitd/Sources/Cgroup/Cgroup2Manager.swift` and
   `vminitd/Sources/VminitdCore/` implement cgroup v2 freezer convergence and
   the guest service operations.
@@ -98,7 +106,8 @@ runtime cleanup hang is tracked separately in
 
 - Dynamic per-workload veth/TAP endpoint creation and network-namespace
   configuration.
-- Live resource updates.
+- Durable compare-and-swap, read-back, rollback, and crash reconciliation for
+  live resource updates.
 - Writable-layer and subpath parity in the multi-workload hot-plug path.
 - Authority-owned durable workload identity, generation fencing, donor
   leases, and crash reconciliation.
