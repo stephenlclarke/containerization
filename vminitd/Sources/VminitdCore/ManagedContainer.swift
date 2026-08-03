@@ -223,6 +223,10 @@ extension ManagedContainer {
         try self.cgroupManager.setFrozen(false)
     }
 
+    func update(resources: ContainerizationOCI.LinuxResources) throws {
+        try self.cgroupManager.applyResources(resources: resources)
+    }
+
     func deleteExec(id: String) throws {
         try ensureExecExists(id)
         do {

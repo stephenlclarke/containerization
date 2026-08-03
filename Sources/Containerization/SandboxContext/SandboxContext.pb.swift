@@ -791,6 +791,30 @@ public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ResumeContainerR
   public init() {}
 }
 
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var containerID: String = String()
+
+  public var resources: Data = Data()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Com_Apple_Containerization_Sandbox_V3_MkdirRequest: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -3093,6 +3117,60 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_ResumeContainerRespo
   }
 
   public static func ==(lhs: Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse, rhs: Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".UpdateContainerResourcesRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}containerID\0\u{1}resources\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.containerID) }()
+      case 2: try { try decoder.decodeSingularBytesField(value: &self.resources) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.containerID.isEmpty {
+      try visitor.visitSingularStringField(value: self.containerID, fieldNumber: 1)
+    }
+    if !self.resources.isEmpty {
+      try visitor.visitSingularBytesField(value: self.resources, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest, rhs: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest) -> Bool {
+    if lhs.containerID != rhs.containerID {return false}
+    if lhs.resources != rhs.resources {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".UpdateContainerResourcesResponse"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse, rhs: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse) -> Bool {
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

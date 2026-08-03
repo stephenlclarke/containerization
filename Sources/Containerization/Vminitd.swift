@@ -345,6 +345,16 @@ extension Vminitd: VirtualMachineAgent {
             })
     }
 
+    /// Apply live cgroup resource changes to one container.
+    public func updateContainerResources(containerID: String, resources: LinuxResources) async throws {
+        let encodedResources = try JSONEncoder().encode(resources)
+        _ = try await client.updateContainerResources(
+            .with {
+                $0.containerID = containerID
+                $0.resources = encodedResources
+            })
+    }
+
     public func resizeProcess(id: String, containerID: String?, columns: UInt32, rows: UInt32) async throws {
         let request = Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest.with {
             if let containerID {

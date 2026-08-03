@@ -1188,6 +1188,28 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         }
     }
 
+    public func updateContainerResources(
+        request: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse {
+        log.debug("updateContainerResources", metadata: ["containerID": "\(request.containerID)"])
+        do {
+            let resources = try JSONDecoder().decode(
+                ContainerizationOCI.LinuxResources.self,
+                from: request.resources
+            )
+            let container = try await self.state.get(container: request.containerID)
+            try await container.update(resources: resources)
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "updateContainerResources: failed to update container")
+        } catch let error as DecodingError {
+            throw RPCError(code: .invalidArgument, message: "updateContainerResources: invalid resources", cause: error)
+        } catch {
+            throw RPCError(code: .internalError, message: "updateContainerResources: failed to update container", cause: error)
+        }
+    }
+
     public func deleteProcess(
         request: Com_Apple_Containerization_Sandbox_V3_DeleteProcessRequest, context: GRPCCore.ServerContext
     ) async throws -> Com_Apple_Containerization_Sandbox_V3_DeleteProcessResponse {

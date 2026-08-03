@@ -52,6 +52,8 @@ service SandboxContext {
   rpc PauseContainer(PauseContainerRequest) returns (PauseContainerResponse);
   // Thaw every process in one container's cgroup.
   rpc ResumeContainer(ResumeContainerRequest) returns (ResumeContainerResponse);
+  // Apply live cgroup resource changes to one container.
+  rpc UpdateContainerResources(UpdateContainerResourcesRequest) returns (UpdateContainerResourcesResponse);
 
   // Get statistics for containers.
   rpc ContainerStatistics(ContainerStatisticsRequest) returns (ContainerStatisticsResponse);
@@ -225,6 +227,13 @@ message PauseContainerResponse {}
 message ResumeContainerRequest { string containerID = 1; }
 
 message ResumeContainerResponse {}
+
+message UpdateContainerResourcesRequest {
+  string containerID = 1;
+  bytes resources = 2;
+}
+
+message UpdateContainerResourcesResponse {}
 
 message MkdirRequest {
   string path = 1;

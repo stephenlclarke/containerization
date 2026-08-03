@@ -1398,6 +1398,36 @@ extension LinuxPod {
         }
     }
 
+    /// Apply live cgroup resource changes to a running or paused workload.
+    ///
+    /// Only fields present in `resources` are changed. Callers remain
+    /// responsible for retaining their desired configuration for inspection
+    /// and reconciliation.
+    public func updateContainerResources(
+        _ containerID: String,
+        resources: LinuxResources
+    ) async throws {
+        try await self.state.withLock { state in
+            let createdState = try state.phase.createdState("updateContainerResources")
+            guard let container = state.containers[containerID] else {
+                throw ContainerizationError(.notFound, message: "container \(containerID) not found in pod")
+            }
+            guard container.state == .started || container.state == .paused else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) must be started or paused to update resources"
+                )
+            }
+
+            try await createdState.vm.withAgent { agent in
+                try await agent.updateContainerResources(
+                    containerID: containerID,
+                    resources: resources
+                )
+            }
+        }
+    }
+
     /// Send a signal to a container.
     public func killContainer(_ containerID: String, signal: Signal) async throws {
         try await self.state.withLock { state in
