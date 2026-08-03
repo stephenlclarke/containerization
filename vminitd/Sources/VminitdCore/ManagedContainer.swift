@@ -91,6 +91,7 @@ public actor ManagedContainer {
                     id: id,
                     stdio: stdio,
                     bundle: bundle,
+                    spec: spec,
                     owningPid: nil,
                     log: log
                 )

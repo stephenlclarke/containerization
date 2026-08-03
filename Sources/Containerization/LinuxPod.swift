@@ -183,6 +183,11 @@ public final class LinuxPod: Sendable {
         public var ipcNamespace: NamespaceSelection?
         /// Network namespace selection. `nil` retains the legacy sandbox-host network.
         public var networkNamespace: NamespaceSelection?
+        /// Resolved veth endpoint plans to realise inside a private network namespace.
+        ///
+        /// Address allocation and endpoint ownership remain the caller's responsibility.
+        /// Endpoints are configured before the workload's initial process can execute.
+        public var networkEndpoints: [WorkloadNetworkEndpoint] = []
         /// Cgroup namespace selection. `nil` creates a private namespace.
         public var cgroupNamespace: NamespaceSelection?
         /// UTS namespace selection. `nil` creates a private namespace.
@@ -418,6 +423,29 @@ public final class LinuxPod: Sendable {
         }
     }
 
+    package static func validateWorkloadNetwork(_ config: ContainerConfiguration) throws {
+        guard config.annotations[WorkloadNetworkPlan.annotationKey] == nil else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "workload network plan annotation is reserved for the runtime"
+            )
+        }
+        guard !config.networkEndpoints.isEmpty else { return }
+        guard config.networkNamespace == .privateNamespace else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "workload network endpoints require a private network namespace"
+            )
+        }
+        guard config.ociRuntimePath == nil else {
+            throw ContainerizationError(
+                .unsupported,
+                message: "workload network endpoints require the vmexec runtime"
+            )
+        }
+        try WorkloadNetworkPlan.validate(config.networkEndpoints)
+    }
+
     private func generateRuntimeSpec(containerID: String, config: ContainerConfiguration, rootfs: Mount) -> Spec {
         var spec = Self.createDefaultRuntimeSpec(
             containerID,
@@ -439,7 +467,9 @@ public final class LinuxPod: Sendable {
         if let hostname = config.hostname ?? self.config.hostname {
             spec.hostname = hostname
         }
-        spec.annotations = config.annotations.isEmpty ? nil : config.annotations
+        var annotations = config.annotations
+        annotations.removeValue(forKey: WorkloadNetworkPlan.annotationKey)
+        spec.annotations = annotations.isEmpty ? nil : annotations
 
         // Linux toggles
         spec.linux?.sysctl = config.sysctl
@@ -554,6 +584,7 @@ extension LinuxPod {
             var config = ContainerConfiguration()
             try configuration(&config)
             try Self.validateCgroupParent(config.cgroupParent)
+            try Self.validateWorkloadNetwork(config)
 
             let fileMountContext = try FileMountContext.prepare(mounts: config.mounts)
 
@@ -1034,6 +1065,13 @@ extension LinuxPod {
 
             let agent = try await createdState.vm.dialAgent()
             do {
+                if let networkNamespace = container.config.networkNamespace,
+                    networkNamespace != .host
+                {
+                    try await agent.validateWorkloadNetwork(
+                        endpoints: container.config.networkEndpoints
+                    )
+                }
                 var spec = self.generateRuntimeSpec(containerID: containerID, config: container.config, rootfs: container.rootfs)
                 try await LinuxContainer.addGuestDevices(
                     container.config.guestDevices,
@@ -1140,6 +1178,13 @@ extension LinuxPod {
                 }
 
                 spec.linux?.namespaces = namespaces
+                if container.config.networkNamespace == .privateNamespace {
+                    var annotations = spec.annotations ?? [:]
+                    annotations[WorkloadNetworkPlan.annotationKey] = try WorkloadNetworkPlan.encode(
+                        container.config.networkEndpoints
+                    )
+                    spec.annotations = annotations
+                }
 
                 let stdio = IOUtil.setup(
                     portAllocator: self.hostVsockPorts,

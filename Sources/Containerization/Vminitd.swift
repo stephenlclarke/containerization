@@ -580,6 +580,15 @@ extension Vminitd {
         _ = try await client.configureHosts(config.toAgentHostsRequest(location: location))
     }
 
+    /// Validate the complete endpoint plan before a workload process is created.
+    public func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws {
+        let plan = try WorkloadNetworkPlan.encode(endpoints)
+        _ = try await client.validateWorkloadNetwork(
+            .with {
+                $0.plan = plan
+            })
+    }
+
     /// Perform a sync call.
     public func sync() async throws {
         _ = try await client.sync(.init())

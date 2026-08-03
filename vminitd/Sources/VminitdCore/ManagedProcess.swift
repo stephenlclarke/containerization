@@ -19,6 +19,7 @@
 import Cgroup
 import Containerization
 import ContainerizationError
+import ContainerizationNetlink
 import ContainerizationOCI
 import ContainerizationOS
 import Foundation
@@ -46,6 +47,7 @@ final class ManagedProcess: ContainerProcess, Sendable {
         var waiters: [CheckedContinuation<ContainerExitStatus, Never>] = []
         var exitStatus: ContainerExitStatus? = nil
         var pid: Int32?
+        var hostNetworkConfigured = false
     }
 
     private static let ackPid = "AckPid"
@@ -62,6 +64,7 @@ final class ManagedProcess: ContainerProcess, Sendable {
     private let errorPipe: Pipe
     private let terminal: Bool
     private let bundle: ContainerizationOCI.Bundle
+    private let networkEndpoints: [WorkloadNetworkEndpoint]
 
     var pid: Int32? {
         self.state.withLock {
@@ -73,6 +76,7 @@ final class ManagedProcess: ContainerProcess, Sendable {
         id: String,
         stdio: HostStdio,
         bundle: ContainerizationOCI.Bundle,
+        spec: ContainerizationOCI.Spec? = nil,
         owningPid: Int32? = nil,
         log: Logger
     ) throws {
@@ -142,6 +146,13 @@ final class ManagedProcess: ContainerProcess, Sendable {
         self.command = command
         self.terminal = stdio.terminal
         self.bundle = bundle
+        if let encoded = spec?.annotations?[WorkloadNetworkPlan.annotationKey] {
+            let endpoints = try WorkloadNetworkPlan.decode(encoded)
+            try WorkloadNetworkPlan.validate(endpoints)
+            self.networkEndpoints = endpoints
+        } else {
+            self.networkEndpoints = []
+        }
         self.state = Mutex(State(io: io))
     }
 }
@@ -200,6 +211,9 @@ extension ManagedProcess {
                     try cgManager.addProcess(pid: pid)
                 }
 
+                try self.configureHostNetwork(peerNamespacePID: pid)
+                $0.hostNetworkConfigured = !self.networkEndpoints.isEmpty
+
                 log.info(
                     "sending pid acknowledgement",
                     metadata: [
@@ -255,6 +269,8 @@ extension ManagedProcess {
                 return pid
             }
         } catch {
+            self.cleanupHostNetwork()
+            self.state.withLock { $0.hostNetworkConfigured = false }
             if let errorData = try? self.errorPipe.fileHandleForReading.readToEnd(),
                 let errorString = String(data: errorData, encoding: .utf8),
                 !errorString.isEmpty
@@ -342,6 +358,55 @@ extension ManagedProcess {
     func delete() async throws {
         // vmexec doesn't require explicit cleanup - the process is cleaned up
         // when it exits and IO is closed via setExit()
+        let shouldCleanup = self.state.withLock { state in
+            defer { state.hostNetworkConfigured = false }
+            return state.hostNetworkConfigured
+        }
+        if shouldCleanup {
+            self.cleanupHostNetwork()
+        }
+    }
+
+    private func configureHostNetwork(peerNamespacePID: Int32) throws {
+        guard !networkEndpoints.isEmpty else { return }
+        let session = NetlinkSession(socket: try DefaultNetlinkSocket(), log: log)
+        var created: [String] = []
+        do {
+            for endpoint in networkEndpoints {
+                try session.linkAddVeth(
+                    hostName: endpoint.hostInterfaceName,
+                    peerName: endpoint.interface.name,
+                    peerNamespacePID: peerNamespacePID
+                )
+                created.append(endpoint.hostInterfaceName)
+                if let bridge = endpoint.bridgeInterfaceName {
+                    try session.linkSetAttributes(
+                        interface: endpoint.hostInterfaceName,
+                        master: bridge
+                    )
+                }
+                try session.linkSet(
+                    interface: endpoint.hostInterfaceName,
+                    up: true,
+                    mtu: endpoint.interface.mtu
+                )
+            }
+        } catch {
+            for name in created.reversed() {
+                try? session.linkDel(name: name)
+            }
+            throw error
+        }
+    }
+
+    private func cleanupHostNetwork() {
+        guard !networkEndpoints.isEmpty,
+            let socket = try? DefaultNetlinkSocket()
+        else { return }
+        let session = NetlinkSession(socket: socket, log: log)
+        for endpoint in networkEndpoints.reversed() {
+            try? session.linkDel(name: endpoint.hostInterfaceName)
+        }
     }
 }
 

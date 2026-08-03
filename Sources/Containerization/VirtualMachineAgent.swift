@@ -95,6 +95,7 @@ public protocol VirtualMachineAgent: Sendable {
     func routeAddDefault(name: String, route: DefaultRoute) async throws
     func configureDNS(config: DNS, location: String) async throws
     func configureHosts(config: Hosts, location: String) async throws
+    func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws
 
     // Container statistics
     func containerStatistics(containerIDs: [String], categories: StatCategory) async throws -> [ContainerStatistics]
@@ -147,6 +148,10 @@ extension VirtualMachineAgent {
 
     public func configureHosts(config: Hosts, location: String) async throws {
         throw ContainerizationError(.unsupported, message: "configureHosts")
+    }
+
+    public func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws {
+        throw ContainerizationError(.unsupported, message: "workload network endpoints")
     }
 
     public func writeFile(

@@ -16,6 +16,8 @@
 
 import ArgumentParser
 import Cgroup
+import Containerization
+import ContainerizationNetlink
 import ContainerizationOCI
 import ContainerizationOS
 import FoundationEssentials
@@ -189,6 +191,8 @@ struct RunCommand: ParsableCommand {
             throw App.Failure(message: "received invalid acknowledgement string: \(pidAckStr)")
         }
 
+        try configureWorkloadNetwork(spec: spec)
+
         guard unshare(CLONE_NEWCGROUP) == 0 else {
             throw App.Failure(message: "create cgroup namespace: \(App.Errno(stage: "unshare(cgroup)"))")
         }
@@ -348,6 +352,95 @@ struct RunCommand: ParsableCommand {
         }
     }
 
+    private func configureWorkloadNetwork(spec: ContainerizationOCI.Spec) throws {
+        guard let encoded = spec.annotations?[WorkloadNetworkPlan.annotationKey] else {
+            return
+        }
+        let endpoints = try WorkloadNetworkPlan.decode(encoded)
+        try WorkloadNetworkPlan.validate(endpoints)
+
+        let session = NetlinkSession(socket: try DefaultNetlinkSocket())
+        try session.linkSet(interface: "lo", up: true)
+        guard !endpoints.isEmpty else { return }
+
+        for endpoint in endpoints {
+            let configuration = endpoint.interface
+            try session.linkSetAttributes(
+                interface: configuration.name,
+                macAddress: configuration.hardwareAddress
+            )
+
+            if configuration.addresses.contains(where: { $0.address.address.isV6 }) {
+                try writeInterfaceSysctl(interface: configuration.name, key: "net.ipv6.conf.IFNAME.accept_ra", value: "0")
+                try writeInterfaceSysctl(interface: configuration.name, key: "net.ipv6.conf.IFNAME.autoconf", value: "0")
+            }
+            for (key, value) in configuration.sysctls.sorted(by: { $0.key < $1.key }) {
+                try writeInterfaceSysctl(interface: configuration.name, key: key, value: value)
+            }
+            for assignment in configuration.addresses {
+                switch assignment.address {
+                case .v4(let address, let prefix):
+                    try session.addressAdd(
+                        interface: configuration.name,
+                        ipv4Address: try .init(address, prefix: prefix),
+                        scope: addressScope(assignment.scope)
+                    )
+                case .v6(let address, let prefix):
+                    try session.addressAdd(
+                        interface: configuration.name,
+                        ipv6Address: try .init(address, prefix: prefix),
+                        scope: addressScope(assignment.scope)
+                    )
+                }
+            }
+            try session.linkSet(
+                interface: configuration.name,
+                up: true,
+                mtu: configuration.mtu
+            )
+
+            for route in configuration.routes.filter({ $0.destination != nil })
+                + configuration.routes.filter({ $0.destination == nil })
+            {
+                try session.routeAdd(
+                    interface: configuration.name,
+                    destination: route.destination,
+                    nextHop: route.nextHop,
+                    metric: route.metric
+                )
+            }
+        }
+    }
+
+    private func writeInterfaceSysctl(interface: String, key: String, value: String) throws {
+        let resolvedKey = key.replacingOccurrences(of: "IFNAME", with: interface)
+        let path = "/proc/sys/" + resolvedKey.replacingOccurrences(of: ".", with: "/")
+        let descriptor = open(path, O_WRONLY | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            throw App.Errno(stage: "open(\(path))")
+        }
+        defer { close(descriptor) }
+
+        let bytes = Array(value.utf8)
+        let count = bytes.withUnsafeBytes { buffer in
+            write(descriptor, buffer.baseAddress, buffer.count)
+        }
+        guard count == bytes.count else {
+            throw App.Errno(stage: "write(\(path))")
+        }
+    }
+
+    private func addressScope(_ scope: InterfaceAddressScope) -> NetlinkAddressScope {
+        switch scope {
+        case .global:
+            .universe
+        case .linkLocal:
+            .link
+        case .loopback:
+            .host
+        }
+    }
+
     private func setupNamespaces(namespaces: [ContainerizationOCI.LinuxNamespace]?) throws -> Int32 {
         var unshareFlags: Int32 = 0
 
@@ -357,6 +450,7 @@ struct RunCommand: ParsableCommand {
             .mount: CLONE_NEWNS,
             .uts: CLONE_NEWUTS,
             .ipc: CLONE_NEWIPC,
+            .network: CLONE_NEWNET,
             .user: CLONE_NEWUSER,
             .cgroup: CLONE_NEWCGROUP,
         ]

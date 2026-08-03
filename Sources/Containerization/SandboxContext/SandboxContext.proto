@@ -77,6 +77,8 @@ service SandboxContext {
   rpc ConfigureDns(ConfigureDnsRequest) returns (ConfigureDnsResponse);
   // Configure /etc/hosts.
   rpc ConfigureHosts(ConfigureHostsRequest) returns (ConfigureHostsResponse);
+  // Validate support for a resolved per-workload endpoint plan.
+  rpc ValidateWorkloadNetwork(ValidateWorkloadNetworkRequest) returns (ValidateWorkloadNetworkResponse);
 
   // Perform the sync syscall.
   rpc Sync(SyncRequest) returns (SyncResponse);
@@ -424,6 +426,12 @@ message ConfigureHostsRequest {
 }
 
 message ConfigureHostsResponse {}
+
+message ValidateWorkloadNetworkRequest {
+  string plan = 1;
+}
+
+message ValidateWorkloadNetworkResponse {}
 
 message SyncRequest {}
 message SyncResponse {}

@@ -1714,6 +1714,21 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         return .init()
     }
 
+    public func validateWorkloadNetwork(
+        request: Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse {
+        do {
+            let endpoints = try WorkloadNetworkPlan.decode(request.plan)
+            try WorkloadNetworkPlan.validate(endpoints)
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "validateWorkloadNetwork")
+        } catch {
+            throw RPCError(code: .invalidArgument, message: "validateWorkloadNetwork", cause: error)
+        }
+    }
+
     public func containerStatistics(
         request: Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest,
         context: GRPCCore.ServerContext
