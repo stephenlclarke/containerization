@@ -665,8 +665,12 @@ public final class LinuxContainer: Container, Sendable {
         return spec
     }
 
-    private func addGuestDevices(to spec: inout Spec, using agent: any VirtualMachineAgent) async throws {
-        guard !self.config.guestDevices.isEmpty else {
+    package static func addGuestDevices(
+        _ guestDevices: [LinuxGuestDeviceRequest],
+        to spec: inout Spec,
+        using agent: any VirtualMachineAgent
+    ) async throws {
+        guard !guestDevices.isEmpty else {
             return
         }
 
@@ -695,7 +699,7 @@ public final class LinuxContainer: Container, Sendable {
 
         var guestRequests: [LinuxGuestDeviceRequest] = []
         var guestRequestIndexes: [String: Int] = [:]
-        for request in self.config.guestDevices {
+        for request in guestDevices {
             guard Self.isValidDeviceAccess(request.permissions) else {
                 throw ContainerizationError(
                     .invalidArgument,
@@ -1259,7 +1263,11 @@ extension LinuxContainer {
             let agent = try await createdState.vm.dialAgent()
             do {
                 var spec = self.generateRuntimeSpec()
-                try await self.addGuestDevices(to: &spec, using: agent)
+                try await Self.addGuestDevices(
+                    self.config.guestDevices,
+                    to: &spec,
+                    using: agent
+                )
                 // We don't need the rootfs (or writable layer), nor do OCI runtimes want it included.
                 // Also filter out file mount holding directories. We'll mount those separately under /run.
                 // Transform virtiofs mounts to bind mounts from /run/virtiofs/{tag}

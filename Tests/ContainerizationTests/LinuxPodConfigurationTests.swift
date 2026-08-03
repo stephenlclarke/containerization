@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ContainerizationError
 import Testing
 
 @testable import Containerization
@@ -63,5 +64,56 @@ struct LinuxPodConfigurationTests {
             pausePID: 42
         )
         #expect(sharedNamespaces.map(\.path) == ["", "", "", "/proc/42/ns/ipc", "/proc/42/ns/pid"])
+    }
+
+    @Test func workloadNamespacesSupportPrivateHostAndDonorSelections() throws {
+        var configuration = LinuxPod.ContainerConfiguration()
+        configuration.cgroupNamespace = .host
+        configuration.ipcNamespace = .container("database")
+        configuration.networkNamespace = .container("database")
+        configuration.pidNamespace = .container("database")
+        configuration.utsNamespace = .privateNamespace
+        configuration.userNamespace = .privateNamespace
+
+        let namespaces = try LinuxPod.containerNamespaces(
+            containerID: "worker",
+            configuration: configuration,
+            sharedNamespaces: [],
+            pausePID: nil,
+            donorPIDs: ["database": 73]
+        )
+
+        #expect(namespaces.map(\.type.rawValue) == ["mount", "ipc", "network", "pid", "uts", "user"])
+        #expect(
+            namespaces.map(\.path) == [
+                "", "/proc/73/ns/ipc", "/proc/73/ns/net", "/proc/73/ns/pid", "", "",
+            ]
+        )
+    }
+
+    @Test func workloadNamespaceRejectsMissingAndSelfDonors() {
+        var configuration = LinuxPod.ContainerConfiguration()
+        configuration.pidNamespace = .container("missing")
+
+        #expect(throws: ContainerizationError.self) {
+            try LinuxPod.containerNamespaces(
+                containerID: "worker",
+                configuration: configuration,
+                sharedNamespaces: [],
+                pausePID: nil,
+                donorPIDs: [:]
+            )
+        }
+
+        configuration.pidNamespace = .container("worker")
+        #expect(throws: ContainerizationError.self) {
+            try LinuxPod.containerNamespaces(
+                containerID: "worker",
+                configuration: configuration,
+                sharedNamespaces: [],
+                pausePID: nil,
+                donorPIDs: ["worker": 73]
+            )
+        }
     }
 }

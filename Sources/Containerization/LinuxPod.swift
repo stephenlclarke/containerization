@@ -23,11 +23,10 @@ import Synchronization
 
 import struct ContainerizationOS.Terminal
 
-/// NOTE: Experimental API
-///
 /// `LinuxPod` allows managing multiple Linux containers within a single
 /// virtual machine. Each container has its own rootfs and process, but
-/// shares the VM's resources (CPU, memory, network).
+/// shares the VM's capacity and guest-agent connection. Workload resources
+/// and Linux namespaces remain independently configurable.
 public final class LinuxPod: Sendable {
     static let maxIDLength = 64
 
@@ -111,12 +110,46 @@ public final class LinuxPod: Sendable {
 
     /// Configuration for a container within the pod.
     public struct ContainerConfiguration: Sendable {
+        /// Selects the Linux namespace a workload joins.
+        public enum NamespaceSelection: Equatable, Sendable {
+            /// Create a private namespace for the workload.
+            case privateNamespace
+            /// Join the sandbox VM's initial namespace.
+            case host
+            /// Join the active init process namespace of another workload.
+            case container(String)
+        }
+
         /// Configuration for the init process of the container.
         public var process = LinuxProcessConfiguration()
         /// Optional per-container CPU limit (can exceed pod total for oversubscription).
         public var cpus: Int?
         /// Optional per-container memory limit in bytes (can exceed pod total for oversubscription).
         public var memoryInBytes: UInt64?
+        /// Optional protected memory reservation for the workload cgroup.
+        public var memoryReservationInBytes: Int64?
+        /// Optional combined memory and swap limit for the workload cgroup.
+        public var memorySwapLimitInBytes: Int64?
+        /// Optional relative CPU scheduling weight for the workload cgroup.
+        public var cpuShares: UInt64?
+        /// Optional Linux CPU-set expression for the workload cgroup.
+        public var cpuSet: String?
+        /// Optional CFS quota in microseconds for the workload cgroup.
+        public var cpuQuotaInMicroseconds: Int64?
+        /// Optional CFS period in microseconds for the workload cgroup.
+        public var cpuPeriodInMicroseconds: UInt64?
+        /// Optional process count limit for the workload cgroup.
+        public var pidsLimit: Int64?
+        /// Optional block I/O resource limits for the workload cgroup.
+        public var blockIO: LinuxBlockIO?
+        /// Optional device cgroup rules for the workload.
+        public var deviceCgroupRules: [LinuxDeviceCgroup] = []
+        /// Optional device nodes to create in the workload specification.
+        public var devices: [LinuxDevice] = []
+        /// Device nodes to discover from the running sandbox before process start.
+        public var guestDevices: [LinuxGuestDeviceRequest] = []
+        /// OCI annotations for the workload runtime specification.
+        public var annotations: [String: String] = [:]
         /// The hostname for the container.
         public var hostname: String?
         /// The system control options for the container.
@@ -142,6 +175,22 @@ public final class LinuxPod: Sendable {
         /// Run the container with a minimal init process that handles signal
         /// forwarding and zombie reaping.
         public var useInit: Bool = false
+        /// Optional relative parent for the workload cgroup inside the sandbox.
+        public var cgroupParent: String?
+        /// PID namespace selection. `nil` retains the pod-wide compatibility policy.
+        public var pidNamespace: NamespaceSelection?
+        /// IPC namespace selection. `nil` retains the pod-wide compatibility policy.
+        public var ipcNamespace: NamespaceSelection?
+        /// Network namespace selection. `nil` retains the legacy sandbox-host network.
+        public var networkNamespace: NamespaceSelection?
+        /// Cgroup namespace selection. `nil` creates a private namespace.
+        public var cgroupNamespace: NamespaceSelection?
+        /// UTS namespace selection. `nil` creates a private namespace.
+        public var utsNamespace: NamespaceSelection?
+        /// User namespace selection. `nil` retains the sandbox-host user namespace.
+        public var userNamespace: NamespaceSelection?
+        /// OCI runtime path used to start this workload.
+        public var ociRuntimePath: String?
 
         public init() {}
     }
@@ -316,7 +365,11 @@ public final class LinuxPod: Sendable {
         self.state = AsyncMutex(State(phase: .initialized, containers: [:], pauseProcess: nil))
     }
 
-    private static func createDefaultRuntimeSpec(_ containerID: String, podID: String) -> Spec {
+    private static func createDefaultRuntimeSpec(
+        _ containerID: String,
+        podID: String,
+        cgroupParent: String?
+    ) -> Spec {
         .init(
             process: .init(),
             hostname: containerID,
@@ -326,13 +379,50 @@ public final class LinuxPod: Sendable {
             ),
             linux: .init(
                 resources: .init(),
-                cgroupsPath: "/container/pod/\(podID)/\(containerID)"
+                cgroupsPath: Self.cgroupPath(
+                    containerID: containerID,
+                    podID: podID,
+                    parent: cgroupParent
+                )
             )
         )
     }
 
+    private static func cgroupPath(
+        containerID: String,
+        podID: String,
+        parent: String?
+    ) -> String {
+        guard let parent else {
+            return "/container/pod/\(podID)/\(containerID)"
+        }
+        return "/container/pod/\(podID)/\(parent)/\(containerID)"
+    }
+
+    private static func validateCgroupParent(_ parent: String?) throws {
+        guard let parent else { return }
+        let components = parent.split(
+            separator: "/",
+            omittingEmptySubsequences: false
+        )
+        guard
+            !parent.isEmpty,
+            !parent.hasPrefix("/"),
+            components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." })
+        else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "cgroup parent must be a non-empty relative path without empty, '.' or '..' components"
+            )
+        }
+    }
+
     private func generateRuntimeSpec(containerID: String, config: ContainerConfiguration, rootfs: Mount) -> Spec {
-        var spec = Self.createDefaultRuntimeSpec(containerID, podID: self.id)
+        var spec = Self.createDefaultRuntimeSpec(
+            containerID,
+            podID: self.id,
+            cgroupParent: config.cgroupParent
+        )
 
         // Process configuration
         spec.process = config.process.toOCI()
@@ -348,9 +438,11 @@ public final class LinuxPod: Sendable {
         if let hostname = config.hostname ?? self.config.hostname {
             spec.hostname = hostname
         }
+        spec.annotations = config.annotations.isEmpty ? nil : config.annotations
 
         // Linux toggles
         spec.linux?.sysctl = config.sysctl
+        spec.linux?.devices = config.devices
         spec.linux?.maskedPaths = config.maskedPaths
         spec.linux?.readonlyPaths = config.readonlyPaths
 
@@ -358,17 +450,41 @@ public final class LinuxPod: Sendable {
         // We let the OCI runtime remount as ro, instead of doing it originally.
         spec.root?.readonly = rootfs.options.contains("ro")
 
-        // Resource limits (if specified)
-        if let cpus = config.cpus, cpus > 0 {
-            spec.linux?.resources?.cpu = LinuxCPU(
-                quota: Int64(cpus * 100_000),
-                period: 100_000
-            )
+        let legacyCPUQuota = config.cpus.flatMap { cpus in
+            cpus > 0 ? Int64(cpus * 100_000) : nil
         }
-        if let memoryInBytes = config.memoryInBytes, memoryInBytes > 0 {
-            spec.linux?.resources?.memory = LinuxMemory(
-                limit: Int64(memoryInBytes)
+        let cpuQuota =
+            config.cpuQuotaInMicroseconds
+            ?? (config.cpuPeriodInMicroseconds == nil ? legacyCPUQuota : nil)
+        let cpuPeriod =
+            config.cpuPeriodInMicroseconds
+            ?? (cpuQuota == nil ? nil : 100_000)
+        spec.linux?.resources = LinuxResources(
+            devices: config.deviceCgroupRules,
+            memory: LinuxMemory(
+                limit: config.memoryInBytes.flatMap {
+                    $0 > 0 ? Int64($0) : nil
+                },
+                reservation: config.memoryReservationInBytes,
+                swap: config.memorySwapLimitInBytes
+            ),
+            cpu: LinuxCPU(
+                shares: config.cpuShares,
+                quota: cpuQuota,
+                period: cpuPeriod,
+                cpus: config.cpuSet ?? ""
+            ),
+            pids: config.pidsLimit.map(LinuxPids.init(limit:)),
+            blockIO: config.blockIO?.toOCI()
+        )
+        if config.userNamespace == .privateNamespace {
+            let mapping = LinuxIDMapping(
+                containerID: 0,
+                hostID: 0,
+                size: UInt32.max
             )
+            spec.linux?.uidMappings = [mapping]
+            spec.linux?.gidMappings = [mapping]
         }
 
         return spec
@@ -386,6 +502,13 @@ public final class LinuxPod: Sendable {
         "/run/volumes/\(volumeName)"
     }
 }
+
+/// Production spelling for the multi-workload Linux VM abstraction.
+///
+/// `LinuxPod` remains as a source-compatible name while clients migrate to
+/// the sandbox terminology used for independent workload lifecycle and
+/// protected service workloads.
+public typealias LinuxSandbox = LinuxPod
 
 extension LinuxPod {
     /// Number of CPU cores allocated to the pod's VM.
@@ -429,6 +552,7 @@ extension LinuxPod {
 
             var config = ContainerConfiguration()
             try configuration(&config)
+            try Self.validateCgroupParent(config.cgroupParent)
 
             let fileMountContext = try FileMountContext.prepare(mounts: config.mounts)
 
@@ -731,7 +855,11 @@ extension LinuxPod {
                                 options: ["bind"]
                             ))
 
-                        var pauseSpec = Self.createDefaultRuntimeSpec(pauseID, podID: self.id)
+                        var pauseSpec = Self.createDefaultRuntimeSpec(
+                            pauseID,
+                            podID: self.id,
+                            cgroupParent: nil
+                        )
                         pauseSpec.process?.args = ["/sbin/vminitd", "pause"]
                         pauseSpec.hostname = ""
                         pauseSpec.mounts = LinuxContainer.defaultMounts().map {
@@ -906,6 +1034,11 @@ extension LinuxPod {
             let agent = try await createdState.vm.dialAgent()
             do {
                 var spec = self.generateRuntimeSpec(containerID: containerID, config: container.config, rootfs: container.rootfs)
+                try await LinuxContainer.addGuestDevices(
+                    container.config.guestDevices,
+                    to: &spec,
+                    using: agent
+                )
                 // We don't need the rootfs, nor do OCI runtimes want it included.
                 // Also filter out file mount holding directories - we mount those separately under /run.
                 // Transform virtiofs mounts to bind mounts from /run/virtiofs/{tag}
@@ -969,9 +1102,19 @@ extension LinuxPod {
                 spec.mounts = cleanAndSortMounts(mounts)
 
                 let pausePID = state.pauseProcess?.pid
-                let namespaces = Self.containerNamespaces(
+                let donorPIDs = state.containers.reduce(
+                    into: [String: Int32]()
+                ) { result, entry in
+                    if let pid = entry.value.process?.pid {
+                        result[entry.key] = pid
+                    }
+                }
+                let namespaces = try Self.containerNamespaces(
+                    containerID: containerID,
+                    configuration: container.config,
                     sharedNamespaces: self.config.sharedNamespaces,
-                    pausePID: pausePID
+                    pausePID: pausePID,
+                    donorPIDs: donorPIDs
                 )
                 if let pausePID {
                     for namespace in namespaces where !namespace.path.isEmpty {
@@ -1009,7 +1152,7 @@ extension LinuxPod {
                     containerID: containerID,
                     spec: spec,
                     io: stdio,
-                    ociRuntimePath: nil,
+                    ociRuntimePath: container.config.ociRuntimePath,
                     agent: agent,
                     vm: createdState.vm,
                     logger: self.logger
@@ -1043,21 +1186,10 @@ extension LinuxPod {
                 return
             }
 
-            // Handle containers that were hotplugged but never started
-            if container.state == .created {
-                // Release the hotplug device and virtiofs shares
-                try? await createdState.vm.releaseHotplug(id: containerID)
-                try? await createdState.vm.releaseVirtioFS(id: containerID)
-
-                container.state = .stopped
-                state.containers[containerID] = container
-                return
-            }
-
-            guard container.state == .started, let process = container.process else {
+            guard container.state == .created || container.state == .started else {
                 throw ContainerizationError(
                     .invalidState,
-                    message: "container \(containerID) must be in started state to stop"
+                    message: "container \(containerID) must be in created or started state to stop"
                 )
             }
 
@@ -1069,15 +1201,32 @@ extension LinuxPod {
                     return
                 }
 
-                try await process.kill(.kill)
-                try await process.wait(timeoutInSeconds: 3)
+                if let process = container.process {
+                    try await process.kill(.kill)
+                    try await process.wait(timeoutInSeconds: 3)
+                }
 
+                let sockets = container.config.sockets
                 try await createdState.vm.withAgent { agent in
-                    // Unmount the rootfs
+                    if !sockets.isEmpty {
+                        guard let relayAgent = agent as? SocketRelayAgent else {
+                            throw ContainerizationError(
+                                .unsupported,
+                                message: "VirtualMachineAgent does not support relaySocket surface"
+                            )
+                        }
+                        for socket in sockets {
+                            try? await createdState.relayManager.stop(socket: socket)
+                            try? await relayAgent.stopSocketRelay(
+                                configuration: socket
+                            )
+                        }
+                    }
                     try await agent.umount(
                         path: Self.guestRootfsPath(containerID),
                         flags: 0
                     )
+                    try await agent.sync()
                 }
 
                 // Release the hotplug device and virtiofs shares so they can be reused by new containers
@@ -1085,7 +1234,7 @@ extension LinuxPod {
                 try await createdState.vm.releaseVirtioFS(id: containerID)
 
                 // Clean up the process resources
-                try await process.delete()
+                try await container.process?.delete()
 
                 container.process = nil
                 container.state = .stopped
@@ -1100,6 +1249,29 @@ extension LinuxPod {
                 state.containers[containerID] = container
 
                 throw error
+            }
+        }
+    }
+
+    /// Remove a stopped workload registration from the sandbox. The caller
+    /// must stop the workload first; donor validation therefore cannot retain
+    /// a stale namespace owner under the same ID.
+    public func removeContainer(_ containerID: String) async throws {
+        try await self.state.withLock { state in
+            guard let container = state.containers[containerID] else {
+                throw ContainerizationError(
+                    .notFound,
+                    message: "container \(containerID) not found in pod"
+                )
+            }
+            switch container.state {
+            case .registered, .stopped:
+                state.containers.removeValue(forKey: containerID)
+            case .created, .started, .errored:
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) must be stopped before removal"
+                )
             }
         }
     }
@@ -1233,6 +1405,20 @@ extension LinuxPod {
             }
 
             var spec = self.generateRuntimeSpec(containerID: containerID, config: container.config, rootfs: container.rootfs)
+            let donorPIDs = state.containers.reduce(
+                into: [String: Int32]()
+            ) { result, entry in
+                if let pid = entry.value.process?.pid {
+                    result[entry.key] = pid
+                }
+            }
+            spec.linux?.namespaces = try Self.containerNamespaces(
+                containerID: containerID,
+                configuration: container.config,
+                sharedNamespaces: self.config.sharedNamespaces,
+                pausePID: state.pauseProcess?.pid,
+                donorPIDs: donorPIDs
+            )
             // Inherit environment variables, working directory, user, capabilities, rlimits from container process.
             // Reset: process arguments, terminal, stdio as these are not supposed to be inherited.
             var config = container.config.process
@@ -1256,7 +1442,7 @@ extension LinuxPod {
                 containerID: containerID,
                 spec: spec,
                 io: stdio,
-                ociRuntimePath: nil,
+                ociRuntimePath: container.config.ociRuntimePath,
                 agent: agent,
                 vm: createdState.vm,
                 logger: self.logger
@@ -1285,6 +1471,42 @@ extension LinuxPod {
         }
 
         return stats
+    }
+
+    /// Get process identifiers for one active workload.
+    public func processIdentifiers(_ containerID: String) async throws -> [Int32] {
+        let createdState = try await self.state.withLock { state in
+            guard let container = state.containers[containerID],
+                container.state == .started
+            else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) must be started to list processes"
+                )
+            }
+            return try state.phase.createdState("processIdentifiers")
+        }
+        return try await createdState.vm.withAgent { agent in
+            try await agent.containerProcesses(containerID: containerID)
+        }
+    }
+
+    /// Get process-table rows for one active workload.
+    public func processes(_ containerID: String) async throws -> [ContainerProcessInfo] {
+        let createdState = try await self.state.withLock { state in
+            guard let container = state.containers[containerID],
+                container.state == .started
+            else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) must be started to list process information"
+                )
+            }
+            return try state.phase.createdState("processes")
+        }
+        return try await createdState.vm.withAgent { agent in
+            try await agent.containerProcessInfo(containerID: containerID)
+        }
     }
 
     /// Dial a vsock port in the pod's VM.
@@ -1407,6 +1629,73 @@ extension LinuxPod {
 }
 
 extension LinuxPod {
+    /// Produces the OCI namespace list for an independently configured
+    /// workload. Donor selections are resolved only against active init
+    /// processes, so a stopped or unknown donor fails before process start.
+    package static func containerNamespaces(
+        containerID: String,
+        configuration: ContainerConfiguration,
+        sharedNamespaces: Configuration.NamespaceSharing,
+        pausePID: Int32?,
+        donorPIDs: [String: Int32]
+    ) throws -> [LinuxNamespace] {
+        var namespaces = [LinuxNamespace(type: .mount)]
+
+        let compatibilityPID: ContainerConfiguration.NamespaceSelection =
+            sharedNamespaces.contains(.process) ? .container("__pause") : .privateNamespace
+        let compatibilityIPC: ContainerConfiguration.NamespaceSelection =
+            sharedNamespaces.contains(.interprocessCommunication) ? .container("__pause") : .privateNamespace
+
+        for (type, selection) in [
+            (.cgroup, configuration.cgroupNamespace ?? .privateNamespace),
+            (.ipc, configuration.ipcNamespace ?? compatibilityIPC),
+            (.network, configuration.networkNamespace ?? .host),
+            (.pid, configuration.pidNamespace ?? compatibilityPID),
+            (.uts, configuration.utsNamespace ?? .privateNamespace),
+            (.user, configuration.userNamespace ?? .host),
+        ] as [(LinuxNamespaceType, ContainerConfiguration.NamespaceSelection)] {
+            switch selection {
+            case .privateNamespace:
+                namespaces.append(LinuxNamespace(type: type))
+            case .host:
+                continue
+            case .container(let donorID):
+                let donorPID: Int32?
+                if donorID == "__pause" {
+                    donorPID = pausePID
+                } else {
+                    guard donorID != containerID else {
+                        throw ContainerizationError(
+                            .invalidArgument,
+                            message: "container \(containerID) cannot join its own \(type.rawValue) namespace"
+                        )
+                    }
+                    donorPID = donorPIDs[donorID]
+                }
+                guard let donorPID else {
+                    throw ContainerizationError(
+                        .invalidState,
+                        message: "\(type.rawValue) namespace donor \(donorID) is not active"
+                    )
+                }
+                namespaces.append(
+                    LinuxNamespace(
+                        type: type,
+                        path: "/proc/\(donorPID)/ns/\(Self.namespacePathComponent(type))"
+                    )
+                )
+            }
+        }
+
+        return namespaces
+    }
+
+    private static func namespacePathComponent(
+        _ type: LinuxNamespaceType
+    ) -> String {
+        type == .network ? "net" : type.rawValue
+    }
+
     /// Produces the OCI namespace list for a workload in this pod.
     ///
     /// The pause workload owns selected namespaces. A missing pause process
