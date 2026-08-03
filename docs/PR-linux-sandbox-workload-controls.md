@@ -49,6 +49,10 @@ at process creation. It is intentionally a low-level workload primitive:
 authority-owned desired state, revision fencing, read-back, rollback, and
 crash reconciliation remain outside this generic library.
 
+The supportable cgroup v2 field mappings and explicit non-convertible-field
+errors are completed by the follow-on handoff in
+`PR-cgroup-v2-resource-semantics.md`.
+
 ## Compatibility
 
 - Existing `LinuxPod` source continues to compile.
