@@ -273,6 +273,23 @@ public final class LinuxPod: Sendable {
             case paused
             case stopped
             case errored
+
+            var snapshotState: LinuxSandboxWorkloadState {
+                switch self {
+                case .registered:
+                    return .registered
+                case .created:
+                    return .created
+                case .started:
+                    return .running
+                case .paused:
+                    return .paused
+                case .stopped:
+                    return .stopped
+                case .errored:
+                    return .recoveryRequired
+                }
+            }
         }
     }
 
@@ -541,6 +558,62 @@ public final class LinuxPod: Sendable {
 /// protected service workloads.
 public typealias LinuxSandbox = LinuxPod
 
+/// Observable lifecycle state for one production Linux sandbox.
+public enum LinuxSandboxRuntimeState: String, Codable, Equatable, Sendable {
+    /// No VM or guest resources are active.
+    case absent
+    /// The VM and guest agent are active.
+    case running
+    /// The sandbox encountered an error and requires owner reconciliation.
+    case recoveryRequired
+}
+
+/// Observable lifecycle state for one workload registered with a sandbox.
+public enum LinuxSandboxWorkloadState: String, Codable, Equatable, Sendable {
+    /// The workload is registered but the sandbox has not been created.
+    case registered
+    /// The root filesystem and runtime resources are ready for process start.
+    case created
+    /// The workload's initial process is active.
+    case running
+    /// The workload's process cgroup is frozen.
+    case paused
+    /// The workload has no active process or attached runtime resources.
+    case stopped
+    /// The workload encountered an error and requires owner reconciliation.
+    case recoveryRequired
+}
+
+/// Public, side-effect-free observation of one sandbox workload.
+public struct LinuxSandboxWorkloadSnapshot: Codable, Equatable, Sendable {
+    public let id: String
+    public let state: LinuxSandboxWorkloadState
+    public let initProcessID: Int32?
+
+    public init(id: String, state: LinuxSandboxWorkloadState, initProcessID: Int32?) {
+        self.id = id
+        self.state = state
+        self.initProcessID = initProcessID
+    }
+}
+
+/// Public, side-effect-free observation used for lost-response recovery.
+public struct LinuxSandboxSnapshot: Codable, Equatable, Sendable {
+    public let sandboxID: String
+    public let state: LinuxSandboxRuntimeState
+    public let workloads: [LinuxSandboxWorkloadSnapshot]
+
+    public init(
+        sandboxID: String,
+        state: LinuxSandboxRuntimeState,
+        workloads: [LinuxSandboxWorkloadSnapshot]
+    ) {
+        self.sandboxID = sandboxID
+        self.state = state
+        self.workloads = workloads
+    }
+}
+
 extension LinuxPod {
     /// Number of CPU cores allocated to the pod's VM.
     public var cpus: Int {
@@ -555,6 +628,39 @@ extension LinuxPod {
     /// Network interfaces of the pod.
     public var interfaces: [any Interface] {
         config.interfaces
+    }
+
+    /// Return the current sandbox and workload states without changing them.
+    ///
+    /// Workloads are sorted by immutable ID so callers can hash, persist, and
+    /// compare observations deterministically. The snapshot deliberately
+    /// exposes no underlying VM object, guest-agent handle, or raw error.
+    public func snapshot() async -> LinuxSandboxSnapshot {
+        await self.state.withLock { state in
+            let sandboxState: LinuxSandboxRuntimeState
+            switch state.phase {
+            case .initialized:
+                sandboxState = .absent
+            case .created:
+                sandboxState = .running
+            case .errored:
+                sandboxState = .recoveryRequired
+            }
+            let workloads = state.containers.values
+                .map { container in
+                    LinuxSandboxWorkloadSnapshot(
+                        id: container.id,
+                        state: container.state.snapshotState,
+                        initProcessID: container.process?.pid
+                    )
+                }
+                .sorted { $0.id < $1.id }
+            return LinuxSandboxSnapshot(
+                sandboxID: self.id,
+                state: sandboxState,
+                workloads: workloads
+            )
+        }
     }
 
     /// Add a container to the pod.

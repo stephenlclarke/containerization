@@ -15,11 +15,42 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerizationError
+import Foundation
 import Testing
 
 @testable import Containerization
 
 struct LinuxPodConfigurationTests {
+    @Test func snapshotDeterministicallyObservesRegisteredWorkloads() async throws {
+        let pod = try LinuxPod("sandbox-1", vmm: SnapshotVirtualMachineManager()) { _ in }
+
+        #expect(
+            await pod.snapshot()
+                == LinuxSandboxSnapshot(
+                    sandboxID: "sandbox-1",
+                    state: .absent,
+                    workloads: []
+                )
+        )
+
+        for id in ["zeta", "alpha"] {
+            try await pod.addContainer(
+                id,
+                rootfs: .block(format: "ext4", source: "/tmp/\(id).img", destination: "/")
+            ) { _ in }
+        }
+
+        let snapshot = await pod.snapshot()
+        #expect(snapshot.state == .absent)
+        #expect(snapshot.workloads.map(\.id) == ["alpha", "zeta"])
+        #expect(snapshot.workloads.map(\.state) == [.registered, .registered])
+        #expect(snapshot.workloads.allSatisfy { $0.initProcessID == nil })
+        #expect(try JSONDecoder().decode(LinuxSandboxSnapshot.self, from: JSONEncoder().encode(snapshot)) == snapshot)
+
+        try await pod.removeContainer("alpha")
+        #expect(await pod.snapshot().workloads.map(\.id) == ["zeta"])
+    }
+
     @Test func namespaceSharingDefaultsToPrivateNamespaces() {
         let configuration = LinuxPod.Configuration()
 
@@ -115,5 +146,11 @@ struct LinuxPodConfigurationTests {
                 donorPIDs: ["worker": 73]
             )
         }
+    }
+}
+
+private struct SnapshotVirtualMachineManager: VirtualMachineManager {
+    func create(config: some VMCreationConfig) async throws -> any VirtualMachineInstance {
+        fatalError("snapshot test must not create a virtual machine")
     }
 }
