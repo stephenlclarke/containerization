@@ -13,6 +13,10 @@ sandbox without losing workload isolation or silently dropping settings. It
 also prevents one workload from joining a specific active donor's PID, IPC,
 network, cgroup, UTS, or user namespace.
 
+The only pause/resume API is VM-wide. Using it in a multi-workload sandbox
+freezes every sibling workload, which cannot implement Docker's independent
+container pause semantics.
+
 There is a lifecycle cleanup defect in the same path. Stopping a container
 which was created but never started releases its device without first
 stopping socket relays, unmounting its root filesystem, or syncing the guest.
@@ -34,6 +38,10 @@ remains active.
   stopped.
 - A stopped registration can be removed without stopping unrelated
   workloads or the VM.
+- A running workload can be paused and resumed through its own cgroup v2
+  freezer while the VM and sibling workloads continue running.
+- Pause/resume returns only after the kernel reports the requested freezer
+  state, and invalid lifecycle transitions fail without changing host state.
 - Existing `LinuxPod` callers and pod-wide PID/IPC sharing remain source
   compatible.
 
@@ -51,10 +59,13 @@ remains active.
    cleanup performed for a running workload.
 5. Attempt to remove the stopped registration while keeping the pod active.
    No operation exists.
+6. Attempt to pause only the second container. The old API can pause only the
+   entire virtual machine, including the first container.
 
 ## Scope boundary
 
 This issue covers generic Containerization workload mechanics. It does not
 parse Docker or Compose policy, allocate IPAM addresses, create veth
 endpoints, or define an Engine lifecycle ledger. Those remain responsibilities
-of the higher-level authority and follow-on guest network APIs.
+of the higher-level authority and follow-on guest network APIs. Live resource
+updates remain a follow-on workload-control operation.

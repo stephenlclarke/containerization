@@ -5,7 +5,9 @@
 `feat(sandbox): add production workload controls`
 
 This handoff covers the Apple-shaped code commit
-[`88fc904eda6223f061f17c3195c872f0232666d0`](https://github.com/stephenlclarke/containerization/commit/88fc904eda6223f061f17c3195c872f0232666d0).
+[`88fc904eda6223f061f17c3195c872f0232666d0`](https://github.com/stephenlclarke/containerization/commit/88fc904eda6223f061f17c3195c872f0232666d0)
+and the independent lifecycle follow-up
+[`1105266d0992c47d056a72a6d418cd13f11056af`](https://github.com/stephenlclarke/containerization/commit/1105266d0992c47d056a72a6d418cd13f11056af).
 
 ## Summary
 
@@ -32,6 +34,13 @@ and device release for both created and running workloads. A separate
 the VM or sibling workloads. Process identifier and process-table queries are
 available per active workload.
 
+`pauseContainer` and `resumeContainer` now freeze only the selected
+workload's cgroup. The guest waits for `cgroup.events` to confirm the freezer
+transition before acknowledging it, and the host records the paused state
+only after that acknowledgement. Stop and whole-sandbox shutdown thaw a
+paused workload before terminating it; neither path needs to pause or resume
+the VM.
+
 ## Compatibility
 
 - Existing `LinuxPod` source continues to compile.
@@ -41,6 +50,8 @@ available per active workload.
   supplies an explicit per-workload network namespace and endpoint plan.
 - `LinuxContainer` now shares its guest-device resolution implementation with
   the sandbox path; its public behaviour is unchanged.
+- Existing `VirtualMachineAgent` conformers remain source compatible through
+  default unsupported implementations for the new workload pause operations.
 
 ## Code map
 
@@ -53,6 +64,14 @@ available per active workload.
 - `Tests/ContainerizationTests/LinuxPodConfigurationTests.swift` covers
   compatibility defaults, independent namespace selection, correct network
   namespace paths, and missing/self donor rejection.
+- `Sources/Containerization/SandboxContext/` and
+  `Sources/Containerization/Vminitd.swift` carry the generated guest RPC and
+  host client operations for workload pause/resume.
+- `vminitd/Sources/Cgroup/Cgroup2Manager.swift` and
+  `vminitd/Sources/VminitdCore/` implement cgroup v2 freezer convergence and
+  the guest service operations.
+- `Tests/VminitdCoreTests/Cgroup2ManagerProcessTests.swift` covers kernel-event
+  parsing and freezer-file writes on Linux.
 
 ## Local macOS validation
 
@@ -67,11 +86,19 @@ tests. The repository gate passed 693 tests in 87 suites. `make check` passed
 format and licence validation after installing the repository's pinned
 Hawkeye binary.
 
+The host-side generated protocol and API compiled in the focused and full
+gates. A target-aware parse of the Linux-only implementation passed. A local
+guest VM build could not start its dev image and the installed static Linux
+SDK did not match the active Swift compiler, so Linux type-checking and the
+two Linux-only freezer tests remain CI/upstream validation items. The local
+runtime cleanup hang is tracked separately in
+[`stephenlclarke/container#42`](https://github.com/stephenlclarke/container/issues/42).
+
 ## Follow-on work deliberately excluded
 
 - Dynamic per-workload veth/TAP endpoint creation and network-namespace
   configuration.
-- Independent cgroup-freezer pause/resume and live resource updates.
+- Live resource updates.
 - Writable-layer and subpath parity in the multi-workload hot-plug path.
 - Authority-owned durable workload identity, generation fencing, donor
   leases, and crash reconciliation.
