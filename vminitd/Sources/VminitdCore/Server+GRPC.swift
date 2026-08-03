@@ -1156,6 +1156,38 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         }
     }
 
+    public func pauseContainer(
+        request: Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse {
+        log.debug("pauseContainer", metadata: ["containerID": "\(request.containerID)"])
+        do {
+            let container = try await self.state.get(container: request.containerID)
+            try await container.pause()
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "pauseContainer: failed to pause container")
+        } catch {
+            throw RPCError(code: .internalError, message: "pauseContainer: failed to pause container", cause: error)
+        }
+    }
+
+    public func resumeContainer(
+        request: Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse {
+        log.debug("resumeContainer", metadata: ["containerID": "\(request.containerID)"])
+        do {
+            let container = try await self.state.get(container: request.containerID)
+            try await container.resume()
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "resumeContainer: failed to resume container")
+        } catch {
+            throw RPCError(code: .internalError, message: "resumeContainer: failed to resume container", cause: error)
+        }
+    }
+
     public func deleteProcess(
         request: Com_Apple_Containerization_Sandbox_V3_DeleteProcessRequest, context: GRPCCore.ServerContext
     ) async throws -> Com_Apple_Containerization_Sandbox_V3_DeleteProcessResponse {

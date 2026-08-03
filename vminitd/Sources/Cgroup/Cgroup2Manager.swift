@@ -81,6 +81,8 @@ public struct Cgroup2Manager: Sendable {
 
     private static let killFile = "cgroup.kill"
     private static let procsFile = "cgroup.procs"
+    private static let freezeFile = "cgroup.freeze"
+    private static let eventsFile = "cgroup.events"
     private static let subtreeControlFile = "cgroup.subtree_control"
 
     private static let cg2Magic = 0x6367_7270
@@ -253,6 +255,54 @@ public struct Cgroup2Manager: Sendable {
 
     package func processIdentifiers() throws -> [Int32] {
         try Self.parseProcessIdentifiers(try readFileContent(fileName: Self.procsFile))
+    }
+
+    /// Freeze or thaw every process in this cgroup and wait for the kernel to
+    /// report that the transition has completed.
+    package func setFrozen(_ frozen: Bool, timeout: Duration = .seconds(1)) throws {
+        try Self.writeValue(
+            path: self.path,
+            value: frozen ? "1" : "0",
+            fileName: Self.freezeFile
+        )
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        repeat {
+            if try frozenState() == frozen {
+                return
+            }
+            usleep(1_000)
+        } while clock.now < deadline
+
+        throw ContainerizationError(
+            .timeout,
+            message: "cgroup \(self.path.path) did not \(frozen ? "freeze" : "thaw") before the deadline"
+        )
+    }
+
+    package func frozenState() throws -> Bool {
+        guard let content = try readFileContent(fileName: Self.eventsFile) else {
+            throw ContainerizationError(
+                .internalError,
+                message: "missing cgroup events for \(self.path.path)"
+            )
+        }
+        return try Self.parseFrozenState(content)
+    }
+
+    package static func parseFrozenState(_ content: String) throws -> Bool {
+        for line in content.split(whereSeparator: \.isNewline) {
+            let fields = line.split(whereSeparator: \.isWhitespace)
+            guard fields.first == "frozen" else {
+                continue
+            }
+            guard fields.count == 2, fields[1] == "0" || fields[1] == "1" else {
+                throw ContainerizationError(.internalError, message: "invalid frozen cgroup event")
+            }
+            return fields[1] == "1"
+        }
+        throw ContainerizationError(.internalError, message: "missing frozen cgroup event")
     }
 
     package func processes(

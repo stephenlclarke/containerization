@@ -215,6 +215,14 @@ extension ManagedContainer {
         try proc.closeStdin()
     }
 
+    func pause() throws {
+        try self.cgroupManager.setFrozen(true)
+    }
+
+    func resume() throws {
+        try self.cgroupManager.setFrozen(false)
+    }
+
     func deleteExec(id: String) throws {
         try ensureExecExists(id)
         do {

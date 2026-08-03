@@ -81,6 +81,8 @@ public protocol VirtualMachineAgent: Sendable {
     func waitProcess(id: String, containerID: String?, timeoutInSeconds: Int64?) async throws -> ExitStatus
     func deleteProcess(id: String, containerID: String?) async throws
     func closeProcessStdin(id: String, containerID: String?) async throws
+    func pauseContainer(containerID: String) async throws
+    func resumeContainer(containerID: String) async throws
 
     // Networking
     func up(name: String, mtu: UInt32?) async throws
@@ -128,6 +130,14 @@ extension VirtualMachineAgent {
 
     public func closeProcessStdin(id: String, containerID: String?) async throws {
         throw ContainerizationError(.unsupported, message: "closeProcessStdin")
+    }
+
+    public func pauseContainer(containerID: String) async throws {
+        throw ContainerizationError(.unsupported, message: "pauseContainer")
+    }
+
+    public func resumeContainer(containerID: String) async throws {
+        throw ContainerizationError(.unsupported, message: "resumeContainer")
     }
 
     public func configureHosts(config: Hosts, location: String) async throws {

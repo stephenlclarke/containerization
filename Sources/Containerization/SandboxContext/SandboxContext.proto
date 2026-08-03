@@ -48,6 +48,10 @@ service SandboxContext {
   rpc ResizeProcess(ResizeProcessRequest) returns (ResizeProcessResponse);
   // Close IO for a given process.
   rpc CloseProcessStdin(CloseProcessStdinRequest) returns (CloseProcessStdinResponse);
+  // Freeze every process in one container's cgroup.
+  rpc PauseContainer(PauseContainerRequest) returns (PauseContainerResponse);
+  // Thaw every process in one container's cgroup.
+  rpc ResumeContainer(ResumeContainerRequest) returns (ResumeContainerResponse);
 
   // Get statistics for containers.
   rpc ContainerStatistics(ContainerStatisticsRequest) returns (ContainerStatisticsResponse);
@@ -213,6 +217,14 @@ message CloseProcessStdinRequest {
 }
 
 message CloseProcessStdinResponse {}
+
+message PauseContainerRequest { string containerID = 1; }
+
+message PauseContainerResponse {}
+
+message ResumeContainerRequest { string containerID = 1; }
+
+message ResumeContainerResponse {}
 
 message MkdirRequest {
   string path = 1;

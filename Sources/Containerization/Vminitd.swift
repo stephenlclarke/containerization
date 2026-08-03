@@ -329,6 +329,22 @@ extension Vminitd: VirtualMachineAgent {
         _ = try await client.killProcess(request)
     }
 
+    /// Freeze every process in one container without pausing the VM.
+    public func pauseContainer(containerID: String) async throws {
+        _ = try await client.pauseContainer(
+            .with {
+                $0.containerID = containerID
+            })
+    }
+
+    /// Thaw every process in one container without resuming the VM.
+    public func resumeContainer(containerID: String) async throws {
+        _ = try await client.resumeContainer(
+            .with {
+                $0.containerID = containerID
+            })
+    }
+
     public func resizeProcess(id: String, containerID: String?, columns: UInt32, rows: UInt32) async throws {
         let request = Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest.with {
             if let containerID {

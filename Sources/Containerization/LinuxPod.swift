@@ -265,6 +265,7 @@ public final class LinuxPod: Sendable {
             case registered
             case created
             case started
+            case paused
             case stopped
             case errored
         }
@@ -1186,10 +1187,10 @@ extension LinuxPod {
                 return
             }
 
-            guard container.state == .created || container.state == .started else {
+            guard container.state == .created || container.state == .started || container.state == .paused else {
                 throw ContainerizationError(
                     .invalidState,
-                    message: "container \(containerID) must be in created or started state to stop"
+                    message: "container \(containerID) must be in created, started, or paused state to stop"
                 )
             }
 
@@ -1199,6 +1200,12 @@ extension LinuxPod {
                     container.state = .stopped
                     state.containers[containerID] = container
                     return
+                }
+
+                if container.state == .paused {
+                    try await createdState.vm.withAgent { agent in
+                        try await agent.resumeContainer(containerID: containerID)
+                    }
                 }
 
                 if let process = container.process {
@@ -1267,7 +1274,7 @@ extension LinuxPod {
             switch container.state {
             case .registered, .stopped:
                 state.containers.removeValue(forKey: containerID)
-            case .created, .started, .errored:
+            case .created, .started, .paused, .errored:
                 throw ContainerizationError(
                     .invalidState,
                     message: "container \(containerID) must be stopped before removal"
@@ -1297,8 +1304,15 @@ extension LinuxPod {
                         continue
                     }
 
-                    if let process = container.process, container.state == .started {
+                    if let process = container.process,
+                        container.state == .started || container.state == .paused
+                    {
                         if createdState.vm.state != .stopped {
+                            if container.state == .paused {
+                                try? await createdState.vm.withAgent { agent in
+                                    try await agent.resumeContainer(containerID: containerID)
+                                }
+                            }
                             try? await process.kill(.kill)
                             _ = try? await process.wait(timeoutInSeconds: 3)
 
@@ -1337,6 +1351,50 @@ extension LinuxPod {
                 state.phase.setErrored(error: error)
                 throw error
             }
+        }
+    }
+
+    /// Freeze one workload's processes while leaving the VM and its other workloads running.
+    public func pauseContainer(_ containerID: String) async throws {
+        try await self.state.withLock { state in
+            let createdState = try state.phase.createdState("pauseContainer")
+            guard var container = state.containers[containerID] else {
+                throw ContainerizationError(.notFound, message: "container \(containerID) not found in pod")
+            }
+            guard container.state == .started else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) must be started to pause"
+                )
+            }
+
+            try await createdState.vm.withAgent { agent in
+                try await agent.pauseContainer(containerID: containerID)
+            }
+            container.state = .paused
+            state.containers[containerID] = container
+        }
+    }
+
+    /// Resume one paused workload while leaving the VM and its other workloads unchanged.
+    public func resumeContainer(_ containerID: String) async throws {
+        try await self.state.withLock { state in
+            let createdState = try state.phase.createdState("resumeContainer")
+            guard var container = state.containers[containerID] else {
+                throw ContainerizationError(.notFound, message: "container \(containerID) not found in pod")
+            }
+            guard container.state == .paused else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) must be paused to resume"
+                )
+            }
+
+            try await createdState.vm.withAgent { agent in
+                try await agent.resumeContainer(containerID: containerID)
+            }
+            container.state = .started
+            state.containers[containerID] = container
         }
     }
 
@@ -1477,7 +1535,7 @@ extension LinuxPod {
     public func processIdentifiers(_ containerID: String) async throws -> [Int32] {
         let createdState = try await self.state.withLock { state in
             guard let container = state.containers[containerID],
-                container.state == .started
+                container.state == .started || container.state == .paused
             else {
                 throw ContainerizationError(
                     .invalidState,
@@ -1495,7 +1553,7 @@ extension LinuxPod {
     public func processes(_ containerID: String) async throws -> [ContainerProcessInfo] {
         let createdState = try await self.state.withLock { state in
             guard let container = state.containers[containerID],
-                container.state == .started
+                container.state == .started || container.state == .paused
             else {
                 throw ContainerizationError(
                     .invalidState,
