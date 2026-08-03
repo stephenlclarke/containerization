@@ -1,6 +1,10 @@
 <!-- markdownlint-disable MD033 -->
 <h1>
-  <img alt="Containerization logo" src="./assets/Containerization-Logo.png" width="70" valign="middle">
+  <img
+    alt="Containerization icon: standard three-row container service panel"
+    src="./assets/containerization-icon.png"
+    width="70"
+    valign="middle">
   &nbsp;Containerization
 </h1>
 <!-- markdownlint-enable MD033 -->
