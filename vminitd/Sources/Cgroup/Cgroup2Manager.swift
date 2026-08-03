@@ -40,6 +40,8 @@ package enum Cgroup2Controller: String {
     case cpu
     case io
     case hugetlb
+    case rdma
+    case misc
 }
 
 package struct Cgroup2ProcessInfo: Sendable, Equatable {
@@ -167,34 +169,26 @@ public struct Cgroup2Manager: Sendable {
 
         let bytes = Array(value.utf8)
         let res = Syscall.retrying {
-            bytes.withUnsafeBytes { write(fd, $0.baseAddress!, bytes.count) }
+            bytes.withUnsafeBytes { write(fd, $0.baseAddress, bytes.count) }
         }
-        if res == -1 {
-            throw Error.errno(errno: errno, message: "failed to write to \(file.path)")
+        if res != bytes.count {
+            let errorNumber = res == -1 ? errno : EIO
+            throw Error.errno(errno: errorNumber, message: "failed to write to \(file.path)")
         }
     }
 
     /// Converts the OCI cgroup v1-style relative CPU shares value to cgroup
     /// v2's CPU weight range. This follows the conversion used by runc.
     package static func cpuWeight(fromShares shares: UInt64) -> UInt64 {
-        // Zero means that the caller did not set a relative CPU weight.
-        guard shares != 0 else {
-            return 0
-        }
-        if shares <= 2 {
-            return 1
-        }
-        if shares >= 262_144 {
-            return 10_000
-        }
-
-        let logarithm = log2(Double(shares))
-        let exponent = (logarithm * logarithm + 125 * logarithm) / 612 - 7.0 / 34.0
-        return UInt64(ceil(pow(10, exponent)))
+        Cgroup2ResourcePlan.cpuWeight(fromShares: shares)
     }
 
     package func toggleSubtreeControllers(controllers: [Cgroup2Controller], enable: Bool) throws {
-        let value = controllers.map { (enable ? "+" : "-") + $0.rawValue }.joined(separator: " ")
+        try toggleSubtreeControllers(names: controllers.map(\.rawValue), enable: enable)
+    }
+
+    private func toggleSubtreeControllers(names: [String], enable: Bool) throws {
+        let value = names.map { (enable ? "+" : "-") + $0 }.joined(separator: " ")
         let mountComponents = self.mountPoint.pathComponents
         let pathComponents = self.path.pathComponents
 
@@ -226,14 +220,12 @@ public struct Cgroup2Manager: Sendable {
         let controllersContent = try String(contentsOf: controllersFile, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Parse controller names and convert to our enum
-        let availableControllers =
-            controllersContent
-            .split(separator: " ")
-            .compactMap { Cgroup2Controller(rawValue: String($0)) }
+        // Preserve controller names the running kernel exposes so OCI unified
+        // resources can use controllers newer than this library.
+        let availableControllers = controllersContent.split(separator: " ").map(String.init)
 
         if !availableControllers.isEmpty {
-            try toggleSubtreeControllers(controllers: availableControllers, enable: enable)
+            try toggleSubtreeControllers(names: availableControllers, enable: enable)
         }
     }
 
@@ -513,79 +505,86 @@ public struct Cgroup2Manager: Sendable {
                 "path": "\(self.path.path)"
             ])
 
-        if let memory = resources.memory, let limit = memory.limit {
-            // The OCI spec defines -1 as unlimited; cgroup v2 expects "max".
-            let value = limit < 0 ? "max" : String(limit)
-            try Self.writeValue(
-                path: self.path,
-                value: value,
-                fileName: "memory.max"
-            )
-        }
+        let bfqWeightAvailable = FileManager.default.fileExists(
+            atPath: self.path.appending(path: "io.bfq.weight").path
+        )
+        let plan = try Cgroup2ResourcePlan.make(
+            resources: resources,
+            bfqWeightAvailable: bfqWeightAvailable
+        )
 
-        if let cpu = resources.cpu, let quota = cpu.quota, let period = cpu.period {
-            // OCI defines a negative quota as unlimited; cgroup v2 uses
-            // "max" for that value. cpu.max format is "quota period".
-            let quotaValue = quota < 0 ? "max" : String(quota)
-            let value = "\(quotaValue) \(period)"
-            try Self.writeValue(
-                path: self.path,
-                value: value,
-                fileName: "cpu.max"
-            )
-        }
-
-        if let shares = resources.cpu?.shares, shares != 0 {
-            try Self.writeValue(
-                path: self.path,
-                value: String(Self.cpuWeight(fromShares: shares)),
-                fileName: "cpu.weight"
-            )
-        }
-
-        if let cpu = resources.cpu, !cpu.cpus.isEmpty || !cpu.mems.isEmpty {
-            if !cpu.mems.isEmpty {
-                try Self.writeValue(
-                    path: self.path,
-                    value: cpu.mems,
-                    fileName: "cpuset.mems"
-                )
-            } else if !cpu.cpus.isEmpty {
-                let parent = self.path.deletingLastPathComponent()
-                let mems = try String(
-                    contentsOf: parent.appending(path: "cpuset.mems.effective"),
-                    encoding: .utf8
-                ).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !mems.isEmpty else {
-                    throw Error.errno(
-                        errno: EINVAL,
-                        message: "parent cgroup \(parent.path) has no effective CPU-set memory nodes"
-                    )
-                }
-                try Self.writeValue(
-                    path: self.path,
-                    value: mems,
-                    fileName: "cpuset.mems"
+        if let limit = plan.memoryLimitCheck {
+            guard let currentValue = try readFileContent(fileName: "memory.current"),
+                let current = UInt64(currentValue)
+            else {
+                throw ContainerizationError(
+                    .internalError,
+                    message: "cannot read current usage before updating memory.max"
                 )
             }
-
-            if !cpu.cpus.isEmpty {
-                try Self.writeValue(
-                    path: self.path,
-                    value: cpu.cpus,
-                    fileName: "cpuset.cpus"
+            guard current <= UInt64(limit) else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "memory limit \(limit) is below current usage \(current)"
                 )
             }
         }
 
-        if let pids = resources.pids {
-            // The OCI spec defines -1 as unlimited; cgroup v2 expects "max".
-            let value = pids.limit < 0 ? "max" : String(pids.limit)
-            try Self.writeValue(
-                path: self.path,
-                value: value,
-                fileName: "pids.max"
-            )
+        var retryCPUBurst = false
+        if let burst = plan.cpuBurst {
+            do {
+                try writeResource(burst)
+            } catch Error.errno(let errorNumber, _) where errorNumber == EINVAL && plan.cpuMaximum != nil {
+                retryCPUBurst = true
+            }
+        }
+
+        for write in plan.writes {
+            try writeResource(write)
+        }
+        try applyCPUSet(resources.cpu)
+        if let maximum = plan.cpuMaximum {
+            try writeResource(maximum)
+        }
+        if retryCPUBurst, let burst = plan.cpuBurst {
+            try writeResource(burst)
+        }
+        for write in plan.unifiedWrites {
+            try writeResource(write)
+        }
+    }
+
+    private func writeResource(_ write: Cgroup2ResourceWrite) throws {
+        do {
+            try Self.writeValue(path: self.path, value: write.value, fileName: write.fileName)
+        } catch Error.errno(let errorNumber, _)
+            where errorNumber == ENOENT && write.missingFilePolicy == .ignore
+        {
+            return
+        }
+    }
+
+    private func applyCPUSet(_ cpu: ContainerizationOCI.LinuxCPU?) throws {
+        guard let cpu, !cpu.cpus.isEmpty || !cpu.mems.isEmpty else { return }
+        if !cpu.mems.isEmpty {
+            try Self.writeValue(path: self.path, value: cpu.mems, fileName: "cpuset.mems")
+        } else if !cpu.cpus.isEmpty {
+            let parent = self.path.deletingLastPathComponent()
+            let mems = try String(
+                contentsOf: parent.appending(path: "cpuset.mems.effective"),
+                encoding: .utf8
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !mems.isEmpty else {
+                throw Error.errno(
+                    errno: EINVAL,
+                    message: "parent cgroup \(parent.path) has no effective CPU-set memory nodes"
+                )
+            }
+            try Self.writeValue(path: self.path, value: mems, fileName: "cpuset.mems")
+        }
+
+        if !cpu.cpus.isEmpty {
+            try Self.writeValue(path: self.path, value: cpu.cpus, fileName: "cpuset.cpus")
         }
     }
 
