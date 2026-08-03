@@ -104,8 +104,9 @@ runtime cleanup hang is tracked separately in
 
 ## Follow-on work deliberately excluded
 
-- Dynamic per-workload veth/TAP endpoint creation and network-namespace
-  configuration.
+- Engine-owned IPAM, endpoint persistence, and network reconciliation above
+  the endpoint primitive recorded in
+  `PR-linux-sandbox-workload-network-endpoints.md`.
 - Durable compare-and-swap, read-back, rollback, and crash reconciliation for
   live resource updates.
 - Writable-layer and subpath parity in the multi-workload hot-plug path.
