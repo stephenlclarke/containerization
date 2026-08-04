@@ -769,12 +769,32 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 "destination": "\(request.destination)",
             ])
 
+        var attachedLoopbackDevice: LoopbackDevice?
         do {
+            let loopbackDevice: LoopbackDevice?
+            if request.options.contains("loop") {
+                let device = try LoopbackDevice.attach(backingFile: request.source)
+                loopbackDevice = device
+                attachedLoopbackDevice = device
+                do {
+                    try await state.add(
+                        loopbackDevice: device,
+                        destination: request.destination
+                    )
+                } catch {
+                    try? device.detach()
+                    attachedLoopbackDevice = nil
+                    throw error
+                }
+            } else {
+                loopbackDevice = nil
+            }
+
             let mnt = ContainerizationOS.Mount(
                 type: request.type,
-                source: request.source,
+                source: loopbackDevice?.path ?? request.source,
                 target: request.destination,
-                options: request.options,
+                options: request.options.filter { $0 != "loop" },
                 sourceRoot: request.hasSourceRoot ? request.sourceRoot : nil
             )
 
@@ -825,6 +845,10 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             fatalError("mount not supported on platform")
             #endif
         } catch {
+            if let loopbackDevice = attachedLoopbackDevice {
+                await state.removeLoopbackDevice(destination: request.destination)
+                try? loopbackDevice.detach()
+            }
             log.error(
                 "mount",
                 metadata: [
@@ -942,6 +966,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
         #if os(Linux)
         // Best effort EBUSY handle.
+        var unmounted = false
         for _ in 0...50 {
             let result = _umount(request.path, request.flags)
             if result == -1 {
@@ -958,7 +983,18 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     ])
                 throw RPCError(code: .invalidArgument, message: "umount", cause: error)
             }
+            unmounted = true
             break
+        }
+        guard unmounted else {
+            throw RPCError(
+                code: .failedPrecondition,
+                message: "umount remained busy after bounded retries"
+            )
+        }
+        if let loopbackDevice = await state.loopbackDevice(destination: request.path) {
+            try loopbackDevice.detach()
+            await state.removeLoopbackDevice(destination: request.path)
         }
         return .init()
         #else

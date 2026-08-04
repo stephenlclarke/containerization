@@ -581,6 +581,7 @@ struct IntegrationSuite: AsyncParsableCommand {
             Test("pod sysctl multiple containers", testPodSysctlMultipleContainers),
             Test("pod invalid volume reference", testPodInvalidVolumeReference),
             Test("pod duplicate volume name", testPodDuplicateVolumeName),
+            Test("pod hotplug block rootfs", testPodHotplugBlockRootfs),
 
             // Mounts / virtiofs shares (cross-platform: VZ on macOS, virtiofsd on Linux/CH).
             Test("container mount", testMounts),
@@ -641,11 +642,10 @@ struct IntegrationSuite: AsyncParsableCommand {
             ] + macOS26Tests()
         let tests: [Test] = crossPlatformTests + macOSOnlyTests
         #else
-        // Hotplug into a running pod VM is CH-only (VZ has no runtime hotplug),
-        // and no pod test elsewhere exercises addContainer-after-create.
+        // Directory-rootfs hotplug remains CH-only. Block-rootfs hotplug is
+        // cross-platform through VZ's unified-share/loop attachment path.
         let linuxOnlyTests: [Test] = [
-            Test("pod hotplug block rootfs", testPodHotplugBlockRootfs),
-            Test("pod hotplug virtiofs rootfs", testPodHotplugVirtiofsRootfs),
+            Test("pod hotplug virtiofs rootfs", testPodHotplugVirtiofsRootfs)
         ]
         let tests: [Test] = crossPlatformTests + linuxOnlyTests
         #endif

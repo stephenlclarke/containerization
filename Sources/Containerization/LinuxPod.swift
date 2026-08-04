@@ -723,38 +723,20 @@ extension LinuxPod {
                         try await vm.hotplugVirtioFS(virtioFSMounts, id: id)
                     }
 
+                    let newVirtiofsTags = try virtioFSMounts.map {
+                        try hashFilePath(path: $0.source)
+                    }
+                    let rootfsUsesUnifiedVirtiofs =
+                        vm.virtiofsLayout == .unified
+                        && attachment.source.hasPrefix("/run/virtiofs/")
+
                     let agent = try await vm.dialAgent()
                     do {
-                        var mount = attachment.to
-                        mount.destination = Self.guestRootfsPath(id)
-                        try await agent.mount(mount)
-
-                        // Filter out shared mounts — those are handled separately as
-                        // pod volume bind mounts. Without it here, a container added to an
-                        // already-created would add a duplicated mount into the shared VM.
-                        let nonSharedMounts = fileMountContext.transformedMounts.filter {
-                            if case .shared = $0.runtimeOptions { return false }
-                            return true
-                        }
-                        try vm.registerMounts(
-                            id: id,
-                            rootfs: attachment,
-                            additionalMounts: nonSharedMounts
-                        )
-
-                        // Mount this container's additional virtiofs shares in the
-                        // guest. create() does this for boot-time containers (the
-                        // /run/virtiofs loop); the hotplug path must do the same or
-                        // the container's bind mounts from /run/virtiofs/<tag> fail
-                        // with ENOENT.
-                        //
-                        // Derive the tags from the additional mounts directly rather
-                        // than from vm.mounts[id], so this is independent of the
-                        // rootfs (which may be virtiofs or virtio-blk) and of mount
-                        // ordering. The rootfs is mounted at /run/container/<id>/rootfs
-                        // and is never consumed from /run/virtiofs.
-                        let newVirtiofsTags = try virtioFSMounts.map { try hashFilePath(path: $0.source) }
-                        if !newVirtiofsTags.isEmpty {
+                        // Mount newly exposed virtiofs content before the rootfs.
+                        // VZ runtime block attachments are ext4 images reached
+                        // through the unified share and therefore need this
+                        // mount before the guest can create its loop device.
+                        if !newVirtiofsTags.isEmpty || rootfsUsesUnifiedVirtiofs {
                             try await agent.mkdir(path: "/run/virtiofs", all: true, perms: 0o755)
                             if vm.virtiofsLayout == .perTag {
                                 // Tags already mounted in the guest at boot or by a
@@ -779,10 +761,9 @@ extension LinuxPod {
                                             options: []
                                         ))
                                 }
-                            } else if !state.unifiedVirtiofsMounted && vm.virtiofsLayout == .unified {
+                            } else if !state.unifiedVirtiofsMounted {
                                 // Unified layout: one /run/virtiofs mount for the
-                                // VM's lifetime, so mount it only if nothing has
-                                // mounted it at boot or on an earlier hotplug.
+                                // VM's lifetime, so mount it only once.
                                 try await agent.mount(
                                     ContainerizationOCI.Mount(
                                         type: "virtiofs",
@@ -793,6 +774,23 @@ extension LinuxPod {
                                 state.unifiedVirtiofsMounted = true
                             }
                         }
+
+                        var mount = attachment.to
+                        mount.destination = Self.guestRootfsPath(id)
+                        try await agent.mount(mount)
+
+                        // Filter out shared mounts — those are handled separately as
+                        // pod volume bind mounts. Without it here, a container added to an
+                        // already-created would add a duplicated mount into the shared VM.
+                        let nonSharedMounts = fileMountContext.transformedMounts.filter {
+                            if case .shared = $0.runtimeOptions { return false }
+                            return true
+                        }
+                        try vm.registerMounts(
+                            id: id,
+                            rootfs: attachment,
+                            additionalMounts: nonSharedMounts
+                        )
 
                         if fileMountContext.hasFileMounts {
                             let containerMounts = vm.mounts[id] ?? []

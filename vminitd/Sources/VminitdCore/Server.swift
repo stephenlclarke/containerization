@@ -29,6 +29,7 @@ public final class Initd: Sendable {
     public actor State {
         private(set) var containers: [String: ManagedContainer] = [:]
         var proxies: [String: VsockProxy] = [:]
+        private var loopbackDevices: [String: LoopbackDevice] = [:]
 
         public typealias ContainerDeletedHandler = @Sendable (String) async -> Void
         private var onContainerDeleted: [ContainerDeletedHandler] = []
@@ -75,6 +76,24 @@ public final class Initd: Sendable {
                 )
             }
             return proxy
+        }
+
+        func add(loopbackDevice: LoopbackDevice, destination: String) throws {
+            guard loopbackDevices[destination] == nil else {
+                throw ContainerizationError(
+                    .exists,
+                    message: "loopback mount already exists at \(destination)"
+                )
+            }
+            loopbackDevices[destination] = loopbackDevice
+        }
+
+        func loopbackDevice(destination: String) -> LoopbackDevice? {
+            loopbackDevices[destination]
+        }
+
+        func removeLoopbackDevice(destination: String) {
+            loopbackDevices[destination] = nil
         }
 
         func remove(container id: String) throws {
