@@ -1,12 +1,24 @@
-<!-- markdownlint-disable MD033 -->
-<h1>
-  <img
-    alt="Containerization icon: standard three-row container service panel"
-    src="./assets/containerization-icon.png"
-    width="70"
-    valign="middle">
-  &nbsp;Containerization
-</h1>
+# Containerization
+
+<!-- markdownlint-disable MD013 MD033 -->
+<p>
+  <img align="left" hspace="20" src="assets/containerization-icon.png" width="147" alt="Containerization icon: the standard three-row container service panel" />
+  <a href="https://github.com/stephenlclarke/containerization/actions/workflows/containerization-build.yml?query=branch%3Amain"><img alt="CI" src="https://github.com/stephenlclarke/containerization/actions/workflows/containerization-build.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/stephenlclarke/containerization/actions/workflows/codeql.yml?query=branch%3Amain"><img alt="CodeQL" src="https://github.com/stephenlclarke/containerization/actions/workflows/codeql.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/stephenlclarke/containerization/actions/workflows/docs-release.yaml?query=branch%3Amain"><img alt="Documentation" src="https://github.com/stephenlclarke/containerization/actions/workflows/docs-release.yaml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/stephenlclarke/containerization/actions/workflows/release.yml?query=branch%3Amain"><img alt="Releases" src="https://github.com/stephenlclarke/containerization/actions/workflows/release.yml/badge.svg?branch=main" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Quality Gate Status" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=alert_status" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Coverage" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=coverage" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Bugs" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=bugs" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Code Smells" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=code_smells" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Security Rating" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=security_rating" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Maintainability Rating" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=sqale_rating" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Duplicated Lines" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=duplicated_lines_density" /></a>
+  <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Lines of Code" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=ncloc" /></a>
+  <img alt="Repo Visitors" src="https://visitor-badge.laobi.icu/badge?page_id=stephenlclarke.containerization" />
+</p>
+<br clear="left" />
+<br>
 <!-- markdownlint-enable MD033 -->
 
 The Containerization package allows applications to use Linux containers.
