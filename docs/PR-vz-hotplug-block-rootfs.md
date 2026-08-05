@@ -15,6 +15,8 @@
   existing `VZVirtualMachineInstance` surface.
 - Exercise block-rootfs hotplug on both VZ and Cloud Hypervisor integration
   lanes.
+- Ship and pin the matching vminit loop-device protocol in the same release;
+  host-only deployment is intentionally unsupported.
 
 ## Motivation and context
 
@@ -53,16 +55,16 @@ Related issue handoff: `docs/ISSUE-vz-hotplug-block-rootfs.md`.
 
 ## Testing
 
-Focused matched-stack evidence on this Apple-silicon Mac:
+Focused source-level evidence on this Apple-silicon Mac:
 
 - the Container package compiled against this exact edit-mode dependency;
-- the protected Docker plugin and journald workloads both started successfully
-  inside an already running VZ Engine sandbox;
-- sandbox generation 27 recorded one successful start operation for each
-  service, with no retry mutation loop;
-- the subsequent two-stream logging workload completed and its provider
-  lifecycle closed `complete` with no active writer, reader, cleanup, or
-  pending-removal residue.
+- the host-side provider emits the internal `loop` option and the local
+  `vminitd` source consumes it before invoking `mount(2)`;
+- the currently pinned published vminit image does not contain that consumer:
+  a live MBP run failed with `ext4: Unknown parameter 'loop'`;
+- the distributable Container logging-plugin certificate passed after using a
+  protected read-only directory root, proving the failure is isolated to the
+  unmatched block-image protocol rather than the plugin workload.
 
 The live integration command remains:
 
@@ -73,12 +75,21 @@ swift run containerization-integration --filter "pod hotplug block rootfs"
 Repository-wide validation is intentionally batched with the next immutable
 multi-slice checkpoint.
 
+The VZ integration lane must additionally build or select the vminit artifact
+from this exact source revision. A test against an older published guest image
+is expected to fail closed and must not be reported as passing evidence.
+
 ## Compatibility and risks
 
 Cloud Hypervisor retains its native block-device hotplug path. Boot-time VZ
 mounts are unchanged. Runtime VZ block images now travel through the existing
 private unified virtiofs device and a guest loop device; arbitrary paths and
 non-regular backing objects are rejected.
+
+The host and guest changes form one compatibility unit. Releasing the host
+transport before the matching vminit image causes the guest kernel to receive
+the private `loop` option and reject the mount. Publication therefore needs an
+artifact digest update and a matched-stack integration result in the final PR.
 
 Share state is reference-counted so one container cannot withdraw a directory
 still used by another. A writable reference widens the shared directory only

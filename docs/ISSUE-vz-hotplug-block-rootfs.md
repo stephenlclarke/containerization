@@ -24,9 +24,11 @@ the VZ instance has no runtime hotplug provider. A block-rootfs container added
 to an existing pod therefore cannot make its ext4 image visible to the guest.
 The rootfs mount fails before the container can start.
 
-The pod hotplug path also mounted a rootfs before ensuring the unified virtiofs
-share was mounted in the guest. Even if an image were added to the share, the
-guest could not create a loop device from its path reliably.
+The local source branch now exposes the image through unified virtiofs and its
+`vminitd` source translates the internal `loop` option into a loop device.
+That protocol is not deployable with the currently pinned, published vminit
+image, however. The published guest passes `loop` directly to `mount(2)`, so
+the kernel rejects the root filesystem before the workload can start.
 
 ## Expected behavior
 
@@ -40,6 +42,8 @@ guest could not create a loop device from its path reliably.
 - Unmount the guest filesystem before detaching its loop device or withdrawing
   the host share.
 - Reject unsafe or non-regular loop backing paths.
+- Publish and pin a vminit image containing the matching loop-option protocol
+  before enabling the VZ host-side transport in a distributable release.
 
 ## Environment
 
@@ -50,13 +54,14 @@ guest could not create a loop device from its path reliably.
 ## Relevant log output
 
 ```text
-Before: protected service workload start failed while mounting its block rootfs.
-After: Docker plugin and journald service workloads both reached running on
-sandbox generation 27 with operation generation 1.
+ext4: Unknown parameter 'loop'
+failed initial mount ... type=ext4 data=loop
 ```
 
-The same exact matched stack completed a short-lived two-stream logging
-workload at process generation 53 and closed it with disposition `complete`.
+The distributable Container certificate now avoids this version-skew hazard by
+exporting the already-verified final ext4 snapshot once and hot-plugging the
+protected directory as a read-only virtiofs root. The generic block-rootfs
+transport still requires the matched vminit publication above.
 
 ## Scope and ownership
 
