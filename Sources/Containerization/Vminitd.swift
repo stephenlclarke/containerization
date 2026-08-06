@@ -503,7 +503,9 @@ extension Vminitd {
         _ = try await client.ipAddrAdd(
             .with {
                 $0.interface = name
-                $0.ipv4Address = address.ipv4Address.description
+                if let ipv4Address = address.ipv4Address {
+                    $0.ipv4Address = ipv4Address.description
+                }
                 if let ipv6Address = address.ipv6Address {
                     $0.ipv6Address = ipv6Address.description
                 }

@@ -56,6 +56,29 @@ struct LinuxContainerTests {
         }
     }
 
+    @Test func ipv6OnlyInterfaceOmitsIPv4GuestConfiguration() async throws {
+        let agent = RecordingVirtualMachineAgent()
+        let ipv6Address = try CIDRv6("fd00:2026:806::2/64")
+        let ipv6Gateway = try IPv6Address("fd00:2026:806::1")
+        let interface = NATInterface(
+            ipv6Address: ipv6Address,
+            ipv6Gateway: ipv6Gateway
+        )
+
+        try await agent.setupInterface(
+            interface,
+            name: "eth0",
+            initialName: "eth0",
+            setDefaultRoute: true,
+            logger: nil
+        )
+
+        #expect(agent.addressRequests == [.init(ipv6Address: ipv6Address)])
+        #expect(agent.linkRouteRequests.isEmpty)
+        #expect(agent.defaultRouteRequests == [.init(ipv6Gateway: ipv6Gateway)])
+        #expect(agent.upRequests == ["eth0"])
+    }
+
     @Test func processInitFromImageConfigWithAllFields() {
         let imageConfig = ImageConfig(
             user: "appuser",
@@ -1262,6 +1285,10 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
         var writeRequests: [WriteRequest] = []
         var mountRequests: [MountRequest] = []
         var umountRequests: [String] = []
+        var upRequests: [String] = []
+        var addressRequests: [InterfaceAddress] = []
+        var linkRouteRequests: [LinkRoute] = []
+        var defaultRouteRequests: [DefaultRoute] = []
     }
 
     private let storage = Mutex<State>(State())
@@ -1315,6 +1342,22 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
 
     var umountRequests: [String] {
         storage.withLock { $0.umountRequests }
+    }
+
+    var upRequests: [String] {
+        storage.withLock { $0.upRequests }
+    }
+
+    var addressRequests: [InterfaceAddress] {
+        storage.withLock { $0.addressRequests }
+    }
+
+    var linkRouteRequests: [LinkRoute] {
+        storage.withLock { $0.linkRouteRequests }
+    }
+
+    var defaultRouteRequests: [DefaultRoute] {
+        storage.withLock { $0.defaultRouteRequests }
     }
 
     func standardSetup() async throws {}
@@ -1410,15 +1453,23 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
 
     func closeProcessStdin(id: String, containerID: String?) async throws {}
 
-    func up(name: String, mtu: UInt32?) async throws {}
+    func up(name: String, mtu: UInt32?) async throws {
+        storage.withLock { $0.upRequests.append(name) }
+    }
 
     func down(name: String) async throws {}
 
-    func addressAdd(name: String, address: InterfaceAddress) async throws {}
+    func addressAdd(name: String, address: InterfaceAddress) async throws {
+        storage.withLock { $0.addressRequests.append(address) }
+    }
 
-    func routeAddLink(name: String, route: LinkRoute) async throws {}
+    func routeAddLink(name: String, route: LinkRoute) async throws {
+        storage.withLock { $0.linkRouteRequests.append(route) }
+    }
 
-    func routeAddDefault(name: String, route: DefaultRoute) async throws {}
+    func routeAddDefault(name: String, route: DefaultRoute) async throws {
+        storage.withLock { $0.defaultRouteRequests.append(route) }
+    }
 
     func configureDNS(config: DNS, location: String) async throws {}
 

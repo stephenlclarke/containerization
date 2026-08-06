@@ -68,11 +68,13 @@ extension VirtualMachineAgent {
         if name != initialName {
             try await rename(name: initialName, to: name)
         }
-        logger?.debug("setting up interface \(name) with v4 \(interface.ipv4Address) v6 \(interface.ipv6Address?.description ?? "<none>")")
-        try await addressAdd(
-            name: name,
-            address: .init(ipv4Address: interface.ipv4Address, ipv6Address: interface.ipv6Address)
-        )
+        logger?.debug("setting up interface \(name) with v4 \(interface.ipv4Address?.description ?? "<none>") v6 \(interface.ipv6Address?.description ?? "<none>")")
+        if interface.ipv4Address != nil || interface.ipv6Address != nil {
+            try await addressAdd(
+                name: name,
+                address: .init(ipv4Address: interface.ipv4Address, ipv6Address: interface.ipv6Address)
+            )
+        }
         for address in interface.additionalIPAddresses {
             try await addressAdd(name: name, address: address)
         }
@@ -86,7 +88,7 @@ extension VirtualMachineAgent {
         let ipv6Address = interface.ipv6Address
 
         let needsIPv4LinkRoute: Bool
-        if let ipv4Gateway {
+        if let ipv4Gateway, let ipv4Address {
             needsIPv4LinkRoute = !ipv4Address.contains(ipv4Gateway)
         } else {
             needsIPv4LinkRoute = false
@@ -99,7 +101,7 @@ extension VirtualMachineAgent {
             needsIPv6LinkRoute = false
         }
 
-        if needsIPv4LinkRoute, let ipv4Gateway {
+        if needsIPv4LinkRoute, let ipv4Gateway, let ipv4Address {
             logger?.debug("v4 gateway \(ipv4Gateway) is outside subnet \(ipv4Address), adding a route first")
         }
         if needsIPv6LinkRoute, let ipv6Gateway, let ipv6Address {
@@ -111,7 +113,7 @@ extension VirtualMachineAgent {
                 name: name,
                 route: .init(
                     ipv4Destination: needsIPv4LinkRoute ? ipv4Gateway : nil,
-                    ipv4Source: needsIPv4LinkRoute ? ipv4Address.address : nil,
+                    ipv4Source: needsIPv4LinkRoute ? ipv4Address?.address : nil,
                     ipv6Destination: needsIPv6LinkRoute ? ipv6Gateway : nil,
                     ipv6Source: needsIPv6LinkRoute ? ipv6Address?.address : nil
                 )
@@ -120,6 +122,7 @@ extension VirtualMachineAgent {
 
         if ipv4Gateway == nil && ipv6Gateway == nil {
             logger?.debug("no gateway for \(name)")
+            return
         }
         try await routeAddDefault(
             name: name,

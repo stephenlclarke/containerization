@@ -16,10 +16,11 @@
 
 /// A network interface's addresses.
 public struct InterfaceAddress: Sendable, Hashable {
-    public var ipv4Address: CIDRv4
+    /// The primary IPv4 address, when the interface participates in IPv4.
+    public var ipv4Address: CIDRv4?
     public var ipv6Address: CIDRv6?
 
-    public init(ipv4Address: CIDRv4, ipv6Address: CIDRv6? = nil) {
+    public init(ipv4Address: CIDRv4? = nil, ipv6Address: CIDRv6? = nil) {
         self.ipv4Address = ipv4Address
         self.ipv6Address = ipv6Address
     }
