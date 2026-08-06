@@ -308,9 +308,17 @@ public struct ContainerManager: Sendable {
                     config.interfaces = [interface]
                     let nameserver = interface.ipv4Gateway?.description ?? interface.ipv6Gateway?.description
                     guard let nameserver else {
+                        let addressFamily: String
+                        if interface.ipv4Address != nil {
+                            addressFamily = "ipv4"
+                        } else if interface.ipv6Address != nil {
+                            addressFamily = "ipv6"
+                        } else {
+                            addressFamily = "IP"
+                        }
                         throw ContainerizationError(
                             .invalidState,
-                            message: "missing IP gateway for container \(id)"
+                            message: "missing \(addressFamily) gateway for container \(id)"
                         )
                     }
                     config.dns = .init(nameservers: [nameserver])
