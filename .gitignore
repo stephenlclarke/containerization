@@ -10,6 +10,7 @@ DerivedData/
 workdir/
 installer/
 .venv/
+.vscode/
 test_results/
 code-coverage-report
 *.pid
