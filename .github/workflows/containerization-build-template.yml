@@ -179,6 +179,7 @@ jobs:
     # gtar which is not on the macOS runner.
     name: Upload artifact for GitHub Pages
     needs: buildAndTest
+    if: ${{ github.repository == 'apple/containerization' }}
     timeout-minutes: 5
     runs-on: ubuntu-latest
 
