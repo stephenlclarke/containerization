@@ -27,7 +27,7 @@ import Synchronization
 @available(macOS 26, *)
 public final class NATNetworkInterface: Interface, Sendable {
     public let guestInterfaceName: String?
-    public let ipv4Address: CIDRv4
+    public let ipv4Address: CIDRv4?
     public let ipv4Gateway: IPv4Address?
     public let ipv6Address: CIDRv6?
     public let ipv6Gateway: IPv6Address?
@@ -41,8 +41,8 @@ public final class NATNetworkInterface: Interface, Sendable {
 
     @available(macOS 26, *)
     public init(
-        ipv4Address: CIDRv4,
-        ipv4Gateway: IPv4Address?,
+        ipv4Address: CIDRv4? = nil,
+        ipv4Gateway: IPv4Address? = nil,
         reference: sending vmnet_network_ref,
         ipv6Address: CIDRv6? = nil,
         ipv6Gateway: IPv6Address? = nil,
@@ -64,8 +64,8 @@ public final class NATNetworkInterface: Interface, Sendable {
 
     @available(macOS, obsoleted: 26, message: "Use init(ipv4Address:ipv4Gateway:reference:macAddress:) instead")
     public init(
-        ipv4Address: CIDRv4,
-        ipv4Gateway: IPv4Address?,
+        ipv4Address: CIDRv4? = nil,
+        ipv4Gateway: IPv4Address? = nil,
         macAddress: MACAddress? = nil,
         mtu: UInt32 = 1500,
         guestInterfaceName: String? = nil,

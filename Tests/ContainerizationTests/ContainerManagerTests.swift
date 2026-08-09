@@ -26,18 +26,22 @@ import Testing
 @testable import Containerization
 
 private struct NilGatewayInterface: Interface {
-    let ipv4Address: CIDRv4
+    let ipv4Address: CIDRv4?
+    let ipv6Address: CIDRv6?
     let ipv4Gateway: IPv4Address? = nil
     let macAddress: MACAddress? = nil
 
-    init() {
-        self.ipv4Address = try! CIDRv4("192.168.64.2/24")
+    init(ipv6Only: Bool) {
+        self.ipv4Address = ipv6Only ? nil : try! CIDRv4("192.168.64.2/24")
+        self.ipv6Address = ipv6Only ? try! CIDRv6("fd00:2026:806::2/64") : nil
     }
 }
 
 private struct NilGatewayNetwork: Network {
+    let ipv6Only: Bool
+
     mutating func createInterface(_ id: String) throws -> Interface? {
-        NilGatewayInterface()
+        NilGatewayInterface(ipv6Only: self.ipv6Only)
     }
 
     mutating func releaseInterface(_ id: String) throws {}
@@ -57,7 +61,8 @@ struct ContainerManagerTests {
         #expect(try ContainerManager.containerPath(root: root, id: "web-1").path == root.appendingPathComponent("web-1").path)
     }
 
-    @Test func testCreateThrowsWhenGatewayMissing() async throws {
+    @Test(arguments: [(false, "ipv4"), (true, "ipv6")])
+    func testCreateThrowsWhenGatewayMissing(ipv6Only: Bool, addressFamily: String) async throws {
         let fm = FileManager.default
         let root = fm.uniqueTemporaryDirectory(create: true)
         defer { try? fm.removeItem(at: root) }
@@ -74,7 +79,7 @@ struct ContainerManagerTests {
             kernel: kernel,
             initfs: initfs,
             root: root,
-            network: NilGatewayNetwork()
+            network: NilGatewayNetwork(ipv6Only: ipv6Only)
         )
 
         let tempDir = fm.uniqueTemporaryDirectory()
@@ -94,10 +99,10 @@ struct ContainerManagerTests {
 
         do {
             _ = try await manager.create("test-nil-gateway", image: image, rootfs: rootfs) { _ in }
-            #expect(Bool(false), "expected invalidState error for missing ipv4 gateway")
+            #expect(Bool(false), "expected invalidState error for missing \(addressFamily) gateway")
         } catch let error as ContainerizationError {
             #expect(error.code == .invalidState)
-            #expect(error.message.contains("missing ipv4 gateway"))
+            #expect(error.message.contains("missing \(addressFamily) gateway"))
         } catch {
             #expect(Bool(false), "unexpected error: \(error)")
         }
@@ -122,7 +127,7 @@ struct ContainerManagerTests {
             kernel: kernel,
             initfs: initfs,
             root: root,
-            network: NilGatewayNetwork()
+            network: NilGatewayNetwork(ipv6Only: false)
         )
 
         let tempDir = fm.uniqueTemporaryDirectory()

@@ -306,13 +306,22 @@ public struct ContainerManager: Sendable {
             if networking {
                 if let interface = try self.network?.createInterface(id) {
                     config.interfaces = [interface]
-                    guard let gateway = interface.ipv4Gateway else {
+                    let nameserver = interface.ipv4Gateway?.description ?? interface.ipv6Gateway?.description
+                    guard let nameserver else {
+                        let addressFamily: String
+                        if interface.ipv4Address != nil {
+                            addressFamily = "ipv4"
+                        } else if interface.ipv6Address != nil {
+                            addressFamily = "ipv6"
+                        } else {
+                            addressFamily = "IP"
+                        }
                         throw ContainerizationError(
                             .invalidState,
-                            message: "missing ipv4 gateway for container \(id)"
+                            message: "missing \(addressFamily) gateway for container \(id)"
                         )
                     }
-                    config.dns = .init(nameservers: [gateway.description])
+                    config.dns = .init(nameservers: [nameserver])
                 }
             }
             config.bootLog = BootLog.file(path: path.appendingPathComponent("bootlog.log"))
