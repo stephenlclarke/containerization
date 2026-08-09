@@ -150,11 +150,20 @@ extension Application {
                 // Add host entry for the container using just the IP (not CIDR)
                 if #available(macOS 26, *), !config.interfaces.isEmpty {
                     let interface = config.interfaces[0]
-                    hosts.entries.append(
-                        Hosts.Entry(
-                            ipAddress: interface.ipv4Address.address.description,
-                            hostnames: [id]
-                        ))
+                    if let ipv4Address = interface.ipv4Address {
+                        hosts.entries.append(
+                            Hosts.Entry(
+                                ipAddress: ipv4Address.address.description,
+                                hostnames: [id]
+                            ))
+                    }
+                    if let ipv6Address = interface.ipv6Address {
+                        hosts.entries.append(
+                            Hosts.Entry(
+                                ipAddress: ipv6Address.address.description,
+                                hostnames: [id]
+                            ))
+                    }
                 }
 
                 config.hosts = hosts
@@ -413,7 +422,7 @@ extension Application {
                 let subnetCIDR = try CIDRv4(subnet)
                 let gw = try bridgeGateway.map { try IPv4Address($0) }
 
-                let mgr = BridgeManager(
+                let mgr = try BridgeManager.make(
                     name: bridge,
                     subnet: subnetCIDR,
                     gateway: gw,
@@ -434,11 +443,20 @@ extension Application {
                     interfaces.append(iface)
 
                     var h = Hosts.default
-                    h.entries.append(
-                        .init(
-                            ipAddress: iface.ipv4Address.address.description,
-                            hostnames: [id]
-                        ))
+                    if let ipv4Address = iface.ipv4Address {
+                        h.entries.append(
+                            .init(
+                                ipAddress: ipv4Address.address.description,
+                                hostnames: [id]
+                            ))
+                    }
+                    if let ipv6Address = iface.ipv6Address {
+                        h.entries.append(
+                            .init(
+                                ipAddress: ipv6Address.address.description,
+                                hostnames: [id]
+                            ))
+                    }
                     hostsConfig = h
 
                     let resolved =

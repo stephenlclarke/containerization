@@ -55,7 +55,7 @@ public actor ManagedContainer {
             path: Self.craftBundlePath(id: id),
             spec: spec
         )
-        log.debug("created bundle with spec \(spec)")
+        log.debug("created bundle with spec \(spec.redactingEnvironmentValues())")
 
         let cgManager = Cgroup2Manager(
             group: URL(filePath: cgroupsPath),
@@ -91,6 +91,7 @@ public actor ManagedContainer {
                     id: id,
                     stdio: stdio,
                     bundle: bundle,
+                    spec: spec,
                     owningPid: nil,
                     log: log
                 )
@@ -213,6 +214,18 @@ extension ManagedContainer {
     func closeStdin(execID: String) throws {
         let proc = try self.getExecOrInit(execID: execID)
         try proc.closeStdin()
+    }
+
+    func pause() throws {
+        try self.cgroupManager.setFrozen(true)
+    }
+
+    func resume() throws {
+        try self.cgroupManager.setFrozen(false)
+    }
+
+    func update(resources: ContainerizationOCI.LinuxResources) throws {
+        try self.cgroupManager.applyResources(resources: resources)
     }
 
     func deleteExec(id: String) throws {

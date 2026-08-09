@@ -31,7 +31,10 @@ public final class VZVirtualMachineInstance: Sendable {
     /// Attached mounts on the virtual machine, organized by metadata ID.
     private let _mounts: Mutex<[String: [AttachedFilesystem]]>
     public var mounts: [String: [AttachedFilesystem]] {
-        _mounts.withLock { $0 }
+        if let provider = hotplugProvider as? VZHotplugProvider {
+            return provider.mounts
+        }
+        return _mounts.withLock { $0 }
     }
 
     /// The underlying Virtualization framework virtual machine.
@@ -42,7 +45,10 @@ public final class VZVirtualMachineInstance: Sendable {
 
     /// Mutate the mount registry.
     public func withMountRegistry<T: Sendable>(_ body: (inout sending [String: [AttachedFilesystem]]) throws -> sending T) rethrows -> T {
-        try _mounts.withLock(body)
+        if let provider = hotplugProvider as? VZHotplugProvider {
+            return try provider.withMountRegistry(body)
+        }
+        return try _mounts.withLock(body)
     }
 
     /// Serialize VM operations with the instance lock.
@@ -162,6 +168,13 @@ public final class VZVirtualMachineInstance: Sendable {
         self.vm = VZVirtualMachine(
             configuration: try config.toVZ(allocator: allocator),
             queue: self.queue
+        )
+        self.hotplugProvider = try VZHotplugProvider(
+            vm: self.vm,
+            queue: self.queue,
+            allocator: allocator,
+            initialMounts: mountAttachments,
+            bootMounts: config.mountsByID
         )
 
         for ext in config.extensions.compactMap({ $0 as? any VZInstanceExtension }) {

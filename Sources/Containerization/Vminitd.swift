@@ -329,6 +329,32 @@ extension Vminitd: VirtualMachineAgent {
         _ = try await client.killProcess(request)
     }
 
+    /// Freeze every process in one container without pausing the VM.
+    public func pauseContainer(containerID: String) async throws {
+        _ = try await client.pauseContainer(
+            .with {
+                $0.containerID = containerID
+            })
+    }
+
+    /// Thaw every process in one container without resuming the VM.
+    public func resumeContainer(containerID: String) async throws {
+        _ = try await client.resumeContainer(
+            .with {
+                $0.containerID = containerID
+            })
+    }
+
+    /// Apply live cgroup resource changes to one container.
+    public func updateContainerResources(containerID: String, resources: LinuxResources) async throws {
+        let encodedResources = try JSONEncoder().encode(resources)
+        _ = try await client.updateContainerResources(
+            .with {
+                $0.containerID = containerID
+                $0.resources = encodedResources
+            })
+    }
+
     public func resizeProcess(id: String, containerID: String?, columns: UInt32, rows: UInt32) async throws {
         let request = Com_Apple_Containerization_Sandbox_V3_ResizeProcessRequest.with {
             if let containerID {
@@ -477,7 +503,9 @@ extension Vminitd {
         _ = try await client.ipAddrAdd(
             .with {
                 $0.interface = name
-                $0.ipv4Address = address.ipv4Address.description
+                if let ipv4Address = address.ipv4Address {
+                    $0.ipv4Address = ipv4Address.description
+                }
                 if let ipv6Address = address.ipv6Address {
                     $0.ipv6Address = ipv6Address.description
                 }
@@ -554,6 +582,15 @@ extension Vminitd {
         _ = try await client.configureHosts(config.toAgentHostsRequest(location: location))
     }
 
+    /// Validate the complete endpoint plan before a workload process is created.
+    public func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws {
+        let plan = try WorkloadNetworkPlan.encode(endpoints)
+        _ = try await client.validateWorkloadNetwork(
+            .with {
+                $0.plan = plan
+            })
+    }
+
     /// Perform a sync call.
     public func sync() async throws {
         _ = try await client.sync(.init())
@@ -570,7 +607,7 @@ extension Vminitd {
 
     /// Metadata received from the guest during a copy operation.
     public struct CopyMetadata: Sendable {
-        /// Whether the data on the vsock channel is a tar+gzip archive.
+        /// Whether the data on the vsock channel is a tar archive.
         public let isArchive: Bool
         /// Total size in bytes (0 if unknown, e.g. for archives).
         public let totalSize: UInt64
@@ -636,6 +673,7 @@ extension Vminitd {
         preserveOwnership: Bool = false,
         uid: UInt32 = 0,
         gid: UInt32 = 0,
+        copyContents: Bool = false,
         onMetadata: @Sendable @escaping (CopyMetadata) -> Void = { _ in }
     ) async throws {
         let request = Com_Apple_Containerization_Sandbox_V3_CopyRequest.with {
@@ -649,6 +687,7 @@ extension Vminitd {
             $0.preserveOwnership = preserveOwnership
             $0.uid = uid
             $0.gid = gid
+            $0.copyContents = copyContents
         }
 
         try await client.copy(

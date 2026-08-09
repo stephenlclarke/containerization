@@ -14,11 +14,43 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ContainerizationError
+import Foundation
 import Testing
 
 @testable import Containerization
 
 struct LinuxPodConfigurationTests {
+    @Test func snapshotDeterministicallyObservesRegisteredWorkloads() async throws {
+        let pod = try LinuxPod("sandbox-1", vmm: SnapshotVirtualMachineManager()) { _ in }
+
+        #expect(
+            await pod.snapshot()
+                == LinuxSandboxSnapshot(
+                    sandboxID: "sandbox-1",
+                    state: .absent,
+                    workloads: []
+                )
+        )
+
+        for id in ["zeta", "alpha"] {
+            try await pod.addContainer(
+                id,
+                rootfs: .block(format: "ext4", source: "/tmp/\(id).img", destination: "/")
+            ) { _ in }
+        }
+
+        let snapshot = await pod.snapshot()
+        #expect(snapshot.state == .absent)
+        #expect(snapshot.workloads.map(\.id) == ["alpha", "zeta"])
+        #expect(snapshot.workloads.map(\.state) == [.registered, .registered])
+        #expect(snapshot.workloads.allSatisfy { $0.initProcessID == nil })
+        #expect(try JSONDecoder().decode(LinuxSandboxSnapshot.self, from: JSONEncoder().encode(snapshot)) == snapshot)
+
+        try await pod.removeContainer("alpha")
+        #expect(await pod.snapshot().workloads.map(\.id) == ["zeta"])
+    }
+
     @Test func namespaceSharingDefaultsToPrivateNamespaces() {
         let configuration = LinuxPod.Configuration()
 
@@ -63,5 +95,62 @@ struct LinuxPodConfigurationTests {
             pausePID: 42
         )
         #expect(sharedNamespaces.map(\.path) == ["", "", "", "/proc/42/ns/ipc", "/proc/42/ns/pid"])
+    }
+
+    @Test func workloadNamespacesSupportPrivateHostAndDonorSelections() throws {
+        var configuration = LinuxPod.ContainerConfiguration()
+        configuration.cgroupNamespace = .host
+        configuration.ipcNamespace = .container("database")
+        configuration.networkNamespace = .container("database")
+        configuration.pidNamespace = .container("database")
+        configuration.utsNamespace = .privateNamespace
+        configuration.userNamespace = .privateNamespace
+
+        let namespaces = try LinuxPod.containerNamespaces(
+            containerID: "worker",
+            configuration: configuration,
+            sharedNamespaces: [],
+            pausePID: nil,
+            donorPIDs: ["database": 73]
+        )
+
+        #expect(namespaces.map(\.type.rawValue) == ["mount", "ipc", "network", "pid", "uts", "user"])
+        #expect(
+            namespaces.map(\.path) == [
+                "", "/proc/73/ns/ipc", "/proc/73/ns/net", "/proc/73/ns/pid", "", "",
+            ]
+        )
+    }
+
+    @Test func workloadNamespaceRejectsMissingAndSelfDonors() {
+        var configuration = LinuxPod.ContainerConfiguration()
+        configuration.pidNamespace = .container("missing")
+
+        #expect(throws: ContainerizationError.self) {
+            try LinuxPod.containerNamespaces(
+                containerID: "worker",
+                configuration: configuration,
+                sharedNamespaces: [],
+                pausePID: nil,
+                donorPIDs: [:]
+            )
+        }
+
+        configuration.pidNamespace = .container("worker")
+        #expect(throws: ContainerizationError.self) {
+            try LinuxPod.containerNamespaces(
+                containerID: "worker",
+                configuration: configuration,
+                sharedNamespaces: [],
+                pausePID: nil,
+                donorPIDs: ["worker": 73]
+            )
+        }
+    }
+}
+
+private struct SnapshotVirtualMachineManager: VirtualMachineManager {
+    func create(config: some VMCreationConfig) async throws -> any VirtualMachineInstance {
+        fatalError("snapshot test must not create a virtual machine")
     }
 }

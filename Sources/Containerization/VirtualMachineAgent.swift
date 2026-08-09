@@ -81,6 +81,9 @@ public protocol VirtualMachineAgent: Sendable {
     func waitProcess(id: String, containerID: String?, timeoutInSeconds: Int64?) async throws -> ExitStatus
     func deleteProcess(id: String, containerID: String?) async throws
     func closeProcessStdin(id: String, containerID: String?) async throws
+    func pauseContainer(containerID: String) async throws
+    func resumeContainer(containerID: String) async throws
+    func updateContainerResources(containerID: String, resources: LinuxResources) async throws
 
     // Networking
     func up(name: String, mtu: UInt32?) async throws
@@ -92,6 +95,7 @@ public protocol VirtualMachineAgent: Sendable {
     func routeAddDefault(name: String, route: DefaultRoute) async throws
     func configureDNS(config: DNS, location: String) async throws
     func configureHosts(config: Hosts, location: String) async throws
+    func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws
 
     // Container statistics
     func containerStatistics(containerIDs: [String], categories: StatCategory) async throws -> [ContainerStatistics]
@@ -130,8 +134,24 @@ extension VirtualMachineAgent {
         throw ContainerizationError(.unsupported, message: "closeProcessStdin")
     }
 
+    public func pauseContainer(containerID: String) async throws {
+        throw ContainerizationError(.unsupported, message: "pauseContainer")
+    }
+
+    public func resumeContainer(containerID: String) async throws {
+        throw ContainerizationError(.unsupported, message: "resumeContainer")
+    }
+
+    public func updateContainerResources(containerID: String, resources: LinuxResources) async throws {
+        throw ContainerizationError(.unsupported, message: "updateContainerResources")
+    }
+
     public func configureHosts(config: Hosts, location: String) async throws {
         throw ContainerizationError(.unsupported, message: "configureHosts")
+    }
+
+    public func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws {
+        throw ContainerizationError(.unsupported, message: "workload network endpoints")
     }
 
     public func writeFile(

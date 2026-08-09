@@ -16,8 +16,8 @@
 
 /// NOTE: This binary implements a very small subset of the OCI runtime spec, mostly just
 /// the process configurations. Mounts, masked paths, and read-only paths are enforced.
-/// The `network` namespace is currently ignored and we always spawn a new pid and mount
-/// namespace.
+/// Workloads may create or join OCI network namespaces while vmexec continues to
+/// create the PID and mount namespaces required by its process model.
 
 import ArgumentParser
 import ContainerizationError

@@ -21,6 +21,34 @@ import Testing
 @testable import ContainerizationNetlink
 
 struct NetlinkSessionTest {
+    @Test func testCreateVethAndMovePeerToNamespace() throws {
+        let mockSocket = try MockNetlinkSocket()
+        mockSocket.pid = 0x0102_0304
+        mockSocket.responses.append(
+            [UInt8](
+                hex:
+                    "24000000020000010000000004030201"
+                    + "0000000000000000000000000000000000000000"
+            )
+        )
+
+        let session = NetlinkSession(socket: mockSocket)
+        try session.linkAddVeth(
+            hostName: "veth0",
+            peerName: "eth0",
+            peerNamespacePID: 0x1020_3040
+        )
+
+        #expect(mockSocket.requests.count == 1)
+        let request = mockSocket.requests[0]
+        #expect(request.count == 104)
+        #expect(request[4..<6] == [0x10, 0x00])
+        #expect(request.hexEncodedString().contains("766574683000"))
+        #expect(request.hexEncodedString().contains("7665746800"))
+        #expect(request.hexEncodedString().contains("6574683000"))
+        #expect(request.hexEncodedString().contains("40302010"))
+    }
+
     @Test func testNetworkLinkDown() throws {
         let mockSocket = try MockNetlinkSocket()
         mockSocket.pid = 0xc00c_c00c
@@ -350,7 +378,7 @@ struct NetlinkSessionTest {
         // Add IPv6 address to interface.
         let expectedAddRequest =
             "2c00000014000506000000000cc00cc0"  // Netlink header (16 B): len=44
-            + "0a40820002000000"  // ifaddrmsg (8 B): AF_INET6, /64, flags=PERMANENT|NODAD, ifindex 2
+            + "0a4082fd02000000"  // ifaddrmsg (8 B): AF_INET6, /64, flags=PERMANENT|NODAD, scope=LINK, ifindex 2
             + "14000100fd000000000000000000000000000001"  // RT attr: IFA_ADDRESS  fd00::1
         mockSocket.responses.append(
             [UInt8](
@@ -361,7 +389,11 @@ struct NetlinkSessionTest {
         )
 
         let session = NetlinkSession(socket: mockSocket)
-        try session.addressAdd(interface: "eth0", ipv6Address: try CIDRv6("fd00::1/64"))
+        try session.addressAdd(
+            interface: "eth0",
+            ipv6Address: try CIDRv6("fd00::1/64"),
+            scope: .link
+        )
 
         #expect(mockSocket.requests.count == 2)
         #expect(mockSocket.responseIndex == 2)

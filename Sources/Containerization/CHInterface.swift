@@ -34,7 +34,7 @@ public protocol CHInterface {
 public struct TAPInterface: CHInterface, Interface, Sendable {
     public let tapName: String
     public let guestInterfaceName: String?
-    public let ipv4Address: CIDRv4
+    public let ipv4Address: CIDRv4?
     public let ipv4Gateway: IPv4Address?
     public let additionalIPAddresses: [CIDR]
     public let macAddress: MACAddress?

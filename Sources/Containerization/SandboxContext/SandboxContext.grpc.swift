@@ -283,6 +283,45 @@ public enum Com_Apple_Containerization_Sandbox_V3_SandboxContext: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "PauseContainer" metadata.
+        public enum PauseContainer: Sendable {
+            /// Request type for "PauseContainer".
+            public typealias Input = Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest
+            /// Response type for "PauseContainer".
+            public typealias Output = Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse
+            /// Descriptor for "PauseContainer".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "com.apple.containerization.sandbox.v3.SandboxContext"),
+                method: "PauseContainer",
+                type: .unary
+            )
+        }
+        /// Namespace for "ResumeContainer" metadata.
+        public enum ResumeContainer: Sendable {
+            /// Request type for "ResumeContainer".
+            public typealias Input = Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest
+            /// Response type for "ResumeContainer".
+            public typealias Output = Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse
+            /// Descriptor for "ResumeContainer".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "com.apple.containerization.sandbox.v3.SandboxContext"),
+                method: "ResumeContainer",
+                type: .unary
+            )
+        }
+        /// Namespace for "UpdateContainerResources" metadata.
+        public enum UpdateContainerResources: Sendable {
+            /// Request type for "UpdateContainerResources".
+            public typealias Input = Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest
+            /// Response type for "UpdateContainerResources".
+            public typealias Output = Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse
+            /// Descriptor for "UpdateContainerResources".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "com.apple.containerization.sandbox.v3.SandboxContext"),
+                method: "UpdateContainerResources",
+                type: .unary
+            )
+        }
         /// Namespace for "ContainerStatistics" metadata.
         public enum ContainerStatistics: Sendable {
             /// Request type for "ContainerStatistics".
@@ -413,6 +452,19 @@ public enum Com_Apple_Containerization_Sandbox_V3_SandboxContext: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "ValidateWorkloadNetwork" metadata.
+        public enum ValidateWorkloadNetwork: Sendable {
+            /// Request type for "ValidateWorkloadNetwork".
+            public typealias Input = Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest
+            /// Response type for "ValidateWorkloadNetwork".
+            public typealias Output = Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse
+            /// Descriptor for "ValidateWorkloadNetwork".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "com.apple.containerization.sandbox.v3.SandboxContext"),
+                method: "ValidateWorkloadNetwork",
+                type: .unary
+            )
+        }
         /// Namespace for "Sync" metadata.
         public enum Sync: Sendable {
             /// Request type for "Sync".
@@ -460,6 +512,9 @@ public enum Com_Apple_Containerization_Sandbox_V3_SandboxContext: Sendable {
             WaitProcess.descriptor,
             ResizeProcess.descriptor,
             CloseProcessStdin.descriptor,
+            PauseContainer.descriptor,
+            ResumeContainer.descriptor,
+            UpdateContainerResources.descriptor,
             ContainerStatistics.descriptor,
             ContainerProcesses.descriptor,
             ProxyVsock.descriptor,
@@ -470,6 +525,7 @@ public enum Com_Apple_Containerization_Sandbox_V3_SandboxContext: Sendable {
             IpRouteAddDefault.descriptor,
             ConfigureDns.descriptor,
             ConfigureHosts.descriptor,
+            ValidateWorkloadNetwork.descriptor,
             Sync.descriptor,
             Kill.descriptor
         ]
@@ -846,6 +902,60 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse>
 
+        /// Handle the "PauseContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Freeze every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse` messages.
+        func pauseContainer(
+            request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>
+
+        /// Handle the "ResumeContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Thaw every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse` messages.
+        func resumeContainer(
+            request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>
+
+        /// Handle the "UpdateContainerResources" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Apply live cgroup resource changes to one container.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse` messages.
+        func updateContainerResources(
+            request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>
+
         /// Handle the "ContainerStatistics" method.
         ///
         /// > Source IDL Documentation:
@@ -1025,6 +1135,24 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse>
+
+        /// Handle the "ValidateWorkloadNetwork" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Validate support for a resolved per-workload endpoint plan.
+        ///
+        /// - Parameters:
+        ///   - request: A streaming request of `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` messages.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A streaming response of `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse` messages.
+        func validateWorkloadNetwork(
+            request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>
 
         /// Handle the "Sync" method.
         ///
@@ -1420,6 +1548,60 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse>
 
+        /// Handle the "PauseContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Freeze every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse` message.
+        func pauseContainer(
+            request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>
+
+        /// Handle the "ResumeContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Thaw every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse` message.
+        func resumeContainer(
+            request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>
+
+        /// Handle the "UpdateContainerResources" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Apply live cgroup resource changes to one container.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse` message.
+        func updateContainerResources(
+            request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>
+
         /// Handle the "ContainerStatistics" method.
         ///
         /// > Source IDL Documentation:
@@ -1599,6 +1781,24 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest>,
             context: GRPCCore.ServerContext
         ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse>
+
+        /// Handle the "ValidateWorkloadNetwork" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Validate support for a resolved per-workload endpoint plan.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A response containing a single `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse` message.
+        func validateWorkloadNetwork(
+            request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+            context: GRPCCore.ServerContext
+        ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>
 
         /// Handle the "Sync" method.
         ///
@@ -1993,6 +2193,60 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             context: GRPCCore.ServerContext
         ) async throws -> Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse
 
+        /// Handle the "PauseContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Freeze every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse` to respond with.
+        func pauseContainer(
+            request: Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse
+
+        /// Handle the "ResumeContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Thaw every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse` to respond with.
+        func resumeContainer(
+            request: Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse
+
+        /// Handle the "UpdateContainerResources" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Apply live cgroup resource changes to one container.
+        ///
+        /// - Parameters:
+        ///   - request: A `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse` to respond with.
+        func updateContainerResources(
+            request: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse
+
         /// Handle the "ContainerStatistics" method.
         ///
         /// > Source IDL Documentation:
@@ -2172,6 +2426,24 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             request: Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest,
             context: GRPCCore.ServerContext
         ) async throws -> Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse
+
+        /// Handle the "ValidateWorkloadNetwork" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Validate support for a resolved per-workload endpoint plan.
+        ///
+        /// - Parameters:
+        ///   - request: A `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` message.
+        ///   - context: Context providing information about the RPC.
+        /// - Throws: Any error which occurred during the processing of the request. Thrown errors
+        ///     of type `RPCError` are mapped to appropriate statuses. All other errors are converted
+        ///     to an internal error.
+        /// - Returns: A `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse` to respond with.
+        func validateWorkloadNetwork(
+            request: Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest,
+            context: GRPCCore.ServerContext
+        ) async throws -> Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse
 
         /// Handle the "Sync" method.
         ///
@@ -2425,6 +2697,39 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.StreamingServiceP
             }
         )
         router.registerHandler(
+            forMethod: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.PauseContainer.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>(),
+            handler: { request, context in
+                try await self.pauseContainer(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ResumeContainer.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>(),
+            handler: { request, context in
+                try await self.resumeContainer(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.UpdateContainerResources.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>(),
+            handler: { request, context in
+                try await self.updateContainerResources(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
             forMethod: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ContainerStatistics.descriptor,
             deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest>(),
             serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsResponse>(),
@@ -2529,6 +2834,17 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.StreamingServiceP
             serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse>(),
             handler: { request, context in
                 try await self.configureHosts(
+                    request: request,
+                    context: context
+                )
+            }
+        )
+        router.registerHandler(
+            forMethod: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ValidateWorkloadNetwork.descriptor,
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>(),
+            handler: { request, context in
+                try await self.validateWorkloadNetwork(
                     request: request,
                     context: context
                 )
@@ -2771,6 +3087,39 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ServiceProtocol {
         return GRPCCore.StreamingServerResponse(single: response)
     }
 
+    public func pauseContainer(
+        request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse> {
+        let response = try await self.pauseContainer(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func resumeContainer(
+        request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse> {
+        let response = try await self.resumeContainer(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func updateContainerResources(
+        request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse> {
+        let response = try await self.updateContainerResources(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
     public func containerStatistics(
         request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest>,
         context: GRPCCore.ServerContext
@@ -2875,6 +3224,17 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ServiceProtocol {
         context: GRPCCore.ServerContext
     ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse> {
         let response = try await self.configureHosts(
+            request: GRPCCore.ServerRequest(stream: request),
+            context: context
+        )
+        return GRPCCore.StreamingServerResponse(single: response)
+    }
+
+    public func validateWorkloadNetwork(
+        request: GRPCCore.StreamingServerRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.StreamingServerResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse> {
+        let response = try await self.validateWorkloadNetwork(
             request: GRPCCore.ServerRequest(stream: request),
             context: context
         )
@@ -3158,6 +3518,45 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServiceProt
         )
     }
 
+    public func pauseContainer(
+        request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse> {
+        return GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>(
+            message: try await self.pauseContainer(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func resumeContainer(
+        request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse> {
+        return GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>(
+            message: try await self.resumeContainer(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func updateContainerResources(
+        request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse> {
+        return GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>(
+            message: try await self.updateContainerResources(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
     public func containerStatistics(
         request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsRequest>,
         context: GRPCCore.ServerContext
@@ -3281,6 +3680,19 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServiceProt
     ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse> {
         return GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse>(
             message: try await self.configureHosts(
+                request: request.message,
+                context: context
+            ),
+            metadata: [:]
+        )
+    }
+
+    public func validateWorkloadNetwork(
+        request: GRPCCore.ServerRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+        context: GRPCCore.ServerContext
+    ) async throws -> GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse> {
+        return GRPCCore.ServerResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>(
+            message: try await self.validateWorkloadNetwork(
                 request: request.message,
                 context: context
             ),
@@ -3768,6 +4180,75 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_CloseProcessStdinResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
+        /// Call the "PauseContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Freeze every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func pauseContainer<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ResumeContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Thaw every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func resumeContainer<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "UpdateContainerResources" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Apply live cgroup resource changes to one container.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func updateContainerResources<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "ContainerStatistics" method.
         ///
         /// > Source IDL Documentation:
@@ -3996,6 +4477,29 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse>,
             options: GRPCCore.CallOptions,
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ValidateWorkloadNetwork" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Validate support for a resolved per-workload endpoint plan.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func validateWorkloadNetwork<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "Sync" method.
@@ -4712,6 +5216,108 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             )
         }
 
+        /// Call the "PauseContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Freeze every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func pauseContainer<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.PauseContainer.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ResumeContainer" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Thaw every process in one container's cgroup.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func resumeContainer<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ResumeContainer.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "UpdateContainerResources" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Apply live cgroup resource changes to one container.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func updateContainerResources<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.UpdateContainerResources.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "ContainerStatistics" method.
         ///
         /// > Source IDL Documentation:
@@ -5045,6 +5651,40 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext {
             try await self.client.unary(
                 request: request,
                 descriptor: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ConfigureHosts.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ValidateWorkloadNetwork" method.
+        ///
+        /// > Source IDL Documentation:
+        /// >
+        /// > Validate support for a resolved per-workload endpoint plan.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` message.
+        ///   - serializer: A serializer for `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` messages.
+        ///   - deserializer: A deserializer for `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func validateWorkloadNetwork<Result>(
+            request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+            serializer: some GRPCCore.MessageSerializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Method.ValidateWorkloadNetwork.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -5677,6 +6317,93 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
         )
     }
 
+    /// Call the "PauseContainer" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Freeze every process in one container's cgroup.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func pauseContainer<Result>(
+        request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.pauseContainer(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResumeContainer" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Thaw every process in one container's cgroup.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resumeContainer<Result>(
+        request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.resumeContainer(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateContainerResources" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Apply live cgroup resource changes to one container.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateContainerResources<Result>(
+        request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.updateContainerResources(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ContainerStatistics" method.
     ///
     /// > Source IDL Documentation:
@@ -5962,6 +6689,35 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
             request: request,
             serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsRequest>(),
             deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ConfigureHostsResponse>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ValidateWorkloadNetwork" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Validate support for a resolved per-workload endpoint plan.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func validateWorkloadNetwork<Result>(
+        request: GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.validateWorkloadNetwork(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>(),
             options: options,
             onResponse: handleResponse
         )
@@ -6657,6 +7413,105 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
         )
     }
 
+    /// Call the "PauseContainer" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Freeze every process in one container's cgroup.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func pauseContainer<Result>(
+        _ message: Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.pauseContainer(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ResumeContainer" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Thaw every process in one container's cgroup.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func resumeContainer<Result>(
+        _ message: Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.resumeContainer(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "UpdateContainerResources" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Apply live cgroup resource changes to one container.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func updateContainerResources<Result>(
+        _ message: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.updateContainerResources(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ContainerStatistics" method.
     ///
     /// > Source IDL Documentation:
@@ -6981,6 +7836,39 @@ extension Com_Apple_Containerization_Sandbox_V3_SandboxContext.ClientProtocol {
             metadata: metadata
         )
         return try await self.configureHosts(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ValidateWorkloadNetwork" method.
+    ///
+    /// > Source IDL Documentation:
+    /// >
+    /// > Validate support for a resolved per-workload endpoint plan.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func validateWorkloadNetwork<Result>(
+        _ message: Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.validateWorkloadNetwork(
             request: request,
             options: options,
             onResponse: handleResponse

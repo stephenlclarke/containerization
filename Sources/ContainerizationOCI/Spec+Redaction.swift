@@ -14,41 +14,67 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-// Environment variables routinely carry secrets, so rendering a process or a
-// hook as text must not expose their values. These conformances make the
-// redacted form the *default* rendering rather than something a caller has to
-// opt into: any `\(spec)` or `\(process)`, in this repo or downstream, is safe
-// without the author knowing this file exists.
-//
-// Only the two types that own an `env` need conforming. Swift's reflection
-// based description uses a nested value's own `description`, so `Spec` and
-// `Hooks` inherit the redaction through the values they hold.
-//
-// This affects text rendering only. `Codable` is untouched, so an encoded spec
-// still carries the real values, and the unredacted environment remains
-// available to callers through `process.env`.
+extension Spec {
+    /// Returns a copy of the spec that is safe to include in log output:
+    /// the environment variable values of the container process and of all
+    /// lifecycle hooks are replaced with `<redacted>`, keeping only the
+    /// variable names.
+    public func redactingEnvironmentValues() -> Spec {
+        var copy = self
+        copy.process = copy.process?.redactingEnvironmentValues()
+        copy.hooks = copy.hooks?.redactingEnvironmentValues()
+        return copy
+    }
+}
 
 extension Process: CustomStringConvertible {
     public var description: String {
+        describeFields(of: redactingEnvironmentValues())
+    }
+
+    /// Returns a copy of the process whose environment variable values are
+    /// replaced with `<redacted>`, keeping only the variable names.
+    public func redactingEnvironmentValues() -> Process {
         var copy = self
-        copy.env = redactingEnvironmentValues(copy.env)
-        return describeFields(of: copy)
+        copy.env = redactedEnvironmentEntries(copy.env)
+        return copy
     }
 }
 
 extension Hook: CustomStringConvertible {
     public var description: String {
+        describeFields(of: redactingEnvironmentValues())
+    }
+
+    /// Returns a copy of the hook whose environment variable values are
+    /// replaced with `<redacted>`, keeping only the variable names.
+    public func redactingEnvironmentValues() -> Hook {
         var copy = self
-        copy.env = redactingEnvironmentValues(copy.env)
-        return describeFields(of: copy)
+        copy.env = redactedEnvironmentEntries(copy.env)
+        return copy
+    }
+}
+
+extension Hooks {
+    /// Returns a copy of the hooks whose environment variable values are
+    /// replaced with `<redacted>`, keeping only the variable names.
+    public func redactingEnvironmentValues() -> Hooks {
+        var copy = self
+        copy.prestart = copy.prestart.map { $0.redactingEnvironmentValues() }
+        copy.createRuntime = copy.createRuntime.map { $0.redactingEnvironmentValues() }
+        copy.createContainer = copy.createContainer.map { $0.redactingEnvironmentValues() }
+        copy.startContainer = copy.startContainer.map { $0.redactingEnvironmentValues() }
+        copy.poststart = copy.poststart.map { $0.redactingEnvironmentValues() }
+        copy.poststop = copy.poststop.map { $0.redactingEnvironmentValues() }
+        return copy
     }
 }
 
 /// Replaces the value of every `NAME=value` entry with `<redacted>`, keeping
-/// the name, which is still useful for seeing *which* variables were set.
+/// the name, which is still useful for seeing which variables were set.
 /// Entries without an `=` are kept as-is: they name a variable to inherit and
 /// carry no value of their own.
-private func redactingEnvironmentValues(_ env: [String]) -> [String] {
+private func redactedEnvironmentEntries(_ env: [String]) -> [String] {
     env.map { entry in
         guard let separator = entry.firstIndex(of: "=") else {
             return entry

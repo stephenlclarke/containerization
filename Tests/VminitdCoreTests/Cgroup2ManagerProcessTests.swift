@@ -51,7 +51,8 @@ struct Cgroup2ManagerProcessTests {
         try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        try "0".write(to: root.appending(path: "cpuset.mems.effective"), atomically: true, encoding: .utf8)
+        let parent = cgroup.deletingLastPathComponent()
+        try "0".write(to: parent.appending(path: "cpuset.mems.effective"), atomically: true, encoding: .utf8)
         let cpuSet = cgroup.appending(path: "cpuset.cpus")
         let memoryNodes = cgroup.appending(path: "cpuset.mems")
         try Data().write(to: cpuSet)
@@ -148,6 +149,32 @@ struct Cgroup2ManagerProcessTests {
 
     @Test func commandLineFallsBackToStatCommandName() {
         #expect(Cgroup2Manager.parseCommandLine(Data(), fallbackCommandName: "sh") == "[sh]")
+    }
+
+    @Test func frozenStateParsesKernelEvents() throws {
+        #expect(try Cgroup2Manager.parseFrozenState("populated 1\nfrozen 1\n"))
+        #expect(try !Cgroup2Manager.parseFrozenState("populated 1\nfrozen 0\n"))
+    }
+
+    @Test func freezerWritesRequestedStateAfterKernelConvergence() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-freezer-\(UUID().uuidString)")
+        let group = URL(filePath: "container")
+        let cgroup = root.appending(path: group.path)
+        try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let freeze = cgroup.appending(path: "cgroup.freeze")
+        let events = cgroup.appending(path: "cgroup.events")
+        try Data().write(to: freeze)
+        try "populated 1\nfrozen 1\n".write(to: events, atomically: true, encoding: .utf8)
+
+        let manager = Cgroup2Manager(mountPoint: root, group: group)
+        try manager.setFrozen(true)
+        #expect(try String(contentsOf: freeze, encoding: .utf8) == "1")
+
+        try "populated 1\nfrozen 0\n".write(to: events, atomically: true, encoding: .utf8)
+        try manager.setFrozen(false)
+        #expect(try String(contentsOf: freeze, encoding: .utf8) == "0")
     }
 }
 

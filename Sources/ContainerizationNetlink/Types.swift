@@ -69,8 +69,11 @@ struct NetlinkFlags {
     static let NLM_F_APPEND: UInt16 = 0x800
 }
 
-struct NetlinkScope {
-    static let RT_SCOPE_UNIVERSE: UInt8 = 0
+/// Scope applied to an address installed through netlink.
+public enum NetlinkAddressScope: UInt8, Sendable {
+    case universe = 0
+    case link = 253
+    case host = 254
 }
 
 struct InterfaceFlags {
@@ -87,6 +90,7 @@ struct LinkAttributeType {
     static let IFLA_MTU: UInt16 = 4
     static let IFLA_MASTER: UInt16 = 10
     static let IFLA_LINKINFO: UInt16 = 18
+    static let IFLA_NET_NS_PID: UInt16 = 19
     static let IFLA_STATS64: UInt16 = 23
     static let IFLA_EXT_MASK: UInt16 = 29
 }
@@ -94,6 +98,11 @@ struct LinkAttributeType {
 /// Nested attribute types inside `IFLA_LINKINFO`.
 struct LinkInfoAttributeType {
     static let IFLA_INFO_KIND: UInt16 = 1
+    static let IFLA_INFO_DATA: UInt16 = 2
+}
+
+struct VethInfoAttributeType {
+    static let VETH_INFO_PEER: UInt16 = 1
 }
 
 struct LinkAttributeMaskFilter {

@@ -653,6 +653,33 @@ struct ArchiveReaderTests {
         #expect(content == "content", "Should have file content")
     }
 
+    @Test func deferredDirectoryAttributesDoNotFollowReplacedParentSymlink() throws {
+        let externalRoot = createTemporaryDirectory(baseName: "ArchiveReaderTests.external")!
+        defer { try? FileManager.default.removeItem(at: externalRoot) }
+        let externalChild = externalRoot.appendingPathComponent("child")
+        try FileManager.default.createDirectory(at: externalChild, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: externalChild.path)
+
+        let archiveURL = try createTestArchive(
+            name: "deferred-attrs-replaced-parent",
+            entries: [
+                ("parent/child/", .directory, nil),
+                ("parent", .symlink, externalRoot.path),
+            ])
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let extractDir = try createExtractionDirectory(name: "deferred-attrs-replaced-parent")
+        defer { try? FileManager.default.removeItem(at: extractDir.deletingLastPathComponent()) }
+
+        let reader = try ArchiveReader(format: .paxRestricted, filter: .none, file: archiveURL)
+        let rejectedPaths = try reader.extractContents(to: extractDir)
+
+        #expect(rejectedPaths.isEmpty)
+        let attributes = try FileManager.default.attributesOfItem(atPath: externalChild.path)
+        let permissions = (attributes[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
+        #expect((permissions & 0o777) == 0o700, "deferred attributes escaped the extraction root")
+    }
+
     @Test func regularFileToSymlink() throws {
         let archiveURL = try createTestArchive(
             name: "file-to-symlink",
@@ -775,6 +802,121 @@ struct ArchiveReaderTests {
         #expect(throws: ArchiveError.self) {
             _ = try reader.extractContents(to: extractDir)
         }
+    }
+
+    @Test func readUncompressedTarFromFileHandle() throws {
+        let archiveURL = try createTestArchive(
+            name: "stream-plain",
+            entries: [
+                ("dir/", .directory, nil),
+                ("dir/file.txt", .regular("streamed plain"), nil),
+            ])
+        defer { try? FileManager.default.removeItem(at: archiveURL.deletingLastPathComponent()) }
+
+        let extractDir = try createExtractionDirectory(name: "stream-plain")
+        defer { try? FileManager.default.removeItem(at: extractDir.deletingLastPathComponent()) }
+
+        let fileHandle = try FileHandle(forReadingFrom: archiveURL)
+        let reader = try ArchiveReader(fileHandle: fileHandle)
+        let rejected = try reader.extractContents(to: extractDir)
+
+        #expect(rejected.isEmpty)
+        #expect(
+            try String(
+                contentsOf: extractDir.appendingPathComponent("dir/file.txt"),
+                encoding: .utf8
+            ) == "streamed plain"
+        )
+    }
+
+    @Test func readGzipTarFromFileHandle() throws {
+        let testDirectory = createTemporaryDirectory(baseName: "ArchiveReaderTests")!
+        defer { try? FileManager.default.removeItem(at: testDirectory) }
+        let archiveURL = testDirectory.appendingPathComponent("stream-gzip.tar.gz")
+
+        let writer = try ArchiveWriter(format: .pax, filter: .gzip, file: archiveURL)
+        let entry = WriteEntry()
+        entry.path = "hello.txt"
+        entry.fileType = .regular
+        entry.permissions = 0o644
+        let data = Data("streamed gzip".utf8)
+        entry.size = numericCast(data.count)
+        try writer.writeEntry(entry: entry, data: data)
+        try writer.finishEncoding()
+
+        let extractDir = try createExtractionDirectory(name: "stream-gzip")
+        let fileHandle = try FileHandle(forReadingFrom: archiveURL)
+        let reader = try ArchiveReader(fileHandle: fileHandle)
+        let rejected = try reader.extractContents(to: extractDir)
+
+        #expect(rejected.isEmpty)
+        #expect(
+            try String(
+                contentsOf: extractDir.appendingPathComponent("hello.txt"),
+                encoding: .utf8
+            ) == "streamed gzip"
+        )
+    }
+
+    @Test func extractHardlinkWithoutFollowingArchivePaths() throws {
+        let testDirectory = createTemporaryDirectory(baseName: "ArchiveReaderTests")!
+        defer { try? FileManager.default.removeItem(at: testDirectory) }
+        let archiveURL = testDirectory.appendingPathComponent("hardlinks.tar")
+
+        let writer = try ArchiveWriter(format: .paxRestricted, filter: .none, file: archiveURL)
+        let data = Data("shared inode".utf8)
+        let target = WriteEntry()
+        target.path = "inside/target"
+        target.fileType = .regular
+        target.permissions = 0o644
+        target.size = numericCast(data.count)
+        try writer.writeEntry(entry: target, data: data)
+
+        let valid = WriteEntry()
+        valid.path = "inside/link"
+        valid.fileType = .regular
+        valid.permissions = 0o644
+        valid.hardlink = "inside/target"
+        valid.size = 0
+        try writer.writeEntry(entry: valid, data: nil)
+
+        let chained = WriteEntry()
+        chained.path = "inside/chained"
+        chained.fileType = .regular
+        chained.permissions = 0o644
+        chained.hardlink = "inside/chain-target"
+        chained.size = 0
+        try writer.writeEntry(entry: chained, data: nil)
+
+        let chainTarget = WriteEntry()
+        chainTarget.path = "inside/chain-target"
+        chainTarget.fileType = .regular
+        chainTarget.permissions = 0o644
+        chainTarget.hardlink = "inside/target"
+        chainTarget.size = 0
+        try writer.writeEntry(entry: chainTarget, data: nil)
+
+        let escaped = WriteEntry()
+        escaped.path = "inside/escaped"
+        escaped.fileType = .regular
+        escaped.permissions = 0o644
+        escaped.hardlink = "../outside"
+        escaped.size = 0
+        try writer.writeEntry(entry: escaped, data: nil)
+        try writer.finishEncoding()
+
+        let extractDir = testDirectory.appendingPathComponent("extract")
+        let reader = try ArchiveReader(file: archiveURL)
+        let rejected = try reader.extractContents(to: extractDir, preserveOwnership: false)
+
+        #expect(rejected == ["inside/escaped"])
+        var targetStat = stat()
+        var linkStat = stat()
+        #expect(lstat(extractDir.appendingPathComponent("inside/target").path, &targetStat) == 0)
+        #expect(lstat(extractDir.appendingPathComponent("inside/link").path, &linkStat) == 0)
+        #expect(targetStat.st_ino == linkStat.st_ino)
+        #expect(lstat(extractDir.appendingPathComponent("inside/chained").path, &linkStat) == 0)
+        #expect(targetStat.st_ino == linkStat.st_ino)
     }
 
     // MARK: - Zstd Compression Tests

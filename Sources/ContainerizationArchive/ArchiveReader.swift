@@ -106,6 +106,21 @@ public final class ArchiveReader {
             .checkOk(elseThrow: { .unableToOpenArchive($0) })
     }
 
+    /// Initializes an archive reader for a stream whose format and compression
+    /// are not known in advance.
+    public init(fileHandle: FileHandle) throws {
+        self.underlying = archive_read_new()
+        self.fileHandle = fileHandle
+
+        try archive_read_support_filter_all(underlying)
+            .checkOk(elseThrow: .failedToDetectFilter)
+        try archive_read_support_format_all(underlying)
+            .checkOk(elseThrow: .failedToDetectFormat)
+
+        try archive_read_open_fd(underlying, fileHandle.fileDescriptor, 4096)
+            .checkOk(elseThrow: { .unableToOpenArchive($0) })
+    }
+
     /// Initialize the `ArchiveReader` to read from a specified file URL
     /// by trying to auto determine the archives `Format` and `Filter`.
     public init(file: URL) throws {
@@ -272,8 +287,12 @@ extension ArchiveReader {
     /// Rejects member paths that escape the root directory or traverse
     /// symbolic links, and uses a "last entry wins" replacement policy
     /// for an existing file at a path to be extracted.
-    public func extractContents(to directory: URL) throws -> [String] {
-        try extractContents(to: directory, including: { _ in true })
+    public func extractContents(to directory: URL, preserveOwnership: Bool = true) throws -> [String] {
+        try extractContents(
+            to: directory,
+            preserveOwnership: preserveOwnership,
+            including: { _ in true }
+        )
     }
 
     /// Extracts archive members whose paths satisfy `shouldExtract` to the
@@ -281,6 +300,7 @@ extension ArchiveReader {
     /// members. Throws when the archive contains no matching members.
     public func extractContents(
         to directory: URL,
+        preserveOwnership: Bool = true,
         including shouldExtract: (String) -> Bool
     ) throws -> [String] {
         // Create the root directory with standard permissions
@@ -294,7 +314,11 @@ extension ArchiveReader {
         // Iterate and extract archive entries, collecting rejected paths.
         var foundEntry = false
         var rejectedPaths = [String]()
-        for (entry, dataReader) in self.makeStreamingIterator() {
+        var deferredDirAttrs: [(path: FilePath, entry: WriteEntry)] = []
+        var deferredHardlinks: [(path: FilePath, target: FilePath, sequence: Int)] = []
+        var lastMemberSequence: [String: Int] = [:]
+        var sequence = 0
+        for (entry, _) in self.makeStreamingIterator() {
             guard let path = entry.path, shouldExtract(path) else {
                 try archive_read_data_skip(self.underlying).checkOk(
                     elseThrow: ArchiveError.failedToExtractArchive("failed to skip archive member data")
@@ -303,14 +327,28 @@ extension ArchiveReader {
             }
             let memberPath = FilePath(path)
             foundEntry = true
+            sequence += 1
+            lastMemberSequence[memberPath.string] = sequence
+
+            if let hardlink = entry.hardlink {
+                deferredHardlinks.append((memberPath, FilePath(hardlink), sequence))
+                try archive_read_data_skip(self.underlying).checkOk(
+                    elseThrow: ArchiveError.failedToExtractArchive("failed to skip hard-link member data")
+                )
+                continue
+            }
 
             // Try to extract the entry, catching path validation errors
             let extracted = try extractEntry(
                 entry: entry,
-                dataReader: dataReader,
                 memberPath: memberPath,
-                rootFileDescriptor: rootFileDescriptor
+                rootFileDescriptor: rootFileDescriptor,
+                preserveOwnership: preserveOwnership
             )
+
+            if extracted, entry.fileType == .directory {
+                deferredDirAttrs.append((memberPath, entry))
+            }
 
             if !extracted {
                 rejectedPaths.append(memberPath.string)
@@ -318,6 +356,49 @@ extension ArchiveReader {
         }
         guard foundEntry else {
             throw ArchiveError.failedToExtractArchive("no entries found in archive")
+        }
+
+        var pendingHardlinks = deferredHardlinks.filter {
+            lastMemberSequence[$0.path.string] == $0.sequence
+        }
+        while !pendingHardlinks.isEmpty {
+            var remaining: [(path: FilePath, target: FilePath, sequence: Int)] = []
+            for hardlink in pendingHardlinks {
+                if !(try extractHardlink(
+                    memberPath: hardlink.path,
+                    targetPath: hardlink.target,
+                    rootFileDescriptor: rootFileDescriptor
+                )) {
+                    remaining.append(hardlink)
+                }
+            }
+            guard remaining.count < pendingHardlinks.count else {
+                rejectedPaths.append(contentsOf: remaining.map(\.path.string))
+                break
+            }
+            pendingHardlinks = remaining
+        }
+
+        // Apply directory permissions after all children are extracted, deepest first,
+        // so a restrictive parent cannot block access to its children.
+        for deferred in deferredDirAttrs.sorted(by: { $0.path.components.count > $1.path.components.count }) {
+            do {
+                try FileDescriptorOps.withOpenDirectory(rootFileDescriptor, deferred.path) { fd in
+                    setFileAttributes(
+                        fd: fd.rawValue,
+                        entry: deferred.entry,
+                        preserveOwnership: preserveOwnership
+                    )
+                }
+            } catch let error as FileDescriptorOps.Error {
+                switch error {
+                case .invalidPathComponent, .cannotFollowSymlink:
+                    // A later archive entry replaced this directory. Last entry wins.
+                    continue
+                case .invalidRelativePath, .systemError:
+                    throw error
+                }
+            }
         }
 
         return rejectedPaths
@@ -347,9 +428,9 @@ extension ArchiveReader {
     /// Throws on system errors.
     private func extractEntry(
         entry: WriteEntry,
-        dataReader: ArchiveEntryReader,
         memberPath: FilePath,
-        rootFileDescriptor: FileDescriptor
+        rootFileDescriptor: FileDescriptor,
+        preserveOwnership: Bool
     ) throws -> Bool {
         guard let lastComponent = memberPath.lastComponent else {
             return false
@@ -372,13 +453,15 @@ extension ArchiveReader {
                     }
                     defer { close(fileFd) }
 
-                    try Self.copyDataReaderToFd(dataReader: dataReader, fileFd: fileFd, memberPath: memberPath)
-                    setFileAttributes(fd: fileFd, entry: entry)
+                    try copyEntryDataToFd(entry: entry, fileFd: fileFd, memberPath: memberPath)
+                    setFileAttributes(
+                        fd: fileFd,
+                        entry: entry,
+                        preserveOwnership: preserveOwnership
+                    )
                 }
             case .directory:
-                try FileDescriptorOps.mkdir(rootFileDescriptor, memberPath, makeIntermediates: true) { fd in
-                    setFileAttributes(fd: fd.rawValue, entry: entry)
-                }
+                try FileDescriptorOps.mkdir(rootFileDescriptor, memberPath, makeIntermediates: true) { _ in }
             case .symbolicLink:
                 guard let targetPath = (entry.symlinkTarget.map { FilePath($0) }) else {
                     return false
@@ -411,32 +494,146 @@ extension ArchiveReader {
         }
     }
 
-    private func setFileAttributes(fd: Int32, entry: WriteEntry) {
-        if let owner = entry.owner, let group = entry.group {
+    private func extractHardlink(
+        memberPath: FilePath,
+        targetPath: FilePath,
+        rootFileDescriptor: FileDescriptor
+    ) throws -> Bool {
+        guard
+            let memberName = memberPath.lastComponent,
+            let targetName = targetPath.lastComponent
+        else {
+            return false
+        }
+
+        let memberParent = memberPath.removingLastComponent()
+        let targetParent = targetPath.removingLastComponent()
+
+        do {
+            var linked = false
+            try FileDescriptorOps.withOpenDirectory(rootFileDescriptor, targetParent) { targetParentFd in
+                var targetStat = stat()
+                guard
+                    fstatat(
+                        targetParentFd.rawValue,
+                        targetName.string,
+                        &targetStat,
+                        AT_SYMLINK_NOFOLLOW
+                    ) == 0,
+                    (targetStat.st_mode & S_IFMT) == S_IFREG
+                else {
+                    return
+                }
+
+                try FileDescriptorOps.mkdir(
+                    rootFileDescriptor,
+                    memberParent,
+                    makeIntermediates: true
+                ) { memberParentFd in
+                    try? FileDescriptorOps.unlinkRecursive(memberParentFd, filename: memberName)
+                    guard
+                        linkat(
+                            targetParentFd.rawValue,
+                            targetName.string,
+                            memberParentFd.rawValue,
+                            memberName.string,
+                            0
+                        ) == 0
+                    else {
+                        throw ArchiveError.failedToExtractArchive(
+                            "failed to create hard link: \(targetPath) <- \(memberPath)"
+                        )
+                    }
+                    linked = true
+                }
+            }
+            return linked
+        } catch let error as FileDescriptorOps.Error {
+            switch error {
+            case .systemError:
+                throw error
+            case .invalidRelativePath, .invalidPathComponent, .cannotFollowSymlink:
+                return false
+            }
+        }
+    }
+
+    private func setFileAttributes(fd: Int32, entry: WriteEntry, preserveOwnership: Bool) {
+        if preserveOwnership, let owner = entry.owner, let group = entry.group {
             fchown(fd, owner, group)
         }
         fchmod(fd, entry.permissions & 0o7777)
+
+        guard entry.contentAccessDate != nil || entry.modificationDate != nil else {
+            return
+        }
+        var times = [
+            entry.contentAccessDate.map(Self.makeTimespec) ?? Self.omittedTimespec,
+            entry.modificationDate.map(Self.makeTimespec) ?? Self.omittedTimespec,
+        ]
+        _ = futimens(fd, &times)
     }
 
-    private static func copyDataReaderToFd(dataReader: ArchiveEntryReader, fileFd: Int32, memberPath: FilePath) throws {
-        var buffer = [UInt8](repeating: 0, count: ArchiveReader.chunkSize)
+    private static var omittedTimespec: timespec {
+        #if os(Linux)
+        let utimeOmit = (1 << 30) - 2
+        #else
+        let utimeOmit = Int(UTIME_OMIT)
+        #endif
+        return timespec(tv_sec: 0, tv_nsec: utimeOmit)
+    }
+
+    private static func makeTimespec(_ date: Date) -> timespec {
+        let interval = date.timeIntervalSince1970
+        let seconds = floor(interval)
+        return timespec(
+            tv_sec: time_t(seconds),
+            tv_nsec: Int((interval - seconds) * 1_000_000_000)
+        )
+    }
+
+    private func copyEntryDataToFd(entry: WriteEntry, fileFd: Int32, memberPath: FilePath) throws {
+        var finalSize: Int64 = 0
         while true {
-            let bytesRead = buffer.withUnsafeMutableBufferPointer { bufferPtr in
-                guard let baseAddress = bufferPtr.baseAddress else { return 0 }
-                return dataReader.read(baseAddress, maxLength: bufferPtr.count)
+            var buffer: UnsafeRawPointer?
+            var size = 0
+            var offset: Int64 = 0
+            let result = archive_read_data_block(underlying, &buffer, &size, &offset)
+            if result == ARCHIVE_EOF {
+                break
+            }
+            guard result == ARCHIVE_OK, let buffer else {
+                throw ArchiveError.failedToExtractArchive(
+                    "failed to read data block for: \(memberPath)"
+                )
             }
 
-            if bytesRead < 0 {
-                throw ArchiveError.failedToExtractArchive("failed to read data for: \(memberPath)")
+            var written = 0
+            while written < size {
+                let count = pwrite(
+                    fileFd,
+                    buffer.advanced(by: written),
+                    size - written,
+                    off_t(offset + Int64(written))
+                )
+                if count < 0, errno == EINTR {
+                    continue
+                }
+                guard count > 0 else {
+                    throw ArchiveError.failedToExtractArchive(
+                        "failed to write data block for: \(memberPath)"
+                    )
+                }
+                written += count
             }
-            if bytesRead == 0 {
-                break  // EOF
-            }
+            finalSize = Swift.max(finalSize, offset + Int64(size))
+        }
 
-            let bytesWritten = write(fileFd, buffer, bytesRead)
-            guard bytesWritten == bytesRead else {
-                throw ArchiveError.failedToExtractArchive("failed to write data for: \(memberPath)")
-            }
+        let expectedSize = entry.size ?? finalSize
+        guard ftruncate(fileFd, off_t(expectedSize)) == 0 else {
+            throw ArchiveError.failedToExtractArchive(
+                "failed to set file size for: \(memberPath)"
+            )
         }
     }
 }

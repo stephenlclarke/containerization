@@ -24,8 +24,12 @@ public protocol Interface: Sendable {
     var guestInterfaceName: String? { get }
 
     /// The interface IPv4 address and subnet prefix length, as a CIDR address.
+    ///
+    /// `nil` means that the guest interface has no IPv4 primary address. This
+    /// is distinct from an IPv4 address with no default route and lets callers
+    /// configure genuinely IPv6-only workload endpoints.
     /// Example: `192.168.64.3/24`
-    var ipv4Address: CIDRv4 { get }
+    var ipv4Address: CIDRv4? { get }
 
     /// The IPv4 gateway address for the default route, or nil for no IPv4 default route.
     var ipv4Gateway: IPv4Address? { get }

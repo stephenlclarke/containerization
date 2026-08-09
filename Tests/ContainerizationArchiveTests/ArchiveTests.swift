@@ -242,6 +242,37 @@ struct ArchiveTests {
         #expect(try String(contentsOf: extractDir.appendingPathComponent("subdir/file2.txt"), encoding: .utf8) == "world")
     }
 
+    @Test func archiveDirectoryPreservesReadonlySubdirectory() throws {
+        let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveDirReadonlySubdir")!
+        defer { try? FileManager.default.removeItem(at: testDir) }
+
+        let sourceDir = testDir.appendingPathComponent("source")
+        let readonlyDir = sourceDir.appendingPathComponent("readonly")
+        try FileManager.default.createDirectory(at: readonlyDir, withIntermediateDirectories: true)
+        try "content".write(to: readonlyDir.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: readonlyDir.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: readonlyDir.path)
+        }
+
+        let archiveURL = testDir.appendingPathComponent("test.tar.gz")
+        let writer = try ArchiveWriter(format: .pax, filter: .gzip, file: archiveURL)
+        try writer.archiveDirectory(sourceDir)
+        try writer.finishEncoding()
+
+        let extractDir = testDir.appendingPathComponent("extract")
+        let reader = try ArchiveReader(file: archiveURL)
+        let rejected = try reader.extractContents(to: extractDir)
+
+        #expect(rejected.isEmpty)
+        #expect(
+            try String(contentsOf: extractDir.appendingPathComponent("readonly/file.txt"), encoding: .utf8)
+                == "content")
+        let attrs = try FileManager.default.attributesOfItem(atPath: extractDir.appendingPathComponent("readonly").path)
+        let perms = (attrs[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
+        #expect((perms & 0o777) == 0o555, "Read-only directory permissions should be preserved")
+    }
+
     @Test func archiveDirectoryEmpty() throws {
         let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveDirEmpty")!
         defer { try? FileManager.default.removeItem(at: testDir) }
@@ -651,6 +682,146 @@ struct ArchiveTests {
         #expect((perms & 0o777) == 0o755)
     }
 
+    @Test func archiveURLsPreservesHardlinks() throws {
+        let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveURLsHardlinks")!
+        defer { try? FileManager.default.removeItem(at: testDir) }
+
+        let original = testDir.appendingPathComponent("original.txt")
+        let linked = testDir.appendingPathComponent("linked.txt")
+        try "shared inode".write(to: original, atomically: true, encoding: .utf8)
+        try FileManager.default.linkItem(at: original, to: linked)
+
+        let archiveURL = testDir.appendingPathComponent("test.tar")
+        let writer = try ArchiveWriter(format: .paxRestricted, filter: .none, file: archiveURL)
+        try writer.archive(
+            [FilePath(original.path), FilePath(linked.path)],
+            base: FilePath(testDir.path)
+        )
+        try writer.finishEncoding()
+
+        var hardlinkTarget: String?
+        let metadataReader = try ArchiveReader(file: archiveURL)
+        for (entry, _) in metadataReader where entry.path == "linked.txt" {
+            hardlinkTarget = entry.hardlink
+        }
+        #expect(hardlinkTarget == "original.txt")
+
+        let extractDir = testDir.appendingPathComponent("extract")
+        let extractReader = try ArchiveReader(file: archiveURL)
+        let rejected = try extractReader.extractContents(
+            to: extractDir,
+            preserveOwnership: false
+        )
+        #expect(rejected.isEmpty)
+
+        var originalStat = stat()
+        var linkedStat = stat()
+        #expect(lstat(extractDir.appendingPathComponent("original.txt").path, &originalStat) == 0)
+        #expect(lstat(extractDir.appendingPathComponent("linked.txt").path, &linkedStat) == 0)
+        #expect(originalStat.st_ino == linkedStat.st_ino)
+    }
+
+    @Test func archiveEntryPreservesFractionalTimestamps() {
+        let entry = WriteEntry()
+        let expected = Date(timeIntervalSince1970: 1_725_000_000.123_456)
+        entry.modificationDate = expected
+
+        let actual = entry.modificationDate
+        #expect(actual != nil)
+        #expect(abs(actual!.timeIntervalSince1970 - expected.timeIntervalSince1970) < 0.000_001)
+    }
+
+    @Test func archiveRoundTripPreservesModificationTimestamp() throws {
+        let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveTimestamp")!
+        defer { try? FileManager.default.removeItem(at: testDir) }
+
+        let source = testDir.appendingPathComponent("source.txt")
+        try "timestamped".write(to: source, atomically: true, encoding: .utf8)
+        let expected = Date(timeIntervalSince1970: 1_725_000_000.123_456)
+        try FileManager.default.setAttributes([.modificationDate: expected], ofItemAtPath: source.path)
+
+        let archiveURL = testDir.appendingPathComponent("test.tar")
+        let writer = try ArchiveWriter(format: .pax, filter: .none, file: archiveURL)
+        try writer.archive([FilePath(source.path)], base: FilePath(testDir.path))
+        try writer.finishEncoding()
+
+        let extractDir = testDir.appendingPathComponent("extract")
+        let reader = try ArchiveReader(file: archiveURL)
+        _ = try reader.extractContents(to: extractDir, preserveOwnership: false)
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: extractDir.appendingPathComponent("source.txt").path
+        )
+        let actual = try #require(attributes[.modificationDate] as? Date)
+        #expect(abs(actual.timeIntervalSince1970 - expected.timeIntervalSince1970) < 0.000_001)
+    }
+
+    @Test func archiveRoundTripPreservesSparseFile() throws {
+        let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveSparse")!
+        defer { try? FileManager.default.removeItem(at: testDir) }
+
+        let source = testDir.appendingPathComponent("sparse.bin")
+        let sourceFd = open(source.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        #expect(sourceFd >= 0)
+        defer { close(sourceFd) }
+        #expect(pwrite(sourceFd, [UInt8](repeating: 0x41, count: 4096), 4096, 0) == 4096)
+        let tailOffset: Int64 = 4 * 1024 * 1024
+        #expect(pwrite(sourceFd, [UInt8](repeating: 0x42, count: 4096), 4096, off_t(tailOffset)) == 4096)
+        #expect(ftruncate(sourceFd, off_t(tailOffset + 4096)) == 0)
+
+        let archiveURL = testDir.appendingPathComponent("test.tar")
+        let writer = try ArchiveWriter(format: .pax, filter: .none, file: archiveURL)
+        try writer.archive([FilePath(source.path)], base: FilePath(testDir.path))
+        try writer.finishEncoding()
+
+        let extractDir = testDir.appendingPathComponent("extract")
+        let reader = try ArchiveReader(file: archiveURL)
+        _ = try reader.extractContents(to: extractDir, preserveOwnership: false)
+
+        var extracted = stat()
+        let extractedPath = extractDir.appendingPathComponent("sparse.bin")
+        #expect(lstat(extractedPath.path, &extracted) == 0)
+        #expect(extracted.st_size == tailOffset + 4096)
+        #if os(Linux)
+        #expect(extracted.st_blocks * 512 < extracted.st_size)
+        #endif
+        let data = try Data(contentsOf: extractedPath)
+        #expect(data[0] == 0x41)
+        #expect(data[4096] == 0)
+        #expect(data[Int(tailOffset)] == 0x42)
+    }
+
+    @Test func archiveRoundTripPreservesFullySparseFile() throws {
+        let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveFullySparse")!
+        defer { try? FileManager.default.removeItem(at: testDir) }
+
+        let source = testDir.appendingPathComponent("sparse.bin")
+        let sourceFd = open(source.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        #expect(sourceFd >= 0)
+        defer { close(sourceFd) }
+        let logicalSize: Int64 = 4 * 1024 * 1024
+        #expect(ftruncate(sourceFd, off_t(logicalSize)) == 0)
+
+        let archiveURL = testDir.appendingPathComponent("test.tar")
+        let writer = try ArchiveWriter(format: .pax, filter: .none, file: archiveURL)
+        try writer.archive([FilePath(source.path)], base: FilePath(testDir.path))
+        try writer.finishEncoding()
+
+        let extractDir = testDir.appendingPathComponent("extract")
+        let reader = try ArchiveReader(file: archiveURL)
+        _ = try reader.extractContents(to: extractDir, preserveOwnership: false)
+
+        var extracted = stat()
+        let extractedPath = extractDir.appendingPathComponent("sparse.bin")
+        #expect(lstat(extractedPath.path, &extracted) == 0)
+        #expect(extracted.st_size == logicalSize)
+        #if os(Linux)
+        #expect(extracted.st_blocks * 512 < extracted.st_size)
+        #endif
+        let data = try Data(contentsOf: extractedPath)
+        #expect(data.count == logicalSize)
+        #expect(data.allSatisfy { $0 == 0 })
+    }
+
     @Test func archiveURLsNestedDirectories() throws {
         let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveURLsNested")!
         defer { try? FileManager.default.removeItem(at: testDir) }
@@ -722,7 +893,7 @@ struct ArchiveTests {
         let readonlyDir = sourceDir.appendingPathComponent("readonly")
         try FileManager.default.createDirectory(at: readonlyDir, withIntermediateDirectories: true)
         try "content".write(to: readonlyDir.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: readonlyDir.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: readonlyDir.path)
         defer {
             try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: readonlyDir.path)
         }
@@ -742,7 +913,7 @@ struct ArchiveTests {
                 == "content")
         let attrs = try FileManager.default.attributesOfItem(atPath: extractDir.appendingPathComponent("readonly").path)
         let perms = (attrs[.posixPermissions] as? NSNumber)?.uint16Value ?? 0
-        #expect((perms & 0o777) == 0o777, "Read-only directory permissions should be preserved")
+        #expect((perms & 0o777) == 0o555, "Read-only directory permissions should be preserved")
     }
 
     @Test func archiveURLsSymlinks() throws {
@@ -792,6 +963,34 @@ struct ArchiveTests {
 
         print("absTarget: \(absTarget), fileURL: \(fileURL.path)")
         #expect(absTarget == fileURL.path)
+    }
+
+    @Test func archiveCanIncludeExternalSymlinkWithoutFollowingIt() throws {
+        let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveExternalSymlink")!
+        defer { try? FileManager.default.removeItem(at: testDir) }
+
+        let sourceDir = testDir.appendingPathComponent("source")
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        let link = sourceDir.appendingPathComponent("external")
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path,
+            withDestinationPath: "/outside/archive/root"
+        )
+
+        let archiveURL = testDir.appendingPathComponent("test.tar")
+        let writer = try ArchiveWriter(format: .pax, filter: .none, file: archiveURL)
+        try writer.archive(
+            [FilePath(link.path)],
+            base: FilePath(sourceDir.path),
+            includeExternalSymlinks: true
+        )
+        try writer.finishEncoding()
+
+        let reader = try ArchiveReader(file: archiveURL)
+        let entries = reader.map { $0.0 }
+        #expect(entries.count == 1)
+        #expect(entries[0].path == "external")
+        #expect(entries[0].symlinkTarget == "/outside/archive/root")
     }
 
     @Test func archiveDirectorySymlinkRelativeSubdir() throws {

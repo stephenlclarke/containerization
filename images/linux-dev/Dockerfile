@@ -18,6 +18,7 @@ FROM swift:${SWIFT_VERSION}-noble
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         make \
+        curl \
         e2fsprogs \
         libarchive-dev \
         libbz2-dev \
@@ -28,8 +29,14 @@ RUN apt-get update \
 
 ARG SWIFT_SDK_URL
 ARG SWIFT_SDK_CHECKSUM
+# The native Container guest can crash in Swift's URLSession cleanup after a
+# checksummed HTTPS download. Keep transfer and checksum verification in curl,
+# then let Swift unpack the already-local SDK archive.
 RUN if [ -n "$SWIFT_SDK_URL" ]; then \
-      swift sdk install "$SWIFT_SDK_URL" --checksum "$SWIFT_SDK_CHECKSUM"; \
+      curl --fail --location --retry 3 --output /tmp/swift-sdk.tar.gz "$SWIFT_SDK_URL" && \
+      echo "$SWIFT_SDK_CHECKSUM  /tmp/swift-sdk.tar.gz" | sha256sum --check - && \
+      swift sdk install /tmp/swift-sdk.tar.gz && \
+      rm -f /tmp/swift-sdk.tar.gz; \
     fi
 
 # x86_64 cross-build tooling

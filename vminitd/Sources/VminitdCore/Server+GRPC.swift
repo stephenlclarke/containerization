@@ -569,15 +569,21 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             try FileManager.default.createDirectory(at: destURL, withIntermediateDirectories: true)
 
             let fileHandle = FileHandle(fileDescriptor: sockFd, closeOnDealloc: false)
-            let reader = try ArchiveReader(format: .pax, filter: .gzip, fileHandle: fileHandle)
-            return try reader.extractContents(to: destURL)
+            let reader =
+                request.isArchive
+                ? try ArchiveReader(fileHandle: fileHandle)
+                : try ArchiveReader(format: .pax, filter: .gzip, fileHandle: fileHandle)
+            return try reader.extractContents(
+                to: destURL,
+                preserveOwnership: request.preserveOwnership
+            )
         }
 
         if !rejected.isEmpty {
-            log.info("copy: archive extracted", metadata: ["path": "\(path)", "rejectedCount": "\(rejected.count)"])
-            for rejectedPath in rejected {
-                log.error("copy: rejected archive path", metadata: ["path": "\(rejectedPath)"])
-            }
+            throw RPCError(
+                code: .invalidArgument,
+                message: "copy: rejected unsafe archive paths: \(rejected.joined(separator: ", "))"
+            )
         }
 
         log.debug("copy: copyIn complete", metadata: ["path": "\(path)", "isArchive": "\(isArchive)"])
@@ -596,7 +602,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
             throw RPCError(code: .notFound, message: "copy: path not found '\(path)'")
         }
-        let isArchive = isDirectory.boolValue
+        let sourceIsDirectory = isDirectory.boolValue
+        let isArchive = sourceIsDirectory || request.isArchive
 
         // Determine metadata for single files.
         var totalSize: UInt64 = 0
@@ -642,9 +649,24 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
             if isArchive {
                 let fileURL = URL(fileURLWithPath: path)
-                let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: .gzip))
+                let filter: Filter = request.isArchive ? .none : .gzip
+                let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: filter))
                 try writer.open(fileDescriptor: sock.fileDescriptor)
-                try writer.archiveDirectory(fileURL)
+                if !request.isArchive {
+                    try writer.archiveDirectory(fileURL)
+                } else if sourceIsDirectory, request.copyContents || FilePath(path).lastComponent == nil {
+                    try writer.archiveDirectory(
+                        fileURL,
+                        includeExternalSymlinks: true
+                    )
+                } else {
+                    let filePath = FilePath(path)
+                    try writer.archive(
+                        [filePath],
+                        base: filePath.removingLastComponent(),
+                        includeExternalSymlinks: true
+                    )
+                }
                 try writer.finishEncoding()
             } else {
                 let srcFd = open(path, O_RDONLY)
@@ -747,12 +769,32 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 "destination": "\(request.destination)",
             ])
 
+        var attachedLoopbackDevice: LoopbackDevice?
         do {
+            let loopbackDevice: LoopbackDevice?
+            if request.options.contains("loop") {
+                let device = try LoopbackDevice.attach(backingFile: request.source)
+                loopbackDevice = device
+                attachedLoopbackDevice = device
+                do {
+                    try await state.add(
+                        loopbackDevice: device,
+                        destination: request.destination
+                    )
+                } catch {
+                    try? device.detach()
+                    attachedLoopbackDevice = nil
+                    throw error
+                }
+            } else {
+                loopbackDevice = nil
+            }
+
             let mnt = ContainerizationOS.Mount(
                 type: request.type,
-                source: request.source,
+                source: loopbackDevice?.path ?? request.source,
                 target: request.destination,
-                options: request.options,
+                options: request.options.filter { $0 != "loop" },
                 sourceRoot: request.hasSourceRoot ? request.sourceRoot : nil
             )
 
@@ -803,6 +845,10 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             fatalError("mount not supported on platform")
             #endif
         } catch {
+            if let loopbackDevice = attachedLoopbackDevice {
+                await state.removeLoopbackDevice(destination: request.destination)
+                try? loopbackDevice.detach()
+            }
             log.error(
                 "mount",
                 metadata: [
@@ -920,6 +966,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
         #if os(Linux)
         // Best effort EBUSY handle.
+        var unmounted = false
         for _ in 0...50 {
             let result = _umount(request.path, request.flags)
             if result == -1 {
@@ -936,7 +983,18 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     ])
                 throw RPCError(code: .invalidArgument, message: "umount", cause: error)
             }
+            unmounted = true
             break
+        }
+        guard unmounted else {
+            throw RPCError(
+                code: .failedPrecondition,
+                message: "umount remained busy after bounded retries"
+            )
+        }
+        if let loopbackDevice = await state.loopbackDevice(destination: request.path) {
+            try loopbackDevice.detach()
+            await state.removeLoopbackDevice(destination: request.path)
         }
         return .init()
         #else
@@ -1131,6 +1189,60 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     "error": "\(error)",
                 ])
             throw RPCError(code: .internalError, message: "killProcess: failed to kill process: \(error)")
+        }
+    }
+
+    public func pauseContainer(
+        request: Com_Apple_Containerization_Sandbox_V3_PauseContainerRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_PauseContainerResponse {
+        log.debug("pauseContainer", metadata: ["containerID": "\(request.containerID)"])
+        do {
+            let container = try await self.state.get(container: request.containerID)
+            try await container.pause()
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "pauseContainer: failed to pause container")
+        } catch {
+            throw RPCError(code: .internalError, message: "pauseContainer: failed to pause container", cause: error)
+        }
+    }
+
+    public func resumeContainer(
+        request: Com_Apple_Containerization_Sandbox_V3_ResumeContainerRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_ResumeContainerResponse {
+        log.debug("resumeContainer", metadata: ["containerID": "\(request.containerID)"])
+        do {
+            let container = try await self.state.get(container: request.containerID)
+            try await container.resume()
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "resumeContainer: failed to resume container")
+        } catch {
+            throw RPCError(code: .internalError, message: "resumeContainer: failed to resume container", cause: error)
+        }
+    }
+
+    public func updateContainerResources(
+        request: Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_UpdateContainerResourcesResponse {
+        log.debug("updateContainerResources", metadata: ["containerID": "\(request.containerID)"])
+        do {
+            let resources = try JSONDecoder().decode(
+                ContainerizationOCI.LinuxResources.self,
+                from: request.resources
+            )
+            let container = try await self.state.get(container: request.containerID)
+            try await container.update(resources: resources)
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "updateContainerResources: failed to update container")
+        } catch let error as DecodingError {
+            throw RPCError(code: .invalidArgument, message: "updateContainerResources: invalid resources", cause: error)
+        } catch {
+            throw RPCError(code: .internalError, message: "updateContainerResources: failed to update container", cause: error)
         }
     }
 
@@ -1636,6 +1748,21 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         }
 
         return .init()
+    }
+
+    public func validateWorkloadNetwork(
+        request: Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_ValidateWorkloadNetworkResponse {
+        do {
+            let endpoints = try WorkloadNetworkPlan.decode(request.plan)
+            try WorkloadNetworkPlan.validate(endpoints)
+            return .init()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "validateWorkloadNetwork")
+        } catch {
+            throw RPCError(code: .invalidArgument, message: "validateWorkloadNetwork", cause: error)
+        }
     }
 
     public func containerStatistics(

@@ -39,6 +39,9 @@
 #ifndef CLONE_NEWIPC
 #define CLONE_NEWIPC    0x08000000
 #endif
+#ifndef CLONE_NEWNET
+#define CLONE_NEWNET    0x40000000
+#endif
 #ifndef CLONE_NEWUSER
 #define CLONE_NEWUSER   0x10000000
 #endif

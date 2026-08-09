@@ -25,7 +25,7 @@ struct InterfaceTests {
     /// A minimal `Interface` conformer that only sets the IPv4 surface, relying on the
     /// protocol's default extensions to fill in `ipv6Address`, `ipv6Gateway`, and `mtu`.
     private struct V4OnlyInterface: Interface {
-        let ipv4Address: CIDRv4
+        let ipv4Address: CIDRv4?
         let ipv4Gateway: IPv4Address?
         let macAddress: MACAddress?
     }
@@ -58,6 +58,17 @@ struct InterfaceTests {
             ipv4Gateway: try IPv4Address("10.0.0.1"))
         #expect(nat.ipv6Address == nil)
         #expect(nat.ipv6Gateway == nil)
+    }
+
+    @Test func natInterfaceSupportsIPv6OnlyAddressing() throws {
+        let nat = NATInterface(
+            ipv6Address: try CIDRv6("fd00::2/64"),
+            ipv6Gateway: try IPv6Address("fd00::1"))
+
+        #expect(nat.ipv4Address == nil)
+        #expect(nat.ipv4Gateway == nil)
+        #expect(nat.ipv6Address == (try CIDRv6("fd00::2/64")))
+        #expect(nat.ipv6Gateway == (try IPv6Address("fd00::1")))
     }
 
     @Test func natInterfaceStoresRequestedGuestInterfaceName() throws {

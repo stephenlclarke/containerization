@@ -2365,10 +2365,10 @@ extension IntegrationSuite {
             throw error
         }
     }
+    #endif
 
     /// Hotplug a container with a block rootfs into a running pod VM. Guards
-    /// the existing block hotplug path against the registry-consolidation
-    /// change. CH-only.
+    /// both the VZ unified-share/loop path and the CH virtio-block path.
     func testPodHotplugBlockRootfs() async throws {
         let id = "test-pod-hotplug-block-rootfs"
         let bs = try await bootstrap(id)
@@ -2410,5 +2410,4 @@ extension IntegrationSuite {
             throw error
         }
     }
-    #endif
 }

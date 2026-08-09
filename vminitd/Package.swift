@@ -63,6 +63,7 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "SystemPackage", package: "swift-system"),
                 .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationNetlink", package: "containerization"),
                 .product(name: "ContainerizationOS", package: "containerization"),
                 .product(name: "VminitdCore", package: "containerization"),
             ]

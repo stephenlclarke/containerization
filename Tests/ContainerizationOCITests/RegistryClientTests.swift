@@ -300,6 +300,63 @@ struct OCIClientTests: ~Copyable {
         }
     }
 
+    @Test func resolveFallsBackWhenDigestHeaderIsMissing() async throws {
+        let manifest = Data(#"{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}"#.utf8)
+        let server = try await StubHTTPServer(binding: .tcp) { request in
+            var headers = HTTPHeaders()
+            headers.add(name: "Content-Type", value: MediaTypes.imageManifest)
+            switch request.method {
+            case .HEAD:
+                headers.add(name: "Content-Length", value: String(manifest.count))
+                return StubResponse(status: .ok, headers: headers)
+            case .GET:
+                return StubResponse(status: .ok, body: manifest, headers: headers)
+            default:
+                return StubResponse.status(.methodNotAllowed)
+            }
+        }
+        defer { Task { try? await server.shutdown() } }
+        let port = try #require(server.port)
+
+        let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
+        let descriptor = try await client.resolve(name: "example/image", tag: "latest")
+
+        #expect(descriptor.mediaType == MediaTypes.imageManifest)
+        #expect(descriptor.digest == SHA256.hash(data: manifest).digest)
+        #expect(descriptor.size == Int64(manifest.count))
+        #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+    }
+
+    @Test func resolveBoundsFallbackManifestSize() async throws {
+        let manifest = Data(repeating: 0x61, count: 32)
+        let server = try await StubHTTPServer(binding: .tcp) { request in
+            var headers = HTTPHeaders()
+            headers.add(name: "Content-Type", value: MediaTypes.imageManifest)
+            switch request.method {
+            case .HEAD:
+                return StubResponse(status: .ok, headers: headers)
+            case .GET:
+                return StubResponse(status: .ok, body: manifest, headers: headers)
+            default:
+                return StubResponse.status(.methodNotAllowed)
+            }
+        }
+        defer { Task { try? await server.shutdown() } }
+        let port = try #require(server.port)
+
+        let client = RegistryClient(
+            host: "127.0.0.1",
+            scheme: "http",
+            port: port,
+            bufferSize: 16
+        )
+
+        await #expect(throws: (any Error).self) {
+            _ = try await client.resolve(name: "example/image", tag: "latest")
+        }
+        #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+    }
+
     @Test func blobPushRestartsWithFreshSessionAfterECR416() async throws {
         let digest = "sha256:0123456789abcdef"
         let payload = Data("registry-blob".utf8)
