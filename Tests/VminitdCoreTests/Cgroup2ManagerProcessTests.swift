@@ -30,7 +30,7 @@ struct Cgroup2ManagerProcessTests {
 
     @Test func cpuSharesWriteConvertedCgroupV2Weight() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-weight-\(UUID().uuidString)")
-        let group = URL(fileURLWithPath: "container", isDirectory: true, relativeTo: nil)
+        let group = URL(filePath: "/container")
         let cgroup = root.appending(path: group.path)
         try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -46,7 +46,7 @@ struct Cgroup2ManagerProcessTests {
 
     @Test func cpuSetInitializesMemoryNodesFromParent() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-set-\(UUID().uuidString)")
-        let group = URL(fileURLWithPath: "container", isDirectory: true, relativeTo: nil)
+        let group = URL(filePath: "/container")
         let cgroup = root.appending(path: group.path)
         try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -66,7 +66,7 @@ struct Cgroup2ManagerProcessTests {
 
     @Test func unlimitedCPUQuotaUsesCgroupMax() throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "cgroup-cpu-\(UUID().uuidString)")
-        let group = URL(fileURLWithPath: "container", isDirectory: true, relativeTo: nil)
+        let group = URL(filePath: "/container")
         let cgroup = root.appending(path: group.path)
         try FileManager.default.createDirectory(at: cgroup, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
