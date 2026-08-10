@@ -339,8 +339,12 @@ final class VZHotplugProvider: HotplugProvider {
         readOnly: Bool,
         to shares: inout [String: ShareState]
     ) throws {
+        // hashFilePath resolves symlinks before deriving the tag. Store and
+        // compare that same canonical source so two paths to one directory
+        // share a reference instead of being misreported as a hash collision.
+        let canonicalSource = URL(fileURLWithPath: source).resolvingSymlinksInPath().path
         if var existing = shares[tag] {
-            guard existing.source == source else {
+            guard existing.source == canonicalSource else {
                 throw ContainerizationError(
                     .invalidState,
                     message: "virtiofs tag collision for \(tag)"
@@ -353,7 +357,7 @@ final class VZHotplugProvider: HotplugProvider {
             shares[tag] = existing
         } else {
             shares[tag] = ShareState(
-                source: source,
+                source: canonicalSource,
                 references: 1,
                 writableReferences: readOnly ? 0 : 1
             )

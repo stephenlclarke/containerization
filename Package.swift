@@ -329,6 +329,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 "Containerization",
                 "ContainerizationArchive",
+                "ContainerizationExtras",
                 "ContainerizationNetlink",
                 "ContainerizationIO",
                 "ContainerizationOS",
