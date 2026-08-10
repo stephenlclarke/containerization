@@ -17,6 +17,8 @@
 #if os(Linux)
 
 import Containerization
+import ContainerizationExtras
+import ContainerizationNetlink
 import Foundation
 import Logging
 import NIOCore
@@ -34,7 +36,28 @@ final class GuestDNSProxy: Sendable {
         self.log = log
     }
 
+    private func configureLoopback() throws {
+        // vminitd starts before any workload network namespace is configured.
+        // Materialize the canonical loopback address before binding the DNS
+        // listener; a pristine guest otherwise fails here with EADDRNOTAVAIL.
+        let netlink = NetlinkSession(socket: try DefaultNetlinkSocket())
+        try netlink.addressAdd(
+            interface: "lo",
+            ipv4Address: try CIDRv4(
+                IPv4Address(0x7f00_0001),
+                prefix: Prefix.ipv4(8)!
+            ),
+            scope: .host
+        )
+        try netlink.linkSet(interface: "lo", up: true)
+    }
+
     func run() async throws {
+        // Keep the netlink session scoped to setup. Netlink route sockets bind
+        // the process PID, and retaining it would block later agent RPCs from
+        // opening their own session with EADDRINUSE.
+        try configureLoopback()
+
         let channel = try await DatagramBootstrap(group: group)
             .channelOption(.socketOption(.so_reuseaddr), value: 1)
             .bind(host: DNSProxyProtocol.guestAddress, port: DNSProxyProtocol.guestPort)
