@@ -28,7 +28,7 @@ jobs:
   analyze:
     name: Analyze Swift
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout containerization
         uses: actions/checkout@v7
