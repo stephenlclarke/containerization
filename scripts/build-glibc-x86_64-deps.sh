@@ -54,15 +54,35 @@ cd "${WORK}"
 
 JOBS="$(nproc)"
 
-# fetch_extract URL ARCHIVE
+# fetch_extract ARCHIVE URL [FALLBACK_URL ...]
 #
-# Downloads URL to ARCHIVE then extracts. Relies on HTTPS for transport
-# integrity; no SHA pinning. The other build-time deps (apt packages,
-# Zig, Rust toolchain) trust the same.
+# Downloads the first reachable URL to ARCHIVE, with bounded retries, then
+# extracts it. Relies on HTTPS for transport integrity; no SHA pinning. The
+# other build-time deps (apt packages, Zig, Rust toolchain) trust the same.
 fetch_extract() {
-    local url=$1 archive=$2
-    curl -fsSL -o "${archive}" "${url}"
-    tar -xf "${archive}"
+    local archive=$1
+    shift
+
+    local url
+    for url in "$@"; do
+        echo "==> fetching ${url}"
+        if curl -fsSL \
+            --connect-timeout 15 \
+            --max-time 300 \
+            --retry 3 \
+            --retry-delay 2 \
+            --retry-all-errors \
+            -o "${archive}" \
+            "${url}"; then
+            tar -xf "${archive}"
+            return
+        fi
+        echo "WARNING: failed to fetch ${url}; trying the next source" >&2
+        rm -f "${archive}"
+    done
+
+    echo "ERROR: every source failed for ${archive}" >&2
+    return 1
 }
 
 # Sanity check: cross compiler produces clean output for a trivial
@@ -86,7 +106,7 @@ fi
 # libcap-ng — github auto-archive (release artifacts for older tags
 # aren't always uploaded).
 LIBCAP_NG_VERSION=0.8.5
-fetch_extract "https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v${LIBCAP_NG_VERSION}.tar.gz" libcap-ng.tar.gz
+fetch_extract libcap-ng.tar.gz "https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v${LIBCAP_NG_VERSION}.tar.gz"
 (
     cd "libcap-ng-${LIBCAP_NG_VERSION}"
     # GNU automake's strict mode requires these standard files to exist;
@@ -104,7 +124,7 @@ fetch_extract "https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v${LIBC
 # libseccomp — needs gperf at build time (installed via the Dockerfile
 # alongside the musl deps). Built shared here.
 LIBSECCOMP_VERSION=2.5.5
-fetch_extract "https://github.com/seccomp/libseccomp/releases/download/v${LIBSECCOMP_VERSION}/libseccomp-${LIBSECCOMP_VERSION}.tar.gz" libseccomp.tar.gz
+fetch_extract libseccomp.tar.gz "https://github.com/seccomp/libseccomp/releases/download/v${LIBSECCOMP_VERSION}/libseccomp-${LIBSECCOMP_VERSION}.tar.gz"
 (
     cd "libseccomp-${LIBSECCOMP_VERSION}"
     ./configure --host="${HOST}" --prefix="${PREFIX}" \
