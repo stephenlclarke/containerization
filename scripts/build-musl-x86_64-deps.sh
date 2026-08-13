@@ -43,15 +43,35 @@ cd "${WORK}"
 
 JOBS="$(nproc)"
 
-# fetch_extract URL ARCHIVE
+# fetch_extract ARCHIVE URL [FALLBACK_URL ...]
 #
-# Downloads URL to ARCHIVE then extracts. Relies on HTTPS for transport
-# integrity; no SHA pinning. The other build-time deps (apt packages,
-# Zig, Rust toolchain) trust the same.
+# Downloads the first reachable URL to ARCHIVE, with bounded retries, then
+# extracts it. Relies on HTTPS for transport integrity; no SHA pinning. The
+# other build-time deps (apt packages, Zig, Rust toolchain) trust the same.
 fetch_extract() {
-    local url=$1 archive=$2
-    curl -fsSL -o "${archive}" "${url}"
-    tar -xf "${archive}"
+    local archive=$1
+    shift
+
+    local url
+    for url in "$@"; do
+        echo "==> fetching ${url}"
+        if curl -fsSL \
+            --connect-timeout 15 \
+            --max-time 300 \
+            --retry 3 \
+            --retry-delay 2 \
+            --retry-all-errors \
+            -o "${archive}" \
+            "${url}"; then
+            tar -xf "${archive}"
+            return
+        fi
+        echo "WARNING: failed to fetch ${url}; trying the next source" >&2
+        rm -f "${archive}"
+    done
+
+    echo "ERROR: every source failed for ${archive}" >&2
+    return 1
 }
 
 # Sanity check: cross compiler is on PATH and produces clean output
@@ -78,7 +98,9 @@ fi
 # zlib — provides libz.a. Its configure does not take --host, so the
 # CC env var is what selects the cross compiler.
 ZLIB_VERSION=1.3.1
-fetch_extract "https://zlib.net/fossils/zlib-${ZLIB_VERSION}.tar.gz" zlib.tar.gz
+fetch_extract zlib.tar.gz \
+    "https://github.com/madler/zlib/releases/download/v${ZLIB_VERSION}/zlib-${ZLIB_VERSION}.tar.gz" \
+    "https://zlib.net/fossils/zlib-${ZLIB_VERSION}.tar.gz"
 (
     cd "zlib-${ZLIB_VERSION}"
     if ! ./configure --static --prefix="${PREFIX}"; then
@@ -93,7 +115,7 @@ fetch_extract "https://zlib.net/fossils/zlib-${ZLIB_VERSION}.tar.gz" zlib.tar.gz
 
 # xz — provides liblzma.a.
 XZ_VERSION=5.6.4
-fetch_extract "https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.gz" xz.tar.gz
+fetch_extract xz.tar.gz "https://github.com/tukaani-project/xz/releases/download/v${XZ_VERSION}/xz-${XZ_VERSION}.tar.gz"
 (
     cd "xz-${XZ_VERSION}"
     ./configure --host="${HOST}" --prefix="${PREFIX}" \
@@ -108,7 +130,7 @@ fetch_extract "https://github.com/tukaani-project/xz/releases/download/v${XZ_VER
 # bzip2 — no autotools, drives a plain Makefile. Build only the static
 # library; the bzip2 CLI tools are not needed.
 BZIP2_VERSION=1.0.8
-fetch_extract "https://sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz" bzip2.tar.gz
+fetch_extract bzip2.tar.gz "https://sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz"
 (
     cd "bzip2-${BZIP2_VERSION}"
     make CC="${CC}" AR="${AR}" RANLIB="${RANLIB}" libbz2.a -j"${JOBS}"
@@ -121,7 +143,7 @@ fetch_extract "https://sourceware.org/pub/bzip2/bzip2-${BZIP2_VERSION}.tar.gz" b
 # openssl, libb2). cctl uses libarchive for tar/ext layouts; the
 # disabled formats are not used at runtime.
 LIBARCHIVE_VERSION=3.7.7
-fetch_extract "https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.gz" libarchive.tar.gz
+fetch_extract libarchive.tar.gz "https://github.com/libarchive/libarchive/releases/download/v${LIBARCHIVE_VERSION}/libarchive-${LIBARCHIVE_VERSION}.tar.gz"
 (
     cd "libarchive-${LIBARCHIVE_VERSION}"
     ./configure --host="${HOST}" --prefix="${PREFIX}" \
@@ -140,7 +162,7 @@ fetch_extract "https://github.com/libarchive/libarchive/releases/download/v${LIB
 # for any tag, but doesn't ship a pre-generated configure script, so
 # we autoreconf it ourselves).
 LIBCAP_NG_VERSION=0.8.5
-fetch_extract "https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v${LIBCAP_NG_VERSION}.tar.gz" libcap-ng.tar.gz
+fetch_extract libcap-ng.tar.gz "https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v${LIBCAP_NG_VERSION}.tar.gz"
 (
     cd "libcap-ng-${LIBCAP_NG_VERSION}"
     # GNU automake's default (strict) mode requires these standard
@@ -157,7 +179,7 @@ fetch_extract "https://github.com/stevegrubb/libcap-ng/archive/refs/tags/v${LIBC
 
 # libseccomp — needs gperf at build time (installed via apt above).
 LIBSECCOMP_VERSION=2.5.5
-fetch_extract "https://github.com/seccomp/libseccomp/releases/download/v${LIBSECCOMP_VERSION}/libseccomp-${LIBSECCOMP_VERSION}.tar.gz" libseccomp.tar.gz
+fetch_extract libseccomp.tar.gz "https://github.com/seccomp/libseccomp/releases/download/v${LIBSECCOMP_VERSION}/libseccomp-${LIBSECCOMP_VERSION}.tar.gz"
 (
     cd "libseccomp-${LIBSECCOMP_VERSION}"
     ./configure --host="${HOST}" --prefix="${PREFIX}" \
