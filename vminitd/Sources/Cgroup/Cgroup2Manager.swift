@@ -627,7 +627,8 @@ public struct Cgroup2Manager: Sendable {
             high: values["high"] ?? 0,
             max: values["max"] ?? 0,
             oom: values["oom"] ?? 0,
-            oomKill: values["oom_kill"] ?? 0
+            oomKill: values["oom_kill"] ?? 0,
+            oomGroupKill: values["oom_group_kill"] ?? 0
         )
     }
 
@@ -1080,19 +1081,22 @@ package struct MemoryEvents: Sendable {
     package var max: UInt64
     package var oom: UInt64
     package var oomKill: UInt64
+    package var oomGroupKill: UInt64
 
     package init(
         low: UInt64 = 0,
         high: UInt64 = 0,
         max: UInt64 = 0,
         oom: UInt64 = 0,
-        oomKill: UInt64 = 0
+        oomKill: UInt64 = 0,
+        oomGroupKill: UInt64 = 0
     ) {
         self.low = low
         self.high = high
         self.max = max
         self.oom = oom
         self.oomKill = oomKill
+        self.oomGroupKill = oomGroupKill
     }
 }
 

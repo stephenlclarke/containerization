@@ -200,7 +200,7 @@ public struct ContainerStatistics: Sendable {
     }
 
     /// Memory event counters from cgroup2's memory.events file.
-    public struct MemoryEventStatistics: Sendable {
+    public struct MemoryEventStatistics: Equatable, Sendable {
         /// Number of times the cgroup was reclaimed due to low memory.
         public var low: UInt64
         /// Number of times the cgroup exceeded its high memory limit.
@@ -211,14 +211,47 @@ public struct ContainerStatistics: Sendable {
         public var oom: UInt64
         /// Number of processes killed by OOM killer.
         public var oomKill: UInt64
+        /// Number of cgroup-wide OOM kills.
+        public var oomGroupKill: UInt64
 
-        public init(low: UInt64, high: UInt64, max: UInt64, oom: UInt64, oomKill: UInt64) {
+        public init(
+            low: UInt64,
+            high: UInt64,
+            max: UInt64,
+            oom: UInt64,
+            oomKill: UInt64,
+            oomGroupKill: UInt64 = 0
+        ) {
             self.low = low
             self.high = high
             self.max = max
             self.oom = oom
             self.oomKill = oomKill
+            self.oomGroupKill = oomGroupKill
         }
+
+        /// Monotonic counter delta used to attribute OOM evidence to one
+        /// generation-bound workload observation interval.
+        public func delta(since previous: Self) -> Self {
+            Self(
+                low: low.subtractingWithoutUnderflow(previous.low),
+                high: high.subtractingWithoutUnderflow(previous.high),
+                max: max.subtractingWithoutUnderflow(previous.max),
+                oom: oom.subtractingWithoutUnderflow(previous.oom),
+                oomKill: oomKill.subtractingWithoutUnderflow(previous.oomKill),
+                oomGroupKill: oomGroupKill.subtractingWithoutUnderflow(previous.oomGroupKill)
+            )
+        }
+
+        public var observedOOMKill: Bool {
+            oomKill > 0 || oomGroupKill > 0
+        }
+    }
+}
+
+extension UInt64 {
+    fileprivate func subtractingWithoutUnderflow(_ previous: UInt64) -> UInt64 {
+        self >= previous ? self - previous : self
     }
 }
 

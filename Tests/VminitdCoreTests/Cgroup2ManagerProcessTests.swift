@@ -23,6 +23,39 @@ import Testing
 @testable import Cgroup
 
 struct Cgroup2ManagerProcessTests {
+    @Test func memoryEventsIncludeGroupOOMKills() throws {
+        let root = FileManager.default.temporaryDirectory.appending(
+            path: "cgroup-memory-events-\(UUID().uuidString)"
+        )
+        let group = URL(filePath: "/container")
+        let cgroup = root.appending(path: group.path)
+        try FileManager.default.createDirectory(
+            at: cgroup,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try """
+        low 1
+        high 2
+        max 3
+        oom 4
+        oom_kill 5
+        oom_group_kill 6
+        """.write(
+            to: cgroup.appending(path: "memory.events"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let events = try Cgroup2Manager(
+            mountPoint: root,
+            group: group
+        ).getMemoryEvents()
+
+        #expect(events.oomGroupKill == 6)
+    }
+
     @Test(arguments: [(UInt64(0), UInt64(0)), (1, 1), (2, 1), (512, 59), (1024, 100), (262_144, 10_000)])
     func cpuSharesConvertToCgroupV2Weight(shares: UInt64, expectedWeight: UInt64) {
         #expect(Cgroup2Manager.cpuWeight(fromShares: shares) == expectedWeight)

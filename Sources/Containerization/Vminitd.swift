@@ -191,7 +191,8 @@ extension Vminitd: VirtualMachineAgent {
                         high: protoStats.memoryEvents.high,
                         max: protoStats.memoryEvents.max,
                         oom: protoStats.memoryEvents.oom,
-                        oomKill: protoStats.memoryEvents.oomKill
+                        oomKill: protoStats.memoryEvents.oomKill,
+                        oomGroupKill: protoStats.memoryEvents.oomGroupKill
                     ) : nil
             )
         }
