@@ -2015,6 +2015,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     $0.max = events.max
                     $0.oom = events.oom
                     $0.oomKill = events.oomKill
+                    $0.oomGroupKill = events.oomGroupKill
                 }
             }
         }
