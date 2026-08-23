@@ -19,13 +19,12 @@ import SystemPackage
 
 /// Represents a UnixSocket that can be shared into or out of a container/guest.
 public struct UnixSocketConfiguration: Sendable {
-    // TODO: Realistically, we can just hash this struct and use it as the "id".
     /// The unique identifier for this socket configuration.
-    public var id: String {
-        _id
-    }
-
-    private let _id = UUID().uuidString
+    ///
+    /// Authorities should provide a durable grant identifier so start, stop,
+    /// and recovery address the same guest relay. Ad-hoc callers retain a
+    /// generated identifier for source compatibility.
+    public let id: String
 
     /// The path to the socket you'd like relayed. For .into
     /// direction this should be the path on the host to a unix socket.
@@ -43,6 +42,11 @@ public struct UnixSocketConfiguration: Sendable {
     /// .outOf direction this will be the socket on the host.
     public var permissions: FilePermissions?
 
+    /// Ownership to apply to a socket created in the guest for an `.into`
+    /// relay. This is computed by the authority rather than supplied by the
+    /// container workload.
+    public var guestOwnership: UnixSocketOwnership?
+
     /// The direction of the relay. `.into` for sharing a unix socket on your
     /// host into the container/guest. `outOf` shares a socket in the container/guest
     /// onto your host.
@@ -57,14 +61,29 @@ public struct UnixSocketConfiguration: Sendable {
     }
 
     public init(
+        id: String = UUID().uuidString,
         source: URL,
         destination: URL,
         permissions: FilePermissions? = nil,
+        guestOwnership: UnixSocketOwnership? = nil,
         direction: Direction = .into
     ) {
+        self.id = id
         self.source = source
         self.destination = destination
         self.permissions = permissions
+        self.guestOwnership = guestOwnership
         self.direction = direction
+    }
+}
+
+/// Effective ownership for a Unix socket materialized inside a Linux guest.
+public struct UnixSocketOwnership: Equatable, Sendable {
+    public var uid: UInt32
+    public var gid: UInt32
+
+    public init(uid: UInt32, gid: UInt32) {
+        self.uid = uid
+        self.gid = gid
     }
 }

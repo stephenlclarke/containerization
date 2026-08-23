@@ -35,6 +35,28 @@ final class SocketTests {
     // `swift test` process with SIGPIPE on Linux. See ignoreSIGPIPEForTests().
     init() { ignoreSIGPIPEForTests() }
 
+    @Test
+    func unixListenerAppliesPermissionsToTheBoundPath() throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.uniqueTemporaryDirectory()
+        defer { try? fileManager.removeItem(at: tempDir) }
+
+        let socketPath = tempDir.appending(path: "mode.sock")
+        let oldMask = umask(0o077)
+        defer { umask(oldMask) }
+        let listener = try Socket(
+            type: UnixType(path: socketPath.path, perms: 0o660, unlinkExisting: true)
+        )
+        defer { try? listener.close() }
+
+        try listener.listen()
+
+        let permissions = try #require(
+            fileManager.attributesOfItem(atPath: socketPath.path)[.posixPermissions] as? NSNumber
+        )
+        #expect(permissions.uint16Value == 0o660)
+    }
+
     /// Helper function to send a file descriptor via SCM_RIGHTS
     private func sendFileDescriptor(socket: Socket, fd: Int32) throws {
         var msg = msghdr()

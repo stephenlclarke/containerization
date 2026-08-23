@@ -39,6 +39,8 @@ actor VsockProxy {
     private let action: Action
     private let port: UInt32
     private let udsPerms: UInt32?
+    private let udsUID: UInt32?
+    private let udsGID: UInt32?
     private let log: Logger?
 
     private var listener: Socket?
@@ -51,6 +53,8 @@ actor VsockProxy {
         port: UInt32,
         path: URL,
         udsPerms: UInt32?,
+        udsUID: UInt32?,
+        udsGID: UInt32?,
         log: Logger? = nil
     ) {
         self.id = id
@@ -58,6 +62,8 @@ actor VsockProxy {
         self.port = port
         self.path = path
         self.udsPerms = udsPerms
+        self.udsUID = udsUID
+        self.udsGID = udsGID
         self.log = log
     }
 }
@@ -130,7 +136,25 @@ extension VsockProxy {
         let oldMask = umask(0)
         defer { umask(oldMask) }
         let uds = try Socket(type: type)
-        try uds.listen()
+        do {
+            try uds.listen()
+            if let udsUID, let udsGID,
+                chown(path.path, uid_t(udsUID), gid_t(udsGID)) != 0
+            {
+                throw swiftErrno("chown")
+            }
+        } catch {
+            try? uds.close()
+            try? fm.removeItem(at: path)
+            throw error
+        }
+        if let udsPerms {
+            guard chmod(path.path, mode_t(udsPerms)) == 0 else {
+                try? uds.close()
+                try? fm.removeItem(at: path)
+                throw swiftErrno("chmod")
+            }
+        }
         listener = uds
 
         try acceptLoop(socketType: .unix)

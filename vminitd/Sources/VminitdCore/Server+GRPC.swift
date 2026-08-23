@@ -200,6 +200,19 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         request: Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest,
         context: GRPCCore.ServerContext
     ) async throws -> Com_Apple_Containerization_Sandbox_V3_ProxyVsockResponse {
+        guard request.hasGuestSocketUid == request.hasGuestSocketGid else {
+            throw RPCError(
+                code: .invalidArgument,
+                message: "proxyVsock: guest socket UID and GID must be supplied together"
+            )
+        }
+        guard request.action == .into || !request.hasGuestSocketUid else {
+            throw RPCError(
+                code: .invalidArgument,
+                message: "proxyVsock: guest socket ownership is valid only for inbound relays"
+            )
+        }
+
         log.debug(
             "proxyVsock",
             metadata: [
@@ -215,6 +228,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             port: request.vsockPort,
             path: URL(fileURLWithPath: request.guestPath),
             udsPerms: request.guestSocketPermissions,
+            udsUID: request.hasGuestSocketUid ? request.guestSocketUid : nil,
+            udsGID: request.hasGuestSocketGid ? request.guestSocketGid : nil,
             log: log
         )
 
