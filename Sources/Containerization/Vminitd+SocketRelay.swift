@@ -17,24 +17,33 @@
 extension Vminitd: SocketRelayAgent {
     /// Sets up a relay between a host socket to a newly created guest socket, or vice versa.
     public func relaySocket(port: UInt32, configuration: UnixSocketConfiguration) async throws {
-        let request = Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest.with {
+        _ = try await client.proxyVsock(Self.proxyRequest(port: port, configuration: configuration))
+    }
+
+    package static func proxyRequest(
+        port: UInt32,
+        configuration: UnixSocketConfiguration
+    ) -> Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest {
+        Com_Apple_Containerization_Sandbox_V3_ProxyVsockRequest.with {
             $0.id = configuration.id
             $0.vsockPort = port
 
             if let perms = configuration.permissions {
                 $0.guestSocketPermissions = UInt32(perms.rawValue)
             }
-
             switch configuration.direction {
             case .into:
                 $0.guestPath = configuration.destination.path
                 $0.action = .into
+                if let ownership = configuration.guestOwnership {
+                    $0.guestSocketUid = ownership.uid
+                    $0.guestSocketGid = ownership.gid
+                }
             case .outOf:
                 $0.guestPath = configuration.source.path
                 $0.action = .outOf
             }
         }
-        _ = try await client.proxyVsock(request)
     }
 
     /// Stops the specified socket relay.

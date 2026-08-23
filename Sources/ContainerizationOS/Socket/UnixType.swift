@@ -108,15 +108,6 @@ public struct UnixType: SocketType, Sendable, CustomStringConvertible {
     }
 
     public func beforeBind(fd: Int32) throws {
-        #if os(Linux)
-        // Only Linux supports setting the mode of a socket before binding.
-        if let perms = self.perms {
-            guard fchmod(fd, perms) == 0 else {
-                throw Socket.errnoToError(msg: "fchmod failed")
-            }
-        }
-        #endif
-
         var rc: Int32 = 0
         if self._unlinkExisting {
             rc = sysUnlink(self.path)
@@ -127,13 +118,11 @@ public struct UnixType: SocketType, Sendable, CustomStringConvertible {
     }
 
     public func beforeListen(fd: Int32) throws {
-        #if os(macOS)
         if let perms = self.perms {
             guard chmod(self.path, perms) == 0 else {
                 throw Socket.errnoToError(msg: "chmod failed")
             }
         }
-        #endif
     }
 
     public func withSockAddr(_ closure: (UnsafePointer<sockaddr>, UInt32) throws -> Void) throws {
