@@ -47,6 +47,13 @@ protos: $(PROTOC) protoc-gen-swift
 		--swift_out="Sources/Containerization/SandboxContext" \
 		--swift_opt=Visibility=Public \
 		-I.
+	@for file in \
+		Sources/Containerization/SandboxContext/SandboxContext.pb.swift \
+		Sources/Containerization/SandboxContext/SandboxContext.grpc.swift; do \
+		if [ -s "$$file" ] && [ -n "$$(tail -c 1 "$$file")" ]; then \
+			printf '\n' >> "$$file"; \
+		fi; \
+	done
 	@"$(MAKE)" update-licenses
 
 .PHONY: clean-proto-tools
