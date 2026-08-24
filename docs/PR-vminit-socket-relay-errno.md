@@ -15,6 +15,8 @@ Closes <https://github.com/stephenlclarke/containerization/issues/35>.
 - Use the helper for socket ownership and permissions failures.
 - Snapshot permission errors before closing and removing the socket.
 - Add a Linux-only regression for the error snapshot contract.
+- Normalize the generated gRPC Swift file's final newline so the repository's
+  protobuf reproducibility check remains byte-for-byte stable.
 
 ## Validation
 
@@ -34,6 +36,17 @@ swift test --disable-automatic-resolution -Xswiftc -warnings-as-errors \
 ```
 
 Result: 1 test in 1 suite passed.
+
+Generated-source reproducibility:
+
+```console
+make protos
+git diff --exit-code -- \
+  Sources/Containerization/SandboxContext/SandboxContext.pb.swift \
+  Sources/Containerization/SandboxContext/SandboxContext.grpc.swift
+```
+
+Result: no generated-source diff.
 
 ## Compatibility and risk
 
