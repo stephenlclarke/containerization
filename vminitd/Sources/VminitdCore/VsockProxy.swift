@@ -22,6 +22,11 @@ import Foundation
 import LCShim
 import Logging
 
+func currentPOSIXError() -> POSIXError {
+    let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+    return POSIXError(code)
+}
+
 actor VsockProxy {
     enum Action {
         case listen
@@ -141,7 +146,7 @@ extension VsockProxy {
             if let udsUID, let udsGID,
                 chown(path.path, uid_t(udsUID), gid_t(udsGID)) != 0
             {
-                throw swiftErrno("chown")
+                throw currentPOSIXError()
             }
         } catch {
             try? uds.close()
@@ -150,9 +155,10 @@ extension VsockProxy {
         }
         if let udsPerms {
             guard chmod(path.path, mode_t(udsPerms)) == 0 else {
+                let error = currentPOSIXError()
                 try? uds.close()
                 try? fm.removeItem(at: path)
-                throw swiftErrno("chmod")
+                throw error
             }
         }
         listener = uds
