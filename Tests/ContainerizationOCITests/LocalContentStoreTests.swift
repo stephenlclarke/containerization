@@ -63,4 +63,13 @@ struct LocalContentStoreTests {
 
         try await store.cancelIngestSession(session.id)
     }
+
+    @Test func totalAllocatedSizeReportsZeroForMissingRoot() async throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-content-store-\(UUID())")
+
+        let size = try await LocalContentStore.totalAllocatedSize(at: missing)
+
+        #expect(size == 0)
+    }
 }
