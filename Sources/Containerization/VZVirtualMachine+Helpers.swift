@@ -123,18 +123,30 @@ extension VZVirtualMachine {
 
 extension VZVirtualMachine {
     func waitForAgent(queue: DispatchQueue) async throws -> FileHandle {
-        let agentConnectionRetryCount: Int = 200
-        let agentConnectionSleepDuration: Duration = .milliseconds(20)
+        // Preserve the previous 201-attempt, 20 ms sleep budget while adding
+        // earlier connection attempts inside each original 20 ms interval.
+        var remainingRetryDelay: Duration = .milliseconds(4020)
+        var pollBackoff = PollBackoff(
+            initialDelay: .milliseconds(5),
+            maximumDelay: .milliseconds(20)
+        )
+        var lastError: (any Error)?
 
-        for _ in 0...agentConnectionRetryCount {
+        while remainingRetryDelay > .zero {
             do {
                 return try await self.connect(queue: queue, port: Vminitd.port).dupHandle()
             } catch {
-                try await Task.sleep(for: agentConnectionSleepDuration)
-                continue
+                lastError = error
+                let delay = min(pollBackoff.next(), remainingRetryDelay)
+                try await Task.sleep(for: delay)
+                remainingRetryDelay -= delay
             }
         }
-        throw ContainerizationError(.timeout, message: "failed to get a connection to agent socket")
+        throw ContainerizationError(
+            .timeout,
+            message: "failed to get a connection to agent socket",
+            cause: lastError
+        )
     }
 }
 

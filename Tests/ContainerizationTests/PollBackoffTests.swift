@@ -20,7 +20,7 @@ import Testing
 @testable import Containerization
 
 struct PollBackoffTests {
-    @Test func doublesUntilMaximumDelay() {
+    @Test func reachesMaximumWithoutMovingExistingPollBoundary() {
         var backoff = PollBackoff(
             initialDelay: .milliseconds(10),
             maximumDelay: .milliseconds(50)
@@ -28,8 +28,21 @@ struct PollBackoffTests {
 
         #expect(backoff.next() == .milliseconds(10))
         #expect(backoff.next() == .milliseconds(20))
-        #expect(backoff.next() == .milliseconds(40))
+        #expect(backoff.next() == .milliseconds(20))
         #expect(backoff.next() == .milliseconds(50))
         #expect(backoff.next() == .milliseconds(50))
+    }
+
+    @Test func supportsShorterReadinessCadence() {
+        var backoff = PollBackoff(
+            initialDelay: .milliseconds(5),
+            maximumDelay: .milliseconds(20)
+        )
+
+        #expect(backoff.next() == .milliseconds(5))
+        #expect(backoff.next() == .milliseconds(10))
+        #expect(backoff.next() == .milliseconds(5))
+        #expect(backoff.next() == .milliseconds(20))
+        #expect(backoff.next() == .milliseconds(20))
     }
 }

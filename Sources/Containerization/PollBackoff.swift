@@ -16,9 +16,12 @@
 
 import Foundation
 
+/// Adds early readiness probes while retaining the original maximum-delay boundaries.
 struct PollBackoff: Sendable {
     private var delay: Duration
     private let maximumDelay: Duration
+    private var elapsed: Duration = .zero
+    private var warmedUp = false
 
     init(initialDelay: Duration, maximumDelay: Duration) {
         precondition(initialDelay > .zero)
@@ -28,8 +31,19 @@ struct PollBackoff: Sendable {
     }
 
     mutating func next() -> Duration {
-        let current = delay
-        delay = min(delay * 2, maximumDelay)
+        guard !warmedUp else {
+            return maximumDelay
+        }
+
+        let remaining = maximumDelay - elapsed
+        let current = min(delay, remaining)
+        elapsed += current
+
+        if elapsed == maximumDelay {
+            warmedUp = true
+        } else {
+            delay = min(delay * 2, maximumDelay)
+        }
         return current
     }
 }
