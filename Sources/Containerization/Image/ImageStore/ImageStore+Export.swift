@@ -90,19 +90,25 @@ extension ImageStore {
             return descriptor
         }
 
-        private func updatePushProgress(pushQueue: [[Descriptor]], localIndexData: Data) async {
+        func updatePushProgress(pushQueue: [[Descriptor]], localIndexData: Data) async {
+            guard let progress else {
+                return
+            }
+            var events: [ProgressEvent] = []
+            events.reserveCapacity(pushQueue.reduce(1) { $0 + $1.count } * 2)
             for layerGroup in pushQueue {
                 for desc in layerGroup {
-                    await progress?([
+                    events.append(contentsOf: [
                         .addTotalSize(desc.size),
                         .addTotalItems(1),
                     ])
                 }
             }
-            await progress?([
+            events.append(contentsOf: [
                 .addTotalSize(Int64(localIndexData.count)),
                 .addTotalItems(1),
             ])
+            await progress(events)
         }
 
         private func createIndex(from index: Descriptor, matching: (Platform) -> Bool) async throws -> Data {

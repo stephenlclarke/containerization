@@ -72,6 +72,55 @@ final class ExportOperationTests {
         let pushedIndex = try JSONDecoder().decode(Index.self, from: indexPush.body)
         #expect(pushedIndex.mediaType == sourceMediaType)
     }
+
+    @Test func testPushProgressIsDeliveredInOneOrderedBatch() async throws {
+        let dir = FileManager.default.uniqueTemporaryDirectory(create: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let capture = ProgressCapture()
+        let op = ImageStore.ExportOperation(
+            name: "test/repo",
+            tag: "v1",
+            contentStore: try LocalContentStore(path: dir),
+            client: CapturingContentClient(),
+            progress: { events in await capture.append(events) })
+        let descriptors = [
+            Descriptor(mediaType: "application/vnd.test", digest: "sha256:first", size: 10),
+            Descriptor(mediaType: "application/vnd.test", digest: "sha256:second", size: 20),
+        ]
+
+        await op.updatePushProgress(
+            pushQueue: [[descriptors[0]], [descriptors[1]]],
+            localIndexData: Data(count: 30))
+        let batches = await capture.batches
+        let events = try #require(batches.first)
+
+        #expect(batches.count == 1)
+        #expect(
+            events.map(\.event) == [
+                "add-total-size", "add-total-items",
+                "add-total-size", "add-total-items",
+                "add-total-size", "add-total-items",
+            ])
+        #expect(events.map(Self.value) == [10, 1, 20, 1, 30, 1])
+    }
+
+    private static func value(_ event: ProgressEvent) -> Int64 {
+        switch event {
+        case .addItems(let value), .addTotalItems(let value):
+            Int64(value)
+        case .addSize(let value), .addTotalSize(let value):
+            value
+        }
+    }
+}
+
+private actor ProgressCapture {
+    private(set) var batches: [[ProgressEvent]] = []
+
+    func append(_ events: [ProgressEvent]) {
+        batches.append(events)
+    }
 }
 
 private final class CapturingContentClient: ContentClient, @unchecked Sendable {
