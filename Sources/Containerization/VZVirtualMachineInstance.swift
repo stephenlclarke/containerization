@@ -298,7 +298,7 @@ extension VZVirtualMachineInstance: VirtualMachineInstance {
             }
 
             let maximum = Configuration.alignedMemorySize(self.config.memoryInBytes)
-            try Configuration.validateMemoryTarget(memoryInBytes, maximum: maximum)
+            try MemoryTarget.validate(memoryInBytes, maximum: maximum)
 
             let current = try self.vm.memoryBalloonTarget(queue: self.queue)
             if memoryInBytes < current {
@@ -618,21 +618,6 @@ extension VZVirtualMachineInstance.Configuration {
     static func alignedMemorySize(_ memoryInBytes: UInt64) -> UInt64 {
         let mib: UInt64 = 1 << 20
         return (memoryInBytes + mib - 1) & ~(mib - 1)
-    }
-
-    static func validateMemoryTarget(_ memoryInBytes: UInt64, maximum: UInt64) throws {
-        let mib: UInt64 = 1 << 20
-        guard memoryInBytes.isMultiple(of: mib) else {
-            throw ContainerizationError(.invalidArgument, message: "memory target must be a multiple of 1 MiB")
-        }
-        guard memoryInBytes >= VZVirtualMachineConfiguration.minimumAllowedMemorySize,
-            memoryInBytes <= maximum
-        else {
-            throw ContainerizationError(
-                .invalidArgument,
-                message: "memory target must be between \(VZVirtualMachineConfiguration.minimumAllowedMemorySize) and \(maximum) bytes"
-            )
-        }
     }
 
     func configureMountDevices(

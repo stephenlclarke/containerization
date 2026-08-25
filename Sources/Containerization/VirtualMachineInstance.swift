@@ -69,6 +69,7 @@ public protocol VirtualMachineInstance: Sendable {
     /// The VMM may satisfy the request asynchronously with cooperation from
     /// the guest. Implementations that cannot resize memory throw
     /// `ContainerizationError(.unsupported, ...)`.
+    /// Portable targets are aligned to 1 MiB and are at least 4 MiB.
     ///
     /// - Parameter memoryInBytes: Target guest memory size in bytes.
     /// - Throws: An error if the target is invalid or live resizing is unsupported.

@@ -72,6 +72,7 @@ public final class CHVirtualMachineInstance: Sendable {
     // MARK: - State
 
     private let _state: Mutex<VirtualMachineInstanceState>
+    private let _memoryTarget: Mutex<UInt64>
     public var state: VirtualMachineInstanceState {
         _state.withLock { $0 }
     }
@@ -222,6 +223,7 @@ public final class CHVirtualMachineInstance: Sendable {
         self.lock = .init()
         self.timeSyncer = .init(logger: logger)
         self._state = Mutex(.stopped)
+        self._memoryTarget = Mutex(Self.alignMemorySize(config.memoryInBytes))
         self._preboundListeners = Mutex([:])
     }
 
@@ -383,6 +385,27 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
         }
     }
 
+    public func setMemoryTarget(_ memoryInBytes: UInt64) async throws {
+        try await lock.withLock { _ in
+            try self.requireRunning()
+
+            let maximum = Self.alignMemorySize(self.config.memoryInBytes)
+            try MemoryTarget.validate(memoryInBytes, maximum: maximum)
+            let current = self._memoryTarget.withLock { $0 }
+            guard memoryInBytes != current else {
+                return
+            }
+
+            if memoryInBytes < current {
+                try await self.compactGuestMemory()
+            }
+            try await chCall {
+                try await self.client.vmResize(.init(desiredBalloon: maximum - memoryInBytes))
+            }
+            self._memoryTarget.withLock { $0 = memoryInBytes }
+        }
+    }
+
     public func dial(_ port: UInt32) async throws -> FileHandle {
         try await lock.withLock { _ in
             try self.requireRunning()
@@ -404,6 +427,32 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
                 .invalidState,
                 message: "vm is not running (state=\(current))"
             )
+        }
+    }
+
+    private func compactGuestMemory() async throws {
+        let agent: Vminitd
+        do {
+            let connection = try await chVsockDial(
+                baseSocket: self.workDir.appendingPathComponent("vsock.sock"),
+                port: Vminitd.port
+            )
+            agent = try await Vminitd(connection: connection, group: self.group)
+        } catch {
+            throw ContainerizationError(.internalError, message: "failed to connect for guest memory compaction", cause: error)
+        }
+
+        do {
+            try await agent.writeFile(
+                path: "/proc/sys/vm/compact_memory",
+                data: Data("1\n".utf8),
+                flags: WriteFileFlags(),
+                mode: 0
+            )
+            try await agent.close()
+        } catch {
+            try? await agent.close()
+            throw ContainerizationError(.internalError, message: "failed to compact guest memory", cause: error)
         }
     }
 
@@ -661,6 +710,9 @@ extension CHVirtualMachineInstance {
             payload: payload,
             disks: disks.isEmpty ? nil : disks,
             net: net.isEmpty ? nil : net,
+            // Start uninflated; free-page reporting returns idle memory while
+            // deflate-on-OOM lets the guest recover capacity under pressure.
+            balloon: .init(size: 0, deflateOnOom: true, freePageReporting: true),
             fs: fsConfigs.isEmpty ? nil : fsConfigs,
             vsock: vsock,
             // Kernel cmdline is `console=hvc0`, so userspace (vminitd) writes

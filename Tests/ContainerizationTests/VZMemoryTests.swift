@@ -37,22 +37,17 @@ struct VZMemoryTests {
     @Test func memoryTargetsMustBeAlignedAndWithinConfiguredRange() throws {
         let maximum: UInt64 = 512 * 1024 * 1024
 
-        try VZVirtualMachineInstance.Configuration.validateMemoryTarget(maximum, maximum: maximum)
-        try VZVirtualMachineInstance.Configuration.validateMemoryTarget(
-            VZVirtualMachineConfiguration.minimumAllowedMemorySize,
-            maximum: maximum
-        )
+        #expect(MemoryTarget.minimum == VZVirtualMachineConfiguration.minimumAllowedMemorySize)
+        try MemoryTarget.validate(maximum, maximum: maximum)
+        try MemoryTarget.validate(MemoryTarget.minimum, maximum: maximum)
         #expect(throws: ContainerizationError.self) {
-            try VZVirtualMachineInstance.Configuration.validateMemoryTarget(maximum - 1, maximum: maximum)
+            try MemoryTarget.validate(maximum - 1, maximum: maximum)
         }
         #expect(throws: ContainerizationError.self) {
-            try VZVirtualMachineInstance.Configuration.validateMemoryTarget(maximum + 1024 * 1024, maximum: maximum)
+            try MemoryTarget.validate(maximum + MemoryTarget.alignment, maximum: maximum)
         }
         #expect(throws: ContainerizationError.self) {
-            try VZVirtualMachineInstance.Configuration.validateMemoryTarget(
-                VZVirtualMachineConfiguration.minimumAllowedMemorySize - 1024 * 1024,
-                maximum: maximum
-            )
+            try MemoryTarget.validate(MemoryTarget.minimum - MemoryTarget.alignment, maximum: maximum)
         }
     }
 }
