@@ -304,6 +304,26 @@ struct ClientTests {
         #expect(recorded[0].body.isEmpty)
     }
 
+    // MARK: - vmResize
+
+    @Test("vmResize sends PUT /api/v1/vm.resize with encoded body")
+    func vmResize() async throws {
+        let server = try await StubHTTPServer(eventLoopGroup: Self.group) { _ in
+            StubResponse.status(.noContent)
+        }
+        defer { Task { try? await server.shutdown() } }
+
+        let resize = CloudHypervisor.VmResize(desiredBalloon: 128 * 1024 * 1024)
+        let client = try CloudHypervisor.Client(socketPath: URL(filePath: server.socketPath), eventLoopGroup: Self.group)
+        try await client.vmResize(resize)
+
+        let recorded = server.recordedRequests()
+        #expect(recorded.count == 1)
+        #expect(recorded[0].method == .PUT)
+        #expect(recorded[0].uri == "/api/v1/vm.resize")
+        #expect(try JSONDecoder().decode(CloudHypervisor.VmResize.self, from: recorded[0].body) == resize)
+    }
+
     // MARK: - vmAddDisk
 
     @Test("vmAddDisk sends PUT /api/v1/vm.add-disk and returns PciDeviceInfo")

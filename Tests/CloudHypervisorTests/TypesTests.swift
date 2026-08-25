@@ -74,6 +74,31 @@ struct TypesTests {
         #expect(!jsonString.contains("\"mergeable\""))
     }
 
+    @Test("BalloonConfig round-trips through JSON")
+    func balloonConfigRoundTrip() throws {
+        let cfg = CloudHypervisor.BalloonConfig(size: 0, deflateOnOom: true, freePageReporting: true)
+        let data = try JSONEncoder().encode(cfg)
+        let decoded = try JSONDecoder().decode(CloudHypervisor.BalloonConfig.self, from: data)
+        let jsonString = try #require(String(data: data, encoding: .utf8))
+
+        #expect(decoded == cfg)
+        #expect(jsonString.contains("\"deflate_on_oom\""))
+        #expect(jsonString.contains("\"free_page_reporting\""))
+    }
+
+    @Test("VmResize emits only requested targets")
+    func vmResizeEncoding() throws {
+        let resize = CloudHypervisor.VmResize(desiredBalloon: 256 * 1024 * 1024)
+        let data = try JSONEncoder().encode(resize)
+        let decoded = try JSONDecoder().decode(CloudHypervisor.VmResize.self, from: data)
+        let jsonString = try #require(String(data: data, encoding: .utf8))
+
+        #expect(decoded == resize)
+        #expect(jsonString.contains("\"desired_balloon\""))
+        #expect(!jsonString.contains("\"desired_ram\""))
+        #expect(!jsonString.contains("\"desired_vcpus\""))
+    }
+
     @Test("PayloadConfig round-trips through JSON")
     func payloadConfigRoundTrip() throws {
         let cfg = CloudHypervisor.PayloadConfig(
