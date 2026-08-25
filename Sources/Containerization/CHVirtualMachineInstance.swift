@@ -508,6 +508,14 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
 // MARK: - VmConfig + vminitd dial helpers
 
 extension CHVirtualMachineInstance {
+    private struct StartedBootVirtiofsd: Sendable {
+        let tag: String
+        let process: VirtiofsdProcess
+        let socket: URL
+        let chDeviceId: String
+        let ownerIds: [String]
+    }
+
     /// Build the cloud-hypervisor `VmConfig` from `config`. Spawns one
     /// `virtiofsd` per unique boot-time virtiofs source-hash tag and registers
     /// each with the hotplug provider so `releaseVirtioFS(id:)` and `stop()`
@@ -550,43 +558,75 @@ extension CHVirtualMachineInstance {
             }
         }
 
-        var fsConfigs: [CloudHypervisor.FsConfig] = []
         // Resolve virtiofsd lazily — only if we actually have any virtiofs
         // mounts at boot. A block-only VM doesn't require virtiofsd.
         let resolvedVirtiofsdBinary: URL? =
             byTag.isEmpty
             ? nil
             : try CHVirtualMachineManager.resolveBinary(virtiofsdBinaryOverride, name: "virtiofsd")
-        for (tag, entry) in byTag {
-            guard let source = entry.mounts.first?.source else { continue }
-            guard let binary = resolvedVirtiofsdBinary else { continue }
-            let socket = chVirtiofsSocketURL(workDir: workDir, tag: tag)
-            let readonly = entry.mounts.allSatisfy { $0.options.contains("ro") }
-            let chDeviceId = "fs-\(tag)"
+        let startedVirtiofsd = try await withThrowingTaskGroup(
+            of: StartedBootVirtiofsd.self,
+            returning: [StartedBootVirtiofsd].self
+        ) { group in
+            var started: [StartedBootVirtiofsd] = []
+            do {
+                for tag in byTag.keys.sorted() {
+                    guard let entry = byTag[tag], let source = entry.mounts.first?.source else { continue }
+                    guard let binary = resolvedVirtiofsdBinary else { continue }
 
-            let process = VirtiofsdProcess(
-                config: .init(
-                    binary: binary,
-                    socketPath: socket,
-                    sharedDir: URL(fileURLWithPath: source),
-                    readonly: readonly
-                ),
-                logger: logger
-            )
-            try await process.start()
+                    group.addTask { [logger, workDir] in
+                        let socket = chVirtiofsSocketURL(workDir: workDir, tag: tag)
+                        let process = VirtiofsdProcess(
+                            config: .init(
+                                binary: binary,
+                                socketPath: socket,
+                                sharedDir: URL(fileURLWithPath: source),
+                                readonly: entry.mounts.allSatisfy { $0.options.contains("ro") }
+                            ),
+                            logger: logger
+                        )
+                        try await process.start()
+                        return StartedBootVirtiofsd(
+                            tag: tag,
+                            process: process,
+                            socket: socket,
+                            chDeviceId: "fs-\(tag)",
+                            ownerIds: entry.owners
+                        )
+                    }
+                }
+                while let item = try await group.next() {
+                    started.append(item)
+                }
+                return started.sorted { $0.tag < $1.tag }
+            } catch {
+                group.cancelAll()
+                while let result = await group.nextResult() {
+                    if case .success(let item) = result {
+                        started.append(item)
+                    }
+                }
+                for item in started {
+                    await item.process.terminate(graceSeconds: 5)
+                    try? FileManager.default.removeItem(at: item.socket)
+                }
+                throw error
+            }
+        }
 
+        var fsConfigs: [CloudHypervisor.FsConfig] = []
+        for item in startedVirtiofsd {
             hotplug.recordBootTimeVirtiofs(
-                tag: tag,
-                process: process,
-                chDeviceId: chDeviceId,
-                ownerIds: entry.owners
+                tag: item.tag,
+                process: item.process,
+                chDeviceId: item.chDeviceId,
+                ownerIds: item.ownerIds
             )
-
             fsConfigs.append(
                 CloudHypervisor.FsConfig(
-                    tag: tag,
-                    socket: socket.path,
-                    id: chDeviceId
+                    tag: item.tag,
+                    socket: item.socket.path,
+                    id: item.chDeviceId
                 )
             )
         }
