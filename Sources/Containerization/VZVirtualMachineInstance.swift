@@ -152,7 +152,8 @@ public final class VZVirtualMachineInstance: Sendable {
             self.group = group
         } else {
             self.ownsGroup = true
-            self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+            // One event loop can serve this VM's agent and socket connections.
+            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         }
 
         self.config = config
