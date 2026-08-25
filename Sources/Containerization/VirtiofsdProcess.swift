@@ -112,7 +112,12 @@ final class VirtiofsdProcess: Sendable {
             $0.exitTask = exitTask
         }
 
-        try await waitForSocket()
+        do {
+            try await waitForSocket()
+        } catch {
+            await terminate(graceSeconds: 5)
+            throw error
+        }
     }
 
     /// SIGTERM → grace window → SIGKILL. Returns once virtiofsd is reaped.
@@ -158,7 +163,7 @@ final class VirtiofsdProcess: Sendable {
                 logger?.debug("virtiofsd socket bound in \(elapsed) at \(config.socketPath.path)")
                 return
             }
-            try? await Task.sleep(for: pollBackoff.next())
+            try await Task.sleep(for: pollBackoff.next())
         }
 
         // Capture diagnostic state before terminating.
@@ -168,7 +173,6 @@ final class VirtiofsdProcess: Sendable {
         let sharedExists = fm.fileExists(atPath: config.sharedDir.path)
         let detail = "socketExists=\(socketExists) parentDirExists=\(parentExists) sharedDirExists=\(sharedExists)"
 
-        await terminate(graceSeconds: 5)
         throw ContainerizationError(
             .timeout,
             message: "virtiofsd socket not connectable at \(config.socketPath.path) within \(Self.socketDeadline) [\(detail)]"

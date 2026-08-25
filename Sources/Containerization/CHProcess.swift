@@ -121,7 +121,12 @@ final class CHProcess: Sendable {
             $0.exitTask = exitTask
         }
 
-        try await waitForAPISocket()
+        do {
+            try await waitForAPISocket()
+        } catch {
+            await terminate(graceSeconds: 5)
+            throw error
+        }
     }
 
     /// Wait for the subprocess to exit. Resolves with the cached `ExitReason`
@@ -174,10 +179,9 @@ final class CHProcess: Sendable {
             if Self.isAPISocketReady(at: config.apiSocketPath) {
                 return
             }
-            try? await Task.sleep(for: pollBackoff.next())
+            try await Task.sleep(for: pollBackoff.next())
         }
 
-        await terminate(graceSeconds: 5)
         throw ContainerizationError(
             .timeout,
             message: "cloud-hypervisor API socket not connectable at \(config.apiSocketPath.path) within \(Self.socketDeadline)"
