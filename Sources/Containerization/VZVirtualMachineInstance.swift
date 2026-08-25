@@ -453,8 +453,7 @@ extension VZVirtualMachineInstance.Configuration {
         var config = VZVirtualMachineConfiguration()
 
         config.cpuCount = self.cpus
-        let mib: UInt64 = 1 << 20
-        config.memorySize = (self.memoryInBytes + mib - 1) & ~(mib - 1)
+        configureMemory(on: config)
         config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
         config.socketDevices = [VZVirtioSocketDeviceConfiguration()]
 
@@ -569,6 +568,12 @@ extension VZVirtualMachineInstance.Configuration {
 
         try config.validate()
         return config
+    }
+
+    func configureMemory(on config: VZVirtualMachineConfiguration) {
+        let mib: UInt64 = 1 << 20
+        config.memorySize = (self.memoryInBytes + mib - 1) & ~(mib - 1)
+        config.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
     }
 
     func configureMountDevices(
