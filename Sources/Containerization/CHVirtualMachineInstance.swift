@@ -716,17 +716,21 @@ extension CHVirtualMachineInstance {
         let baseSocket = workDir.appendingPathComponent("vsock.sock")
         let clock = ContinuousClock()
         let stop = clock.now.advanced(by: deadline)
-        var delay = initialDelay
+        var pollBackoff = PollBackoff(
+            initialDelay: initialDelay,
+            maximumDelay: .milliseconds(50)
+        )
         var lastError: any Error = ContainerizationError(.timeout, message: "could not dial vminitd")
         while clock.now < stop {
             do {
                 return try await chVsockDial(baseSocket: baseSocket, port: Vminitd.port)
             } catch {
                 lastError = error
-                try? await Task.sleep(for: delay)
-                if delay < .milliseconds(50) {
-                    delay = delay * 2
+                let remaining = clock.now.duration(to: stop)
+                guard remaining > .zero else {
+                    break
                 }
+                try await Task.sleep(for: min(pollBackoff.next(), remaining))
             }
         }
         throw ContainerizationError(.timeout, message: "could not dial vminitd within \(deadline): \(lastError)")
