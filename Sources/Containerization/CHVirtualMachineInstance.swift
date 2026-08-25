@@ -184,7 +184,8 @@ public final class CHVirtualMachineInstance: Sendable {
             self.group = group
         } else {
             self.ownsGroup = true
-            self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+            // A VM's host-side control and guest-agent I/O can share one event loop.
+            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         }
 
         // 4. CHProcess + REST client. The api socket lives next to the workDir.
