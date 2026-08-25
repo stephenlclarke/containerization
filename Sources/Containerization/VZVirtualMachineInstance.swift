@@ -291,6 +291,23 @@ extension VZVirtualMachineInstance: VirtualMachineInstance {
         }
     }
 
+    public func setMemoryTarget(_ memoryInBytes: UInt64) async throws {
+        try await lock.withLock { _ in
+            guard case .running = self.state else {
+                throw ContainerizationError(.invalidState, message: "vm is not running")
+            }
+
+            let maximum = Configuration.alignedMemorySize(self.config.memoryInBytes)
+            try Configuration.validateMemoryTarget(memoryInBytes, maximum: maximum)
+
+            let current = try self.vm.memoryBalloonTarget(queue: self.queue)
+            if memoryInBytes < current {
+                try await self.compactGuestMemory()
+            }
+            try self.vm.setMemoryBalloonTarget(queue: self.queue, memoryInBytes: memoryInBytes)
+        }
+    }
+
     public func dialAgent() async throws -> Vminitd {
         try await lock.withLock { _ in
             do {
@@ -352,6 +369,29 @@ extension VZVirtualMachineInstance: VirtualMachineInstance {
             queue: queue,
             port: port
         )
+    }
+
+    private func compactGuestMemory() async throws {
+        let agent: Vminitd
+        do {
+            let connection = try await self.vm.connect(queue: self.queue, port: Vminitd.port)
+            agent = try await Vminitd(connection: try connection.dupHandle(), group: self.group)
+        } catch {
+            throw ContainerizationError(.internalError, message: "failed to connect for guest memory compaction", cause: error)
+        }
+
+        do {
+            try await agent.writeFile(
+                path: "/proc/sys/vm/compact_memory",
+                data: Data("1\n".utf8),
+                flags: WriteFileFlags(),
+                mode: 0
+            )
+            try await agent.close()
+        } catch {
+            try? await agent.close()
+            throw ContainerizationError(.internalError, message: "failed to compact guest memory", cause: error)
+        }
     }
 
     // MARK: - Hotplug
@@ -571,9 +611,28 @@ extension VZVirtualMachineInstance.Configuration {
     }
 
     func configureMemory(on config: VZVirtualMachineConfiguration) {
-        let mib: UInt64 = 1 << 20
-        config.memorySize = (self.memoryInBytes + mib - 1) & ~(mib - 1)
+        config.memorySize = Self.alignedMemorySize(self.memoryInBytes)
         config.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
+    }
+
+    static func alignedMemorySize(_ memoryInBytes: UInt64) -> UInt64 {
+        let mib: UInt64 = 1 << 20
+        return (memoryInBytes + mib - 1) & ~(mib - 1)
+    }
+
+    static func validateMemoryTarget(_ memoryInBytes: UInt64, maximum: UInt64) throws {
+        let mib: UInt64 = 1 << 20
+        guard memoryInBytes.isMultiple(of: mib) else {
+            throw ContainerizationError(.invalidArgument, message: "memory target must be a multiple of 1 MiB")
+        }
+        guard memoryInBytes >= VZVirtualMachineConfiguration.minimumAllowedMemorySize,
+            memoryInBytes <= maximum
+        else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "memory target must be between \(VZVirtualMachineConfiguration.minimumAllowedMemorySize) and \(maximum) bytes"
+            )
+        }
     }
 
     func configureMountDevices(

@@ -119,6 +119,24 @@ extension VZVirtualMachine {
             }
         }
     }
+
+    func memoryBalloonTarget(queue: DispatchQueue) throws -> UInt64 {
+        try queue.sync {
+            guard let balloon = self.memoryBalloonDevices.first as? VZVirtioTraditionalMemoryBalloonDevice else {
+                throw ContainerizationError(.unsupported, message: "no virtio memory balloon device")
+            }
+            return balloon.targetVirtualMachineMemorySize
+        }
+    }
+
+    func setMemoryBalloonTarget(queue: DispatchQueue, memoryInBytes: UInt64) throws {
+        try queue.sync {
+            guard let balloon = self.memoryBalloonDevices.first as? VZVirtioTraditionalMemoryBalloonDevice else {
+                throw ContainerizationError(.unsupported, message: "no virtio memory balloon device")
+            }
+            balloon.targetVirtualMachineMemorySize = memoryInBytes
+        }
+    }
 }
 
 extension VZVirtualMachine {

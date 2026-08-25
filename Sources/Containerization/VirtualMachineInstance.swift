@@ -65,6 +65,15 @@ public protocol VirtualMachineInstance: Sendable {
     /// Resume the virtual machine.
     func resume() async throws
 
+    /// Request a live change to the amount of memory available to the guest.
+    /// The VMM may satisfy the request asynchronously with cooperation from
+    /// the guest. Implementations that cannot resize memory throw
+    /// `ContainerizationError(.unsupported, ...)`.
+    ///
+    /// - Parameter memoryInBytes: Target guest memory size in bytes.
+    /// - Throws: An error if the target is invalid or live resizing is unsupported.
+    func setMemoryTarget(_ memoryInBytes: UInt64) async throws
+
     /// Hotplug a block device, returning the attached filesystem info.
     /// Throws if the VMM does not support hotplug or not available
     /// - Parameter block: The mount configuration for the block device to hotplug
@@ -102,6 +111,9 @@ extension VirtualMachineInstance {
     }
     public func resume() async throws {
         throw ContainerizationError(.unsupported, message: "resume")
+    }
+    public func setMemoryTarget(_ memoryInBytes: UInt64) async throws {
+        throw ContainerizationError(.unsupported, message: "live memory resizing not supported")
     }
     public func hotplug(_ block: Mount, id: String) async throws -> AttachedFilesystem {
         throw ContainerizationError(.unsupported, message: "hotplug not supported")

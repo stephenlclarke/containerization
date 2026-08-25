@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #if os(macOS)
+import ContainerizationError
 import Testing
 import Virtualization
 
@@ -31,6 +32,28 @@ struct VZMemoryTests {
         #expect(vzConfiguration.memorySize == 513 * 1024 * 1024)
         #expect(vzConfiguration.memoryBalloonDevices.count == 1)
         #expect(vzConfiguration.memoryBalloonDevices[0] is VZVirtioTraditionalMemoryBalloonDeviceConfiguration)
+    }
+
+    @Test func memoryTargetsMustBeAlignedAndWithinConfiguredRange() throws {
+        let maximum: UInt64 = 512 * 1024 * 1024
+
+        try VZVirtualMachineInstance.Configuration.validateMemoryTarget(maximum, maximum: maximum)
+        try VZVirtualMachineInstance.Configuration.validateMemoryTarget(
+            VZVirtualMachineConfiguration.minimumAllowedMemorySize,
+            maximum: maximum
+        )
+        #expect(throws: ContainerizationError.self) {
+            try VZVirtualMachineInstance.Configuration.validateMemoryTarget(maximum - 1, maximum: maximum)
+        }
+        #expect(throws: ContainerizationError.self) {
+            try VZVirtualMachineInstance.Configuration.validateMemoryTarget(maximum + 1024 * 1024, maximum: maximum)
+        }
+        #expect(throws: ContainerizationError.self) {
+            try VZVirtualMachineInstance.Configuration.validateMemoryTarget(
+                VZVirtualMachineConfiguration.minimumAllowedMemorySize - 1024 * 1024,
+                maximum: maximum
+            )
+        }
     }
 }
 #endif
