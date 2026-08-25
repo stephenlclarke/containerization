@@ -159,17 +159,22 @@ final class CHProcess: Sendable {
     // MARK: - Private helpers
 
     private static let socketDeadline: Duration = .seconds(2)
-    private static let socketPollInterval: Duration = .milliseconds(50)
+    private static let initialSocketPollInterval: Duration = .milliseconds(10)
+    private static let maximumSocketPollInterval: Duration = .milliseconds(50)
 
     private func waitForAPISocket() async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: Self.socketDeadline)
+        var pollBackoff = PollBackoff(
+            initialDelay: Self.initialSocketPollInterval,
+            maximumDelay: Self.maximumSocketPollInterval
+        )
 
         while clock.now < deadline {
             if Self.isAPISocketReady(at: config.apiSocketPath) {
                 return
             }
-            try? await Task.sleep(for: Self.socketPollInterval)
+            try? await Task.sleep(for: pollBackoff.next())
         }
 
         await terminate(graceSeconds: 5)

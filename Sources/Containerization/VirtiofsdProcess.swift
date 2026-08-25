@@ -135,7 +135,8 @@ final class VirtiofsdProcess: Sendable {
     // MARK: - Private helpers
 
     private static let socketDeadline: Duration = .seconds(10)
-    private static let socketPollInterval: Duration = .milliseconds(50)
+    private static let initialSocketPollInterval: Duration = .milliseconds(10)
+    private static let maximumSocketPollInterval: Duration = .milliseconds(50)
 
     private func waitForExit() async {
         guard let task = state.withLock({ $0.exitTask }) else { return }
@@ -146,6 +147,10 @@ final class VirtiofsdProcess: Sendable {
         let clock = ContinuousClock()
         let started = clock.now
         let deadline = started.advanced(by: Self.socketDeadline)
+        var pollBackoff = PollBackoff(
+            initialDelay: Self.initialSocketPollInterval,
+            maximumDelay: Self.maximumSocketPollInterval
+        )
 
         while clock.now < deadline {
             if Self.isSocketReady(at: config.socketPath) {
@@ -153,7 +158,7 @@ final class VirtiofsdProcess: Sendable {
                 logger?.debug("virtiofsd socket bound in \(elapsed) at \(config.socketPath.path)")
                 return
             }
-            try? await Task.sleep(for: Self.socketPollInterval)
+            try? await Task.sleep(for: pollBackoff.next())
         }
 
         // Capture diagnostic state before terminating.
