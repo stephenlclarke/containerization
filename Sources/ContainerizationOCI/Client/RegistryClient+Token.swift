@@ -18,7 +18,7 @@ import AsyncHTTPClient
 import ContainerizationError
 import Foundation
 
-struct TokenRequest {
+struct TokenRequest: Sendable {
     public static let authenticateHeaderName = "WWW-Authenticate"
 
     /// The credentials that will be used in the authentication header when fetching the token.
@@ -51,7 +51,7 @@ struct TokenRequest {
     }
 }
 
-struct TokenResponse: Codable, Hashable {
+struct TokenResponse: Codable, Hashable, Sendable {
     /// An opaque Bearer token that clients should supply to subsequent requests in the Authorization header.
     let token: String?
     /// For compatibility with OAuth 2.0, we will also accept token under the name access_token.
@@ -86,26 +86,6 @@ struct TokenResponse: Codable, Hashable {
         return nil
     }
 
-    func isValid(scope: String?) -> Bool {
-        guard let issuedAt else {
-            return false
-        }
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        guard let issued = isoFormatter.date(from: issuedAt) else {
-            return false
-        }
-        let expiresIn = expiresIn ?? 0
-        let now = Date()
-        let elapsed = now.timeIntervalSince(issued)
-        guard elapsed < Double(expiresIn) else {
-            return false
-        }
-        if let requiredScope = scope {
-            return requiredScope == self.scope
-        }
-        return false
-    }
 }
 
 struct AuthenticateChallenge: Equatable {
