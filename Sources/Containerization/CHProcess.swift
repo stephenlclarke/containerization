@@ -121,7 +121,12 @@ final class CHProcess: Sendable {
             $0.exitTask = exitTask
         }
 
-        try await waitForAPISocket()
+        do {
+            try await waitForAPISocket()
+        } catch {
+            await terminate(graceSeconds: 5)
+            throw error
+        }
     }
 
     /// Wait for the subprocess to exit. Resolves with the cached `ExitReason`
@@ -159,20 +164,24 @@ final class CHProcess: Sendable {
     // MARK: - Private helpers
 
     private static let socketDeadline: Duration = .seconds(2)
-    private static let socketPollInterval: Duration = .milliseconds(50)
+    private static let initialSocketPollInterval: Duration = .milliseconds(10)
+    private static let maximumSocketPollInterval: Duration = .milliseconds(50)
 
     private func waitForAPISocket() async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: Self.socketDeadline)
+        var pollBackoff = PollBackoff(
+            initialDelay: Self.initialSocketPollInterval,
+            maximumDelay: Self.maximumSocketPollInterval
+        )
 
         while clock.now < deadline {
             if Self.isAPISocketReady(at: config.apiSocketPath) {
                 return
             }
-            try? await Task.sleep(for: Self.socketPollInterval)
+            try await Task.sleep(for: pollBackoff.next())
         }
 
-        await terminate(graceSeconds: 5)
         throw ContainerizationError(
             .timeout,
             message: "cloud-hypervisor API socket not connectable at \(config.apiSocketPath.path) within \(Self.socketDeadline)"

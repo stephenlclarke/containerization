@@ -26,6 +26,7 @@ extension CloudHypervisor {
         public var payload: PayloadConfig
         public var disks: [DiskConfig]?
         public var net: [NetConfig]?
+        public var balloon: BalloonConfig?
         public var fs: [FsConfig]?
         public var vsock: VsockConfig?
         public var console: ConsoleConfig
@@ -37,6 +38,7 @@ extension CloudHypervisor {
             payload: PayloadConfig,
             disks: [DiskConfig]? = nil,
             net: [NetConfig]? = nil,
+            balloon: BalloonConfig? = nil,
             fs: [FsConfig]? = nil,
             vsock: VsockConfig? = nil,
             console: ConsoleConfig,
@@ -47,6 +49,7 @@ extension CloudHypervisor {
             self.payload = payload
             self.disks = disks
             self.net = net
+            self.balloon = balloon
             self.fs = fs
             self.vsock = vsock
             self.console = console
@@ -59,10 +62,60 @@ extension CloudHypervisor {
             case payload
             case disks
             case net
+            case balloon
             case fs
             case vsock
             case console
             case serial
+        }
+    }
+
+    // MARK: - BalloonConfig
+
+    /// Virtio balloon configuration for a VM.
+    ///
+    /// Maps to `BalloonConfig` in the Cloud Hypervisor OpenAPI spec.
+    public struct BalloonConfig: Sendable, Codable, Equatable {
+        /// Initial balloon size in bytes.
+        public var size: UInt64
+        /// Return ballooned pages to the guest under memory pressure.
+        public var deflateOnOom: Bool?
+        /// Allow the guest to report unused pages to the VMM.
+        public var freePageReporting: Bool?
+
+        public init(size: UInt64, deflateOnOom: Bool? = nil, freePageReporting: Bool? = nil) {
+            self.size = size
+            self.deflateOnOom = deflateOnOom
+            self.freePageReporting = freePageReporting
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case size
+            case deflateOnOom = "deflate_on_oom"
+            case freePageReporting = "free_page_reporting"
+        }
+    }
+
+    // MARK: - VmResize
+
+    /// Live VM resource target payload.
+    ///
+    /// Maps to `VmResize` in the Cloud Hypervisor OpenAPI spec.
+    public struct VmResize: Sendable, Codable, Equatable {
+        public var desiredVcpus: Int?
+        public var desiredRam: UInt64?
+        public var desiredBalloon: UInt64?
+
+        public init(desiredVcpus: Int? = nil, desiredRam: UInt64? = nil, desiredBalloon: UInt64? = nil) {
+            self.desiredVcpus = desiredVcpus
+            self.desiredRam = desiredRam
+            self.desiredBalloon = desiredBalloon
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case desiredVcpus = "desired_vcpus"
+            case desiredRam = "desired_ram"
+            case desiredBalloon = "desired_balloon"
         }
     }
 

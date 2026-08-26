@@ -90,19 +90,25 @@ extension ImageStore {
             return descriptor
         }
 
-        private func updatePushProgress(pushQueue: [[Descriptor]], localIndexData: Data) async {
+        func updatePushProgress(pushQueue: [[Descriptor]], localIndexData: Data) async {
+            guard let progress else {
+                return
+            }
+            var events: [ProgressEvent] = []
+            events.reserveCapacity(pushQueue.reduce(1) { $0 + $1.count } * 2)
             for layerGroup in pushQueue {
                 for desc in layerGroup {
-                    await progress?([
+                    events.append(contentsOf: [
                         .addTotalSize(desc.size),
                         .addTotalItems(1),
                     ])
                 }
             }
-            await progress?([
+            events.append(contentsOf: [
                 .addTotalSize(Int64(localIndexData.count)),
                 .addTotalItems(1),
             ])
+            await progress(events)
         }
 
         private func createIndex(from index: Descriptor, matching: (Platform) -> Bool) async throws -> Data {
@@ -155,8 +161,17 @@ extension ImageStore {
         }
 
         private func getChildren(descs: [Descriptor]) async throws -> [Descriptor] {
-            var out: [Descriptor] = []
-            for desc in descs {
+            let manifestMediaTypes = [
+                MediaTypes.index,
+                MediaTypes.dockerManifestList,
+                MediaTypes.imageManifest,
+                MediaTypes.dockerManifest,
+            ]
+            let manifests = descs.filter { manifestMediaTypes.contains($0.mediaType) }
+            return try await ConcurrentImageTraversal.children(
+                of: manifests,
+                maximumConcurrency: 8
+            ) { desc in
                 let mediaType = desc.mediaType
                 guard let content = try await self.contentStore.get(digest: desc.digest) else {
                     throw ContainerizationError(.notFound, message: "content with digest \(desc.digest)")
@@ -164,16 +179,15 @@ extension ImageStore {
                 switch mediaType {
                 case MediaTypes.index, MediaTypes.dockerManifestList:
                     let index: Index = try content.decode()
-                    out.append(contentsOf: index.manifests)
+                    return index.manifests
                 case MediaTypes.imageManifest, MediaTypes.dockerManifest:
                     let manifest: Manifest = try content.decode()
-                    out.append(manifest.config)
-                    out.append(contentsOf: manifest.layers)
+                    return [manifest.config] + manifest.layers
                 default:
-                    continue
+                    // The descriptors were filtered to known manifest media types above.
+                    return []
                 }
             }
-            return out
         }
     }
 }

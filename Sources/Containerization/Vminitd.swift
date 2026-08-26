@@ -69,21 +69,42 @@ public struct Vminitd: Sendable {
 }
 
 extension Vminitd: VirtualMachineAgent {
+    static func runStandardSetupOperations(
+        _ operations: [@Sendable () async throws -> Void]
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for operation in operations {
+                group.addTask {
+                    try await operation()
+                }
+            }
+            do {
+                while try await group.next() != nil {}
+            } catch {
+                group.cancelAll()
+                while await group.nextResult() != nil {}
+                throw error
+            }
+        }
+    }
+
     /// Perform the standard guest setup necessary for vminitd to be able to
     /// run containers.
     public func standardSetup() async throws {
-        try await up(name: "lo")
-
-        try await setenv(key: "PATH", value: LinuxProcessConfiguration.defaultPath)
-
         // Vminitd mounts /proc, /sys, /sys/fs/cgroup and /run automatically.
-        let mounts: [ContainerizationOCI.Mount] = [
-            .init(type: "tmpfs", source: "tmpfs", destination: "/tmp"),
-            .init(type: "devpts", source: "devpts", destination: "/dev/pts", options: ["gid=5", "mode=620", "ptmxmode=666"]),
-        ]
-        for mount in mounts {
-            try await self.mount(mount)
-        }
+        let temporaryFilesystem = ContainerizationOCI.Mount(type: "tmpfs", source: "tmpfs", destination: "/tmp")
+        let terminalFilesystem = ContainerizationOCI.Mount(
+            type: "devpts",
+            source: "devpts",
+            destination: "/dev/pts",
+            options: ["gid=5", "mode=620", "ptmxmode=666"]
+        )
+        try await Self.runStandardSetupOperations([
+            { try await self.up(name: "lo") },
+            { try await self.setenv(key: "PATH", value: LinuxProcessConfiguration.defaultPath) },
+            { try await self.mount(temporaryFilesystem) },
+            { try await self.mount(terminalFilesystem) },
+        ])
     }
 
     public func writeFile(

@@ -72,6 +72,7 @@ public final class CHVirtualMachineInstance: Sendable {
     // MARK: - State
 
     private let _state: Mutex<VirtualMachineInstanceState>
+    private let _memoryTarget: Mutex<UInt64>
     public var state: VirtualMachineInstanceState {
         _state.withLock { $0 }
     }
@@ -184,7 +185,8 @@ public final class CHVirtualMachineInstance: Sendable {
             self.group = group
         } else {
             self.ownsGroup = true
-            self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+            // A VM's host-side control and guest-agent I/O can share one event loop.
+            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         }
 
         // 4. CHProcess + REST client. The api socket lives next to the workDir.
@@ -221,6 +223,7 @@ public final class CHVirtualMachineInstance: Sendable {
         self.lock = .init()
         self.timeSyncer = .init(logger: logger)
         self._state = Mutex(.stopped)
+        self._memoryTarget = Mutex(Self.alignMemorySize(config.memoryInBytes))
         self._preboundListeners = Mutex([:])
     }
 
@@ -382,6 +385,27 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
         }
     }
 
+    public func setMemoryTarget(_ memoryInBytes: UInt64) async throws {
+        try await lock.withLock { _ in
+            try self.requireRunning()
+
+            let maximum = Self.alignMemorySize(self.config.memoryInBytes)
+            try MemoryTarget.validate(memoryInBytes, maximum: maximum)
+            let current = self._memoryTarget.withLock { $0 }
+            guard memoryInBytes != current else {
+                return
+            }
+
+            if memoryInBytes < current {
+                try await self.compactGuestMemory()
+            }
+            try await chCall {
+                try await self.client.vmResize(.init(desiredBalloon: maximum - memoryInBytes))
+            }
+            self._memoryTarget.withLock { $0 = memoryInBytes }
+        }
+    }
+
     public func dial(_ port: UInt32) async throws -> FileHandle {
         try await lock.withLock { _ in
             try self.requireRunning()
@@ -403,6 +427,32 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
                 .invalidState,
                 message: "vm is not running (state=\(current))"
             )
+        }
+    }
+
+    private func compactGuestMemory() async throws {
+        let agent: Vminitd
+        do {
+            let connection = try await chVsockDial(
+                baseSocket: self.workDir.appendingPathComponent("vsock.sock"),
+                port: Vminitd.port
+            )
+            agent = try await Vminitd(connection: connection, group: self.group)
+        } catch {
+            throw ContainerizationError(.internalError, message: "failed to connect for guest memory compaction", cause: error)
+        }
+
+        do {
+            try await agent.writeFile(
+                path: "/proc/sys/vm/compact_memory",
+                data: Data("1\n".utf8),
+                flags: WriteFileFlags(),
+                mode: 0
+            )
+            try await agent.close()
+        } catch {
+            try? await agent.close()
+            throw ContainerizationError(.internalError, message: "failed to compact guest memory", cause: error)
         }
     }
 
@@ -507,6 +557,14 @@ extension CHVirtualMachineInstance: VirtualMachineInstance {
 // MARK: - VmConfig + vminitd dial helpers
 
 extension CHVirtualMachineInstance {
+    private struct StartedBootVirtiofsd: Sendable {
+        let tag: String
+        let process: VirtiofsdProcess
+        let socket: URL
+        let chDeviceId: String
+        let ownerIds: [String]
+    }
+
     /// Build the cloud-hypervisor `VmConfig` from `config`. Spawns one
     /// `virtiofsd` per unique boot-time virtiofs source-hash tag and registers
     /// each with the hotplug provider so `releaseVirtioFS(id:)` and `stop()`
@@ -549,43 +607,75 @@ extension CHVirtualMachineInstance {
             }
         }
 
-        var fsConfigs: [CloudHypervisor.FsConfig] = []
         // Resolve virtiofsd lazily — only if we actually have any virtiofs
         // mounts at boot. A block-only VM doesn't require virtiofsd.
         let resolvedVirtiofsdBinary: URL? =
             byTag.isEmpty
             ? nil
             : try CHVirtualMachineManager.resolveBinary(virtiofsdBinaryOverride, name: "virtiofsd")
-        for (tag, entry) in byTag {
-            guard let source = entry.mounts.first?.source else { continue }
-            guard let binary = resolvedVirtiofsdBinary else { continue }
-            let socket = chVirtiofsSocketURL(workDir: workDir, tag: tag)
-            let readonly = entry.mounts.allSatisfy { $0.options.contains("ro") }
-            let chDeviceId = "fs-\(tag)"
+        let startedVirtiofsd = try await withThrowingTaskGroup(
+            of: StartedBootVirtiofsd.self,
+            returning: [StartedBootVirtiofsd].self
+        ) { group in
+            var started: [StartedBootVirtiofsd] = []
+            do {
+                for tag in byTag.keys.sorted() {
+                    guard let entry = byTag[tag], let source = entry.mounts.first?.source else { continue }
+                    guard let binary = resolvedVirtiofsdBinary else { continue }
 
-            let process = VirtiofsdProcess(
-                config: .init(
-                    binary: binary,
-                    socketPath: socket,
-                    sharedDir: URL(fileURLWithPath: source),
-                    readonly: readonly
-                ),
-                logger: logger
-            )
-            try await process.start()
+                    group.addTask { [logger, workDir] in
+                        let socket = chVirtiofsSocketURL(workDir: workDir, tag: tag)
+                        let process = VirtiofsdProcess(
+                            config: .init(
+                                binary: binary,
+                                socketPath: socket,
+                                sharedDir: URL(fileURLWithPath: source),
+                                readonly: entry.mounts.allSatisfy { $0.options.contains("ro") }
+                            ),
+                            logger: logger
+                        )
+                        try await process.start()
+                        return StartedBootVirtiofsd(
+                            tag: tag,
+                            process: process,
+                            socket: socket,
+                            chDeviceId: "fs-\(tag)",
+                            ownerIds: entry.owners
+                        )
+                    }
+                }
+                while let item = try await group.next() {
+                    started.append(item)
+                }
+                return started.sorted { $0.tag < $1.tag }
+            } catch {
+                group.cancelAll()
+                while let result = await group.nextResult() {
+                    if case .success(let item) = result {
+                        started.append(item)
+                    }
+                }
+                for item in started {
+                    await item.process.terminate(graceSeconds: 5)
+                    try? FileManager.default.removeItem(at: item.socket)
+                }
+                throw error
+            }
+        }
 
+        var fsConfigs: [CloudHypervisor.FsConfig] = []
+        for item in startedVirtiofsd {
             hotplug.recordBootTimeVirtiofs(
-                tag: tag,
-                process: process,
-                chDeviceId: chDeviceId,
-                ownerIds: entry.owners
+                tag: item.tag,
+                process: item.process,
+                chDeviceId: item.chDeviceId,
+                ownerIds: item.ownerIds
             )
-
             fsConfigs.append(
                 CloudHypervisor.FsConfig(
-                    tag: tag,
-                    socket: socket.path,
-                    id: chDeviceId
+                    tag: item.tag,
+                    socket: item.socket.path,
+                    id: item.chDeviceId
                 )
             )
         }
@@ -620,6 +710,9 @@ extension CHVirtualMachineInstance {
             payload: payload,
             disks: disks.isEmpty ? nil : disks,
             net: net.isEmpty ? nil : net,
+            // Start uninflated; free-page reporting returns idle memory while
+            // deflate-on-OOM lets the guest recover capacity under pressure.
+            balloon: .init(size: 0, deflateOnOom: true, freePageReporting: true),
             fs: fsConfigs.isEmpty ? nil : fsConfigs,
             vsock: vsock,
             // Kernel cmdline is `console=hvc0`, so userspace (vminitd) writes
@@ -675,17 +768,21 @@ extension CHVirtualMachineInstance {
         let baseSocket = workDir.appendingPathComponent("vsock.sock")
         let clock = ContinuousClock()
         let stop = clock.now.advanced(by: deadline)
-        var delay = initialDelay
+        var pollBackoff = PollBackoff(
+            initialDelay: initialDelay,
+            maximumDelay: .milliseconds(50)
+        )
         var lastError: any Error = ContainerizationError(.timeout, message: "could not dial vminitd")
         while clock.now < stop {
             do {
                 return try await chVsockDial(baseSocket: baseSocket, port: Vminitd.port)
             } catch {
                 lastError = error
-                try? await Task.sleep(for: delay)
-                if delay < .milliseconds(50) {
-                    delay = delay * 2
+                let remaining = clock.now.duration(to: stop)
+                guard remaining > .zero else {
+                    break
                 }
+                try await Task.sleep(for: min(pollBackoff.next(), remaining))
             }
         }
         throw ContainerizationError(.timeout, message: "could not dial vminitd within \(deadline): \(lastError)")

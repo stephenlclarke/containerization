@@ -20,6 +20,10 @@ import Testing
 
 @testable import Containerization
 
+#if os(macOS)
+import Virtualization
+#endif
+
 struct MountTests {
 
     #if os(macOS)
@@ -59,6 +63,31 @@ struct MountTests {
             #expect(Bool(false), "Expected virtiofs runtime options")
         }
     }
+
+    #if os(macOS)
+    @Test func configureVZMountsHashesRepeatedSourceOnce() throws {
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        var configuration = VZVirtualMachineInstance.Configuration()
+        configuration.mountsByID = [
+            "first": [Mount.share(source: source.path, destination: "/first")],
+            "second": [Mount.share(source: source.path, destination: "/second", options: ["ro"])],
+        ]
+        var vzConfiguration = VZVirtualMachineConfiguration()
+        var hashCalls = 0
+
+        let directories = try configuration.configureMountDevices(config: &vzConfiguration) { _ in
+            hashCalls += 1
+            return "shared-tag"
+        }
+
+        #expect(hashCalls == 1)
+        #expect(directories.count == 1)
+        #expect(directories["shared-tag"] != nil)
+    }
+    #endif
 
     @Test func sortMountsByDestinationDepthPreventsParentShadowing() {
         let mounts: [ContainerizationOCI.Mount] = [

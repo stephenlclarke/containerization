@@ -100,23 +100,30 @@ extension ImageStore {
         }
 
         private func walk(_ descriptors: [Descriptor]) async throws -> [Descriptor] {
-            var out: [Descriptor] = []
-            for desc in descriptors {
+            let manifestMediaTypes = [
+                MediaTypes.index,
+                MediaTypes.dockerManifestList,
+                MediaTypes.imageManifest,
+                MediaTypes.dockerManifest,
+            ]
+            let manifests = descriptors.filter { manifestMediaTypes.contains($0.mediaType) }
+            return try await ConcurrentImageTraversal.children(
+                of: manifests,
+                maximumConcurrency: maxConcurrentDownloads
+            ) { desc in
                 let mediaType = desc.mediaType
                 switch mediaType {
                 case MediaTypes.index, MediaTypes.dockerManifestList:
                     let index: Index = try await self.getManifestContent(descriptor: desc)
-                    out.append(contentsOf: index.manifests)
+                    return index.manifests
                 case MediaTypes.imageManifest, MediaTypes.dockerManifest:
                     let manifest: Manifest = try await self.getManifestContent(descriptor: desc)
-                    out.append(manifest.config)
-                    out.append(contentsOf: manifest.layers)
+                    return [manifest.config] + manifest.layers
                 default:
-                    // TODO: Explicitly handle other content types
-                    continue
+                    // The descriptors were filtered to known manifest media types above.
+                    return []
                 }
             }
-            return out
         }
 
         private func fetchAll(_ descriptors: [Descriptor]) async throws {

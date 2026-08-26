@@ -64,7 +64,8 @@ extension CloudHypervisor {
                 self.group = eventLoopGroup
             } else {
                 self.ownsGroup = true
-                self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+                // A client owns one HTTP connection pool, so one event loop is sufficient.
+                self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
             }
             self.http = HTTPOverUDSClient(
                 socketPath: socketPath.path,

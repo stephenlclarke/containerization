@@ -67,6 +67,7 @@ public final class RegistryClient: ContentClient {
     let authentication: Authentication?
     let retryOptions: RetryOptions?
     let bufferSize: Int
+    private let tokenCache = RegistryTokenCache()
 
     public convenience init(
         reference: String,
@@ -221,12 +222,14 @@ public final class RegistryClient: ContentClient {
                         // Throw the 401/403 to the caller, and let them decide how to proceed.
                         throw RegistryClient.Error.invalidStatus(url: path, _response.status, reason: String(describing: error))
                     }
-                    if let ct = currentToken, ct.isValid(scope: tokenRequest.scope) {
+                    if let ct = currentToken, ct.scope == tokenRequest.scope {
                         break
                     }
 
                     do {
-                        let _currentToken = try await fetchToken(request: tokenRequest)
+                        let _currentToken = try await tokenCache.token(for: tokenRequest) {
+                            try await self.fetchToken(request: tokenRequest)
+                        }
                         guard let token = _currentToken.getToken() else {
                             throw ContainerizationError(.internalError, message: "failed to fetch Bearer token")
                         }

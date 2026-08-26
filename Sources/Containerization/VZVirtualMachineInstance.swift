@@ -152,7 +152,8 @@ public final class VZVirtualMachineInstance: Sendable {
             self.group = group
         } else {
             self.ownsGroup = true
-            self.group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
+            // One event loop can serve this VM's agent and socket connections.
+            self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         }
 
         self.config = config
@@ -290,6 +291,23 @@ extension VZVirtualMachineInstance: VirtualMachineInstance {
         }
     }
 
+    public func setMemoryTarget(_ memoryInBytes: UInt64) async throws {
+        try await lock.withLock { _ in
+            guard case .running = self.state else {
+                throw ContainerizationError(.invalidState, message: "vm is not running")
+            }
+
+            let maximum = Configuration.alignedMemorySize(self.config.memoryInBytes)
+            try MemoryTarget.validate(memoryInBytes, maximum: maximum)
+
+            let current = try self.vm.memoryBalloonTarget(queue: self.queue)
+            if memoryInBytes < current {
+                try await self.compactGuestMemory()
+            }
+            try self.vm.setMemoryBalloonTarget(queue: self.queue, memoryInBytes: memoryInBytes)
+        }
+    }
+
     public func dialAgent() async throws -> Vminitd {
         try await lock.withLock { _ in
             do {
@@ -351,6 +369,29 @@ extension VZVirtualMachineInstance: VirtualMachineInstance {
             queue: queue,
             port: port
         )
+    }
+
+    private func compactGuestMemory() async throws {
+        let agent: Vminitd
+        do {
+            let connection = try await self.vm.connect(queue: self.queue, port: Vminitd.port)
+            agent = try await Vminitd(connection: try connection.dupHandle(), group: self.group)
+        } catch {
+            throw ContainerizationError(.internalError, message: "failed to connect for guest memory compaction", cause: error)
+        }
+
+        do {
+            try await agent.writeFile(
+                path: "/proc/sys/vm/compact_memory",
+                data: Data("1\n".utf8),
+                flags: WriteFileFlags(),
+                mode: 0
+            )
+            try await agent.close()
+        } catch {
+            try? await agent.close()
+            throw ContainerizationError(.internalError, message: "failed to compact guest memory", cause: error)
+        }
     }
 
     // MARK: - Hotplug
@@ -452,8 +493,7 @@ extension VZVirtualMachineInstance.Configuration {
         var config = VZVirtualMachineConfiguration()
 
         config.cpuCount = self.cpus
-        let mib: UInt64 = 1 << 20
-        config.memorySize = (self.memoryInBytes + mib - 1) & ~(mib - 1)
+        configureMemory(on: config)
         config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
         config.socketDevices = [VZVirtioSocketDeviceConfiguration()]
 
@@ -513,38 +553,10 @@ extension VZVirtualMachineInstance.Configuration {
 
         try initialFilesystem.configure(config: &config)
 
-        // Track used virtiofs tags to avoid creating duplicate VZ devices.
-        // The same source directory mounted to multiple destinations shares one device.
-        var usedVirtioFSTags: Set<String> = []
-        for (_, mounts) in self.mountsByID {
-            for mount in mounts {
-                if case .virtiofs = mount.runtimeOptions {
-                    let tag = try hashFilePath(path: mount.source)
-                    if usedVirtioFSTags.contains(tag) {
-                        continue
-                    }
-                    usedVirtioFSTags.insert(tag)
-                }
-                try mount.configure(config: &config)
-            }
-        }
-
-        // Create the unified virtiofs device with VZMultipleDirectoryShare
-        // This device hosts all virtiofs shares and supports runtime updates
-        var directories: [String: VZSharedDirectory] = [:]
-        for (_, mounts) in self.mountsByID {
-            for mount in mounts {
-                guard case .virtiofs(_) = mount.runtimeOptions else { continue }
-                guard FileManager.default.fileExists(atPath: mount.source) else {
-                    throw ContainerizationError(.notFound, message: "directory \(mount.source) does not exist")
-                }
-                let name = try hashFilePath(path: mount.source)
-                directories[name] = VZSharedDirectory(
-                    url: URL(fileURLWithPath: mount.source),
-                    readOnly: mount.options.contains("ro")
-                )
-            }
-        }
+        // Configure block devices and collect the unified virtiofs directories in
+        // one pass. Resolving symlinks and hashing a source path requires filesystem
+        // I/O, so cache exact repeated sources within this VM configuration.
+        let directories = try configureMountDevices(config: &config)
         let multiShare = VZMultipleDirectoryShare(directories: directories)
         let virtiofsDevice = VZVirtioFileSystemDeviceConfiguration(tag: "virtiofs")
         virtiofsDevice.share = multiShare
@@ -596,6 +608,49 @@ extension VZVirtualMachineInstance.Configuration {
 
         try config.validate()
         return config
+    }
+
+    func configureMemory(on config: VZVirtualMachineConfiguration) {
+        config.memorySize = Self.alignedMemorySize(self.memoryInBytes)
+        config.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
+    }
+
+    static func alignedMemorySize(_ memoryInBytes: UInt64) -> UInt64 {
+        let mib: UInt64 = 1 << 20
+        return (memoryInBytes + mib - 1) & ~(mib - 1)
+    }
+
+    func configureMountDevices(
+        config: inout VZVirtualMachineConfiguration,
+        tagForPath: (String) throws -> String = hashFilePath
+    ) throws -> [String: VZSharedDirectory] {
+        var directories: [String: VZSharedDirectory] = [:]
+        var tagsBySource: [String: String] = [:]
+
+        for (_, mounts) in self.mountsByID {
+            for mount in mounts {
+                guard case .virtiofs = mount.runtimeOptions else {
+                    try mount.configure(config: &config)
+                    continue
+                }
+                let tag: String
+                if let cached = tagsBySource[mount.source] {
+                    tag = cached
+                } else {
+                    guard FileManager.default.fileExists(atPath: mount.source) else {
+                        throw ContainerizationError(.notFound, message: "directory \(mount.source) does not exist")
+                    }
+                    tag = try tagForPath(mount.source)
+                    tagsBySource[mount.source] = tag
+                }
+                directories[tag] = VZSharedDirectory(
+                    url: URL(fileURLWithPath: mount.source),
+                    readOnly: mount.options.contains("ro")
+                )
+            }
+        }
+
+        return directories
     }
 
     func mountAttachments(allocator: any AddressAllocator<Character>) throws -> (
