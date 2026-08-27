@@ -613,6 +613,16 @@ extension Vminitd {
             })
     }
 
+    /// Create a guest bridge and enslave the sandbox uplink before workload
+    /// endpoints are materialized.
+    public func configureWorkloadNetworkBridge(name: String, uplinkInterface: String) async throws {
+        _ = try await client.configureWorkloadNetworkBridge(
+            .with {
+                $0.name = name
+                $0.uplinkInterface = uplinkInterface
+            })
+    }
+
     /// Perform a sync call.
     public func sync() async throws {
         _ = try await client.sync(.init())

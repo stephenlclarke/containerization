@@ -32,6 +32,19 @@ struct WorkloadNetworkTests {
         )
     }
 
+    @Test func workloadBridgeAcceptsAValidLinuxInterfaceName() throws {
+        #expect(throws: Never.self) {
+            try WorkloadNetworkBridge(name: "cz-shared0").validate()
+        }
+    }
+
+    @Test(arguments: ["", "lo", "bridge-name-that-is-too-long", "bad/name"])
+    func workloadBridgeRejectsInvalidLinuxInterfaceNames(_ name: String) {
+        #expect(throws: ContainerizationError.self) {
+            try WorkloadNetworkBridge(name: name).validate()
+        }
+    }
+
     @Test func ipv6OnlyPlanRoundTripsWithoutSyntheticIPv4() throws {
         let endpoint = WorkloadNetworkEndpoint(
             hostInterfaceName: "veth-api",

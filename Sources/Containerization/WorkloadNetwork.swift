@@ -98,6 +98,31 @@ public struct WorkloadNetworkEndpoint: Codable, Equatable, Sendable {
     }
 }
 
+/// A guest bridge that connects private workload network namespaces to the
+/// sandbox's first virtual network interface.
+///
+/// The bridge is created while the sandbox boots. The first virtual interface
+/// is enslaved as its uplink, and that interface's addresses and routes are
+/// installed on the bridge. Per-workload veth endpoints can then name this
+/// bridge in ``WorkloadNetworkEndpoint/bridgeInterfaceName``.
+public struct WorkloadNetworkBridge: Codable, Equatable, Sendable {
+    public var name: String
+
+    public init(name: String) {
+        self.name = name
+    }
+
+    public func validate() throws {
+        try WorkloadNetworkPlan.validateInterfaceName(name, role: "workload bridge")
+        guard name != "lo" else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "workload bridge interface name 'lo' is reserved"
+            )
+        }
+    }
+}
+
 /// Internal OCI annotation transport shared by the host library, vminitd, and vmexec.
 public enum WorkloadNetworkPlan {
     public static let annotationKey = "io.github.stephenlclarke.containerization.workload-network.v1"
@@ -193,7 +218,8 @@ public enum WorkloadNetworkPlan {
         }
     }
 
-    private static func validateInterfaceName(_ name: String, role: String) throws {
+    /// Validate a Linux interface name carried by a resolved network plan.
+    public static func validateInterfaceName(_ name: String, role: String) throws {
         guard !name.isEmpty, name.utf8.count <= 15,
             !name.contains(where: { $0.isWhitespace || $0 == "/" || $0 == ":" || $0 == "\0" })
         else {

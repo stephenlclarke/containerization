@@ -1600,6 +1600,64 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         return .init()
     }
 
+    public func configureWorkloadNetworkBridge(
+        request: Com_Apple_Containerization_Sandbox_V3_ConfigureWorkloadNetworkBridgeRequest,
+        context: GRPCCore.ServerContext
+    ) async throws -> Com_Apple_Containerization_Sandbox_V3_ConfigureWorkloadNetworkBridgeResponse {
+        log.debug(
+            "configureWorkloadNetworkBridge",
+            metadata: [
+                "name": "\(request.name)",
+                "uplinkInterface": "\(request.uplinkInterface)",
+            ])
+
+        do {
+            let bridge = WorkloadNetworkBridge(name: request.name)
+            try bridge.validate()
+            try WorkloadNetworkPlan.validateInterfaceName(
+                request.uplinkInterface,
+                role: "sandbox uplink"
+            )
+            let session = NetlinkSession(socket: try DefaultNetlinkSocket(), log: log)
+            var createdBridge = false
+            do {
+                try session.linkAddBridge(name: request.name)
+                createdBridge = true
+            } catch {
+                let existing = (try? session.linkGet(interface: request.name)) ?? []
+                let bridgePath = "/sys/class/net/\(request.name)/bridge"
+                guard !existing.isEmpty, FileManager.default.fileExists(atPath: bridgePath) else {
+                    throw error
+                }
+            }
+            do {
+                try session.linkSetAttributes(
+                    interface: request.uplinkInterface,
+                    master: request.name
+                )
+                try session.linkSet(interface: request.uplinkInterface, up: true)
+                try session.linkSet(interface: request.name, up: true)
+            } catch {
+                if createdBridge {
+                    try? session.linkDel(name: request.name)
+                }
+                throw error
+            }
+        } catch {
+            log.error(
+                "configureWorkloadNetworkBridge",
+                metadata: ["error": "\(error)"]
+            )
+            throw RPCError(
+                code: .internalError,
+                message: "configureWorkloadNetworkBridge",
+                cause: error
+            )
+        }
+
+        return .init()
+    }
+
     public func ipRouteAddLink(
         request: Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkRequest, context: GRPCCore.ServerContext
     ) async throws -> Com_Apple_Containerization_Sandbox_V3_IpRouteAddLinkResponse {

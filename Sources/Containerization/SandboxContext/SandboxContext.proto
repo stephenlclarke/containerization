@@ -79,6 +79,8 @@ service SandboxContext {
   rpc ConfigureHosts(ConfigureHostsRequest) returns (ConfigureHostsResponse);
   // Validate support for a resolved per-workload endpoint plan.
   rpc ValidateWorkloadNetwork(ValidateWorkloadNetworkRequest) returns (ValidateWorkloadNetworkResponse);
+  // Create a guest bridge and attach the sandbox uplink.
+  rpc ConfigureWorkloadNetworkBridge(ConfigureWorkloadNetworkBridgeRequest) returns (ConfigureWorkloadNetworkBridgeResponse);
 
   // Perform the sync syscall.
   rpc Sync(SyncRequest) returns (SyncResponse);
@@ -434,6 +436,13 @@ message ValidateWorkloadNetworkRequest {
 }
 
 message ValidateWorkloadNetworkResponse {}
+
+message ConfigureWorkloadNetworkBridgeRequest {
+  string name = 1;
+  string uplink_interface = 2;
+}
+
+message ConfigureWorkloadNetworkBridgeResponse {}
 
 message SyncRequest {}
 message SyncResponse {}
