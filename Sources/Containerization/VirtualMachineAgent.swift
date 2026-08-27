@@ -96,6 +96,7 @@ public protocol VirtualMachineAgent: Sendable {
     func configureDNS(config: DNS, location: String) async throws
     func configureHosts(config: Hosts, location: String) async throws
     func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws
+    func configureWorkloadNetworkBridge(name: String, uplinkInterface: String) async throws
 
     // Container statistics
     func containerStatistics(containerIDs: [String], categories: StatCategory) async throws -> [ContainerStatistics]
@@ -152,6 +153,10 @@ extension VirtualMachineAgent {
 
     public func validateWorkloadNetwork(endpoints: [WorkloadNetworkEndpoint]) async throws {
         throw ContainerizationError(.unsupported, message: "workload network endpoints")
+    }
+
+    public func configureWorkloadNetworkBridge(name: String, uplinkInterface: String) async throws {
+        throw ContainerizationError(.unsupported, message: "workload network bridge")
     }
 
     public func writeFile(

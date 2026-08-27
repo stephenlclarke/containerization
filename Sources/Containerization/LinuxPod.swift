@@ -44,6 +44,12 @@ public final class LinuxPod: Sendable {
         public var memoryInBytes: UInt64 = 1024.mib()
         /// The network interfaces for the pod.
         public var interfaces: [any Interface] = []
+        /// Optional guest bridge for private workload network endpoints.
+        ///
+        /// The first and only virtual interface becomes the bridge uplink.
+        /// Its addresses and routes are configured on the bridge rather than
+        /// directly on the virtual interface.
+        public var workloadNetworkBridge: WorkloadNetworkBridge?
         /// Whether nested virtualization should be turned on for the pod.
         public var virtualization: Bool = false
         /// Optional file path to store serial boot logs.
@@ -383,6 +389,7 @@ public final class LinuxPod: Sendable {
 
         var config = Configuration()
         try configuration(&config)
+        try Self.validateWorkloadNetworkBridge(config)
 
         self.config = config
         self.state = AsyncMutex(State(phase: .initialized, containers: [:], pauseProcess: nil))
@@ -461,6 +468,23 @@ public final class LinuxPod: Sendable {
             )
         }
         try WorkloadNetworkPlan.validate(config.networkEndpoints)
+    }
+
+    package static func validateWorkloadNetworkBridge(_ config: Configuration) throws {
+        guard let bridge = config.workloadNetworkBridge else { return }
+        try bridge.validate()
+        guard config.interfaces.count == 1 else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "a workload network bridge requires exactly one sandbox uplink interface"
+            )
+        }
+        guard config.interfaces[0].guestInterfaceName == nil else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "a workload network bridge owns the guest name of the sandbox uplink interface"
+            )
+        }
     }
 
     private func generateRuntimeSpec(containerID: String, config: ContainerConfiguration, rootfs: Mount) -> Spec {
@@ -1132,18 +1156,32 @@ extension LinuxPod {
                     // 1. Add the address requested
                     // 2. Online the adapter
                     // 3. For the first interface, add the default route
-                    var defaultRouteSet = false
-                    let interfaceNames = try resolveGuestInterfaceNames(self.interfaces)
-                    for (index, i) in self.interfaces.enumerated() {
-                        let name = interfaceNames[index]
+                    if let bridge = self.config.workloadNetworkBridge {
+                        try await agent.configureWorkloadNetworkBridge(
+                            name: bridge.name,
+                            uplinkInterface: "eth0"
+                        )
                         try await agent.setupInterface(
-                            i,
-                            name: name,
-                            initialName: "eth\(index)",
-                            setDefaultRoute: !defaultRouteSet,
+                            self.interfaces[0],
+                            name: bridge.name,
+                            initialName: bridge.name,
+                            setDefaultRoute: true,
                             logger: self.logger
                         )
-                        defaultRouteSet = true
+                    } else {
+                        var defaultRouteSet = false
+                        let interfaceNames = try resolveGuestInterfaceNames(self.interfaces)
+                        for (index, i) in self.interfaces.enumerated() {
+                            let name = interfaceNames[index]
+                            try await agent.setupInterface(
+                                i,
+                                name: name,
+                                initialName: "eth\(index)",
+                                setDefaultRoute: !defaultRouteSet,
+                                logger: self.logger
+                            )
+                            defaultRouteSet = true
+                        }
                     }
 
                     // Setup /etc/resolv.conf and /etc/hosts for each container.

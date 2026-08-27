@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerizationError
+import ContainerizationExtras
 import Foundation
 import Synchronization
 import Testing
@@ -124,6 +125,42 @@ struct LinuxPodConfigurationTests {
         let configuration = LinuxPod.Configuration()
 
         #expect(configuration.sharedNamespaces.isEmpty)
+    }
+
+    @Test func workloadBridgeRequiresExactlyOneUnnamedUplink() throws {
+        let interface = NATInterface(
+            ipv4Address: try CIDRv4("192.168.64.2/24"),
+            ipv4Gateway: try IPv4Address("192.168.64.1")
+        )
+
+        var valid = LinuxPod.Configuration()
+        valid.interfaces = [interface]
+        valid.workloadNetworkBridge = WorkloadNetworkBridge(name: "cz-shared0")
+
+        #expect(throws: Never.self) {
+            try LinuxPod.validateWorkloadNetworkBridge(valid)
+        }
+
+        var missingUplink = LinuxPod.Configuration()
+        missingUplink.workloadNetworkBridge = WorkloadNetworkBridge(name: "cz-shared0")
+        #expect(throws: ContainerizationError.self) {
+            try LinuxPod.validateWorkloadNetworkBridge(missingUplink)
+        }
+
+        var multipleUplinks = LinuxPod.Configuration()
+        multipleUplinks.interfaces = [interface, interface]
+        multipleUplinks.workloadNetworkBridge = WorkloadNetworkBridge(name: "cz-shared0")
+        #expect(throws: ContainerizationError.self) {
+            try LinuxPod.validateWorkloadNetworkBridge(multipleUplinks)
+        }
+
+        let namedInterface = NATInterface(guestInterfaceName: "uplink0")
+        var namedUplink = LinuxPod.Configuration()
+        namedUplink.interfaces = [namedInterface]
+        namedUplink.workloadNetworkBridge = WorkloadNetworkBridge(name: "cz-shared0")
+        #expect(throws: ContainerizationError.self) {
+            try LinuxPod.validateWorkloadNetworkBridge(namedUplink)
+        }
     }
 
     @Test func namespaceSharingSelectsProcessAndIPCIndependently() {
