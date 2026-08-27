@@ -16,11 +16,80 @@
 
 import ContainerizationError
 import Foundation
+import Synchronization
 import Testing
 
 @testable import Containerization
 
 struct LinuxPodConfigurationTests {
+    @Test func guestPathReadinessReturnsAfterImmediateVisibility() async throws {
+        let attempts = Mutex(0)
+
+        try await LinuxPod.waitForGuestPath(
+            URL(fileURLWithPath: "/run/virtiofs/rootfs/snapshot"),
+            maximumAttempts: 3,
+            retryInterval: .zero
+        ) { _ in
+            attempts.withLock { $0 += 1 }
+        }
+
+        #expect(attempts.withLock { $0 } == 1)
+    }
+
+    @Test func guestPathReadinessRetriesDelayedVisibility() async throws {
+        let attempts = Mutex(0)
+
+        try await LinuxPod.waitForGuestPath(
+            URL(fileURLWithPath: "/run/virtiofs/rootfs/snapshot"),
+            maximumAttempts: 3,
+            retryInterval: .zero
+        ) { _ in
+            let attempt = attempts.withLock { value in
+                value += 1
+                return value
+            }
+            if attempt < 3 {
+                throw ContainerizationError(.notFound, message: "guest path is not visible")
+            }
+        }
+
+        #expect(attempts.withLock { $0 } == 3)
+    }
+
+    @Test func guestPathReadinessFailsAfterBoundedAttempts() async {
+        let attempts = Mutex(0)
+
+        await #expect(throws: ContainerizationError.self) {
+            try await LinuxPod.waitForGuestPath(
+                URL(fileURLWithPath: "/run/virtiofs/rootfs/snapshot"),
+                maximumAttempts: 3,
+                retryInterval: .zero
+            ) { _ in
+                attempts.withLock { $0 += 1 }
+                throw ContainerizationError(.notFound, message: "guest path is not visible")
+            }
+        }
+
+        #expect(attempts.withLock { $0 } == 3)
+    }
+
+    @Test func guestPathReadinessDoesNotRetryOtherFailures() async {
+        let attempts = Mutex(0)
+
+        await #expect(throws: GuestPathReadinessTestError.self) {
+            try await LinuxPod.waitForGuestPath(
+                URL(fileURLWithPath: "/run/virtiofs/rootfs/snapshot"),
+                maximumAttempts: 3,
+                retryInterval: .zero
+            ) { _ in
+                attempts.withLock { $0 += 1 }
+                throw GuestPathReadinessTestError.unavailable
+            }
+        }
+
+        #expect(attempts.withLock { $0 } == 1)
+    }
+
     @Test func snapshotDeterministicallyObservesRegisteredWorkloads() async throws {
         let pod = try LinuxPod("sandbox-1", vmm: SnapshotVirtualMachineManager()) { _ in }
 
@@ -147,6 +216,10 @@ struct LinuxPodConfigurationTests {
             )
         }
     }
+}
+
+private enum GuestPathReadinessTestError: Error {
+    case unavailable
 }
 
 private struct SnapshotVirtualMachineManager: VirtualMachineManager {
