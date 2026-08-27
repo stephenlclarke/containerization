@@ -549,6 +549,39 @@ public final class LinuxPod: Sendable {
     private static func guestVolumePath(_ volumeName: String) -> String {
         "/run/volumes/\(volumeName)"
     }
+
+    package static func waitForGuestPath(
+        _ path: URL,
+        maximumAttempts: Int = 50,
+        retryInterval: Duration = .milliseconds(20),
+        probe: @Sendable (URL) async throws -> Void
+    ) async throws {
+        guard maximumAttempts > 0 else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "guest path readiness requires at least one attempt"
+            )
+        }
+
+        var lastError: (any Error)?
+        for attempt in 1...maximumAttempts {
+            do {
+                try await probe(path)
+                return
+            } catch let error as ContainerizationError where error.code == .notFound {
+                lastError = error
+                guard attempt < maximumAttempts else { break }
+                try await Task.sleep(for: retryInterval)
+            } catch {
+                throw error
+            }
+        }
+        throw ContainerizationError(
+            .timeout,
+            message: "guest path did not become visible at \(path.path) after \(maximumAttempts) attempts",
+            cause: lastError
+        )
+    }
 }
 
 /// Production spelling for the multi-workload Linux VM abstraction.
@@ -777,6 +810,13 @@ extension LinuxPod {
 
                         var mount = attachment.to
                         mount.destination = Self.guestRootfsPath(id)
+                        if rootfsUsesUnifiedVirtiofs {
+                            try await Self.waitForGuestPath(
+                                URL(fileURLWithPath: mount.source)
+                            ) { path in
+                                _ = try await agent.stat(path: path)
+                            }
+                        }
                         try await agent.mount(mount)
 
                         // Filter out shared mounts — those are handled separately as
