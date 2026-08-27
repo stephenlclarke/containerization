@@ -1129,6 +1129,34 @@ struct LinuxContainerTests {
         #expect(context.preparedMounts[0].ownership == nil)
     }
 
+    @Test func fileMountUsesPreexposedGuestSource() async throws {
+        let directory = FileManager.default.uniqueTemporaryDirectory(create: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = directory.appendingPathComponent("config.txt")
+        try Data("configuration".utf8).write(to: source)
+
+        var context = try FileMountContext.prepare(mounts: [
+            .share(source: source.path, destination: "/etc/config.txt")
+        ])
+        let tag = try hashFilePath(path: directory.path)
+        let guestSource = "/run/virtiofs/runtime-root/config"
+        try await context.mountHoldingDirectories(
+            vmMounts: [
+                AttachedFilesystem(
+                    type: "virtiofs",
+                    source: tag,
+                    destination: "/.file-mount-holding",
+                    options: [],
+                    guestSource: guestSource
+                )
+            ],
+            agent: RecordingVirtualMachineAgent()
+        )
+
+        let mount = try #require(context.ociBindMounts().first)
+        #expect(mount.source == "\(guestSource)/config.txt")
+    }
+
 }
 
 private struct StubVirtualMachineManager: VirtualMachineManager {

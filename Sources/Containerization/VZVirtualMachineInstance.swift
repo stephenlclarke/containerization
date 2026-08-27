@@ -147,6 +147,7 @@ public final class VZVirtualMachineInstance: Sendable {
     }
 
     init(group: EventLoopGroup?, config: Configuration, logger: Logger?) throws {
+        let config = Self.withDefaultRuntimeDirectoryShare(config)
         if let group {
             self.ownsGroup = false
             self.group = group
@@ -170,17 +171,44 @@ public final class VZVirtualMachineInstance: Sendable {
             configuration: try config.toVZ(allocator: allocator),
             queue: self.queue
         )
+        let preexposedShares = config.extensions.compactMap {
+            $0 as? VZPreexposedDirectoryShare
+        }
         self.hotplugProvider = try VZHotplugProvider(
             vm: self.vm,
             queue: self.queue,
             allocator: allocator,
             initialMounts: mountAttachments,
-            bootMounts: config.mountsByID
+            preexposedRoots: preexposedShares.flatMap(\.roots),
+            runtimeDeviceTags: preexposedShares.flatMap(\.runtimeDeviceTags)
         )
 
         for ext in config.extensions.compactMap({ $0 as? any VZInstanceExtension }) {
             try ext.didCreate(self)
         }
+    }
+
+    /// Reserves runtime virtio-fs devices for ordinary VZ configurations.
+    ///
+    /// A directory-sharing device cannot be added after the VM starts. Keep a
+    /// default empty-root extension in every VZ instance so existing callers
+    /// that do not pre-expose host roots can still hotplug filesystems.
+    static func withDefaultRuntimeDirectoryShare(
+        _ configuration: Configuration
+    ) -> Configuration {
+        guard
+            !configuration.extensions.contains(where: {
+                $0 is VZPreexposedDirectoryShare
+            })
+        else {
+            return configuration
+        }
+
+        var configuration = configuration
+        configuration.extensions.append(
+            VZPreexposedDirectoryShare(roots: [])
+        )
+        return configuration
     }
 }
 
@@ -216,6 +244,15 @@ extension VZInstanceExtension {
 }
 
 extension VZVirtualMachineInstance: VirtualMachineInstance {
+    public var runtimeVirtiofsTags: Set<String> {
+        (hotplugProvider as? VZHotplugProvider)?.runtimeDeviceTags ?? []
+    }
+
+    public func runtimeVirtiofsTagsToUnmount(id: String) -> Set<String> {
+        (hotplugProvider as? VZHotplugProvider)?
+            .runtimeDeviceTagsToUnmount(id: id) ?? []
+    }
+
     public func start() async throws {
         try await lock.withLock { _ in
             guard self.state == .stopped else {

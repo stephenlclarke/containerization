@@ -315,6 +315,8 @@ public final class LinuxPod: Sendable {
         var pauseProcess: LinuxProcess?
         // Whether the unified virtiofs share is mounted at `/run/virtiofs` in the guest
         var unifiedVirtiofsMounted: Bool = false
+        // Boot-created runtime virtiofs devices currently mounted in the guest.
+        var mountedRuntimeVirtiofsTags: Set<String> = []
     }
 
     private enum Phase: Sendable {
@@ -771,6 +773,7 @@ extension LinuxPod {
                 let attachment = try await vm.hotplug(modifiedRootfs, id: id)
 
                 var updatedFileMountContext = fileMountContext
+                var hotplugCleanupSafe = true
                 do {
                     let virtioFSMounts = fileMountContext.transformedMounts.filter {
                         if case .virtiofs(_) = $0.runtimeOptions { return true }
@@ -783,19 +786,58 @@ extension LinuxPod {
                     let newVirtiofsTags = try virtioFSMounts.map {
                         try hashFilePath(path: $0.source)
                     }
-                    let rootfsUsesUnifiedVirtiofs =
+                    // Shared mounts are pod volumes and are registered separately.
+                    let nonSharedMounts = fileMountContext.transformedMounts.filter {
+                        if case .shared = $0.runtimeOptions { return false }
+                        return true
+                    }
+                    try vm.registerMounts(
+                        id: id,
+                        rootfs: attachment,
+                        additionalMounts: nonSharedMounts
+                    )
+                    let containerMounts = vm.mounts[id] ?? []
+                    let guestSources = containerMounts.map {
+                        $0.guestSource ?? $0.source
+                    }
+                    let stableVirtiofsRoot = "/run/virtiofs"
+                    let runtimeVirtiofsTagsUsed = Set(
+                        vm.runtimeVirtiofsTags.filter { tag in
+                            let root = "/run/\(tag)"
+                            return guestSources.contains {
+                                Self.isGuestPath($0, below: root)
+                            }
+                        }
+                    )
+                    let usesStableVirtiofs =
                         vm.virtiofsLayout == .unified
-                        && attachment.source.hasPrefix("/run/virtiofs/")
+                        && guestSources.contains {
+                            Self.isGuestPath($0, below: stableVirtiofsRoot)
+                        }
+                    let usesRuntimeVirtiofs =
+                        vm.virtiofsLayout == .unified
+                        && !runtimeVirtiofsTagsUsed.isEmpty
+                    let rootfsUsesVirtiofs =
+                        vm.virtiofsLayout == .unified
+                        && (Self.isGuestPath(attachment.source, below: stableVirtiofsRoot)
+                            || runtimeVirtiofsTagsUsed.contains {
+                                Self.isGuestPath(
+                                    attachment.source,
+                                    below: "/run/\($0)"
+                                )
+                            })
 
                     let agent = try await vm.dialAgent()
+                    var runtimeVirtiofsMountAttempts: Set<String> = []
+                    var rootfsMountAttempted = false
                     do {
                         // Mount newly exposed virtiofs content before the rootfs.
                         // VZ runtime block attachments are ext4 images reached
                         // through the unified share and therefore need this
                         // mount before the guest can create its loop device.
-                        if !newVirtiofsTags.isEmpty || rootfsUsesUnifiedVirtiofs {
-                            try await agent.mkdir(path: "/run/virtiofs", all: true, perms: 0o755)
+                        if !newVirtiofsTags.isEmpty || usesStableVirtiofs || usesRuntimeVirtiofs {
                             if vm.virtiofsLayout == .perTag {
+                                try await agent.mkdir(path: stableVirtiofsRoot, all: true, perms: 0o755)
                                 // Tags already mounted in the guest at boot or by a
                                 // prior hotplug (i.e. present on another container).
                                 let alreadyMounted = Set(
@@ -818,46 +860,54 @@ extension LinuxPod {
                                             options: []
                                         ))
                                 }
-                            } else if !state.unifiedVirtiofsMounted {
-                                // Unified layout: one /run/virtiofs mount for the
-                                // VM's lifetime, so mount it only once.
-                                try await agent.mount(
-                                    ContainerizationOCI.Mount(
-                                        type: "virtiofs",
-                                        source: "virtiofs",
-                                        destination: "/run/virtiofs",
-                                        options: []
-                                    ))
-                                state.unifiedVirtiofsMounted = true
+                            } else {
+                                if usesStableVirtiofs && !state.unifiedVirtiofsMounted {
+                                    // The boot-time share is immutable for the VM's
+                                    // lifetime, so mount it only once.
+                                    try await agent.mkdir(path: stableVirtiofsRoot, all: true, perms: 0o755)
+                                    try await agent.mount(
+                                        ContainerizationOCI.Mount(
+                                            type: "virtiofs",
+                                            source: "virtiofs",
+                                            destination: stableVirtiofsRoot,
+                                            options: []
+                                        ))
+                                    state.unifiedVirtiofsMounted = true
+                                }
+
+                                for runtimeTag in runtimeVirtiofsTagsUsed.sorted()
+                                where !state.mountedRuntimeVirtiofsTags.contains(runtimeTag) {
+                                    let runtimeRoot = "/run/\(runtimeTag)"
+                                    try await agent.mkdir(path: runtimeRoot, all: true, perms: 0o755)
+                                    // A lost reply can hide a successful guest
+                                    // mount, so cleanup must treat the RPC as
+                                    // applied before awaiting it.
+                                    runtimeVirtiofsMountAttempts.insert(runtimeTag)
+                                    try await agent.mount(
+                                        ContainerizationOCI.Mount(
+                                            type: "virtiofs",
+                                            source: runtimeTag,
+                                            destination: runtimeRoot,
+                                            options: []
+                                        ))
+                                    state.mountedRuntimeVirtiofsTags.insert(runtimeTag)
+                                }
                             }
                         }
 
                         var mount = attachment.to
                         mount.destination = Self.guestRootfsPath(id)
-                        if rootfsUsesUnifiedVirtiofs {
+                        if rootfsUsesVirtiofs {
                             try await Self.waitForGuestPath(
                                 URL(fileURLWithPath: mount.source)
                             ) { path in
                                 _ = try await agent.stat(path: path)
                             }
                         }
+                        rootfsMountAttempted = true
                         try await agent.mount(mount)
 
-                        // Filter out shared mounts — those are handled separately as
-                        // pod volume bind mounts. Without it here, a container added to an
-                        // already-created would add a duplicated mount into the shared VM.
-                        let nonSharedMounts = fileMountContext.transformedMounts.filter {
-                            if case .shared = $0.runtimeOptions { return false }
-                            return true
-                        }
-                        try vm.registerMounts(
-                            id: id,
-                            rootfs: attachment,
-                            additionalMounts: nonSharedMounts
-                        )
-
                         if fileMountContext.hasFileMounts {
-                            let containerMounts = vm.mounts[id] ?? []
                             try await updatedFileMountContext.mountHoldingDirectories(
                                 vmMounts: containerMounts,
                                 agent: agent
@@ -890,7 +940,17 @@ extension LinuxPod {
 
                         try await agent.close()
                     } catch {
-                        try? await agent.umount(path: Self.guestRootfsPath(id), flags: 0)
+                        let cleanup = await Self.unmountHotpluggedGuestPaths(
+                            rootfsPath: rootfsMountAttempted
+                                ? Self.guestRootfsPath(id) : nil,
+                            runtimeTags: runtimeVirtiofsMountAttempts
+                        ) { path in
+                            try await agent.umount(path: path, flags: 0)
+                        }
+                        state.mountedRuntimeVirtiofsTags.subtract(
+                            cleanup.runtimeTagsUnmounted
+                        )
+                        hotplugCleanupSafe = cleanup.safeToRelease
                         try? await agent.close()
                         throw error
                     }
@@ -904,8 +964,10 @@ extension LinuxPod {
                         fileMountContext: updatedFileMountContext
                     )
                 } catch {
-                    try? await vm.releaseHotplug(id: id)
-                    try? await vm.releaseVirtioFS(id: id)
+                    if hotplugCleanupSafe {
+                        try? await vm.releaseHotplug(id: id)
+                        try? await vm.releaseVirtioFS(id: id)
+                    }
                     throw error
                 }
 
@@ -913,6 +975,39 @@ extension LinuxPod {
                 throw err
             }
         }
+    }
+
+    static func unmountHotpluggedGuestPaths(
+        rootfsPath: String?,
+        runtimeTags: Set<String>,
+        unmount: (String) async throws -> Void
+    ) async -> (safeToRelease: Bool, runtimeTagsUnmounted: Set<String>) {
+        var safeToRelease = true
+        var runtimeTagsUnmounted: Set<String> = []
+
+        if let rootfsPath {
+            do {
+                try await unmount(rootfsPath)
+            } catch {
+                safeToRelease = false
+            }
+        }
+        for runtimeTag in runtimeTags.sorted() {
+            do {
+                try await unmount("/run/\(runtimeTag)")
+                runtimeTagsUnmounted.insert(runtimeTag)
+            } catch {
+                safeToRelease = false
+            }
+        }
+        return (safeToRelease, runtimeTagsUnmounted)
+    }
+
+    static func hotplugResourcesAreSafeToRelease(
+        guestUnmountsConfirmed: Bool,
+        processDeletionConfirmed: Bool
+    ) -> Bool {
+        guestUnmountsConfirmed && processDeletionConfirmed
     }
 
     /// Create and start the underlying pod's virtual machine and set up
@@ -1273,7 +1368,7 @@ extension LinuxPod {
                             // Transform to bind mount from holding directory
                             return ContainerizationOCI.Mount(
                                 type: "none",
-                                source: "/run/virtiofs/\(attached.source)",
+                                source: attached.guestSource ?? "/run/virtiofs/\(attached.source)",
                                 destination: attached.destination,
                                 options: ["bind"] + attached.options
                             )
@@ -1421,6 +1516,10 @@ extension LinuxPod {
                 )
             }
 
+            let runtimeTagsToUnmount = createdState.vm
+                .runtimeVirtiofsTagsToUnmount(id: containerID)
+            var guestUnmountsConfirmed = false
+            var processDeletionConfirmed = container.process == nil
             do {
                 // Check if the vm is even still running
                 if createdState.vm.state == .stopped {
@@ -1460,23 +1559,39 @@ extension LinuxPod {
                         path: Self.guestRootfsPath(containerID),
                         flags: 0
                     )
+                    for runtimeTag in runtimeTagsToUnmount.sorted() {
+                        try await agent.umount(
+                            path: "/run/\(runtimeTag)",
+                            flags: 0
+                        )
+                    }
                     try await agent.sync()
                 }
+                state.mountedRuntimeVirtiofsTags.subtract(runtimeTagsToUnmount)
+                guestUnmountsConfirmed = true
+
+                // Clean up the process resources before a host share can be
+                // cleared and its VZ device returned to the runtime pool.
+                try await container.process?.delete()
+                processDeletionConfirmed = true
 
                 // Release the hotplug device and virtiofs shares so they can be reused by new containers
                 try await createdState.vm.releaseHotplug(id: containerID)
                 try await createdState.vm.releaseVirtioFS(id: containerID)
 
-                // Clean up the process resources
-                try await container.process?.delete()
-
                 container.process = nil
                 container.state = .stopped
                 state.containers[containerID] = container
             } catch {
-                // Try to release the hotplug device and virtiofs shares even on error
-                try? await createdState.vm.releaseHotplug(id: containerID)
-                try? await createdState.vm.releaseVirtioFS(id: containerID)
+                // Never replace a VZ share while its guest mapping may still
+                // be mounted. Leave the allocation for VM recovery instead.
+                if Self.hotplugResourcesAreSafeToRelease(
+                    guestUnmountsConfirmed: guestUnmountsConfirmed,
+                    processDeletionConfirmed: processDeletionConfirmed
+                ) {
+                    try? await createdState.vm.releaseHotplug(id: containerID)
+                    try? await createdState.vm.releaseVirtioFS(id: containerID)
+                }
 
                 container.state = .errored
                 container.process = nil
@@ -1572,9 +1687,13 @@ extension LinuxPod {
                 }
 
                 try await createdState.vm.stop()
+                state.unifiedVirtiofsMounted = false
+                state.mountedRuntimeVirtiofsTags.removeAll()
                 state.phase = .initialized
             } catch {
                 try? await createdState.vm.stop()
+                state.unifiedVirtiofsMounted = false
+                state.mountedRuntimeVirtiofsTags.removeAll()
                 state.phase.setErrored(error: error)
                 throw error
             }
@@ -2003,6 +2122,10 @@ extension LinuxPod {
         }
 
         return namespaces
+    }
+
+    static func isGuestPath(_ path: String, below root: String) -> Bool {
+        path == root || path.hasPrefix(root + "/")
     }
 
     private static func namespacePathComponent(

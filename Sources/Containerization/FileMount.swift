@@ -173,8 +173,8 @@ extension FileMountContext {
 
 extension FileMountContext {
     /// Set up the holding directory paths for all file mounts.
-    /// Since virtiofs shares are now mounted once at /run/virtiofs, the holding
-    /// directories appear as subdirectories there automatically.
+    /// The provider records the holding directory's path below the mounted
+    /// guest virtiofs device.
     /// - Parameters:
     ///   - vmMounts: The AttachedFilesystem array from the VM for this container
     ///   - agent: The VM agent for RPCs (unused, kept for API compatibility)
@@ -191,9 +191,9 @@ extension FileMountContext {
 
             // Verify the attached filesystem exists
             guard
-                vmMounts.first(where: {
+                let attachment = vmMounts.first(where: {
                     $0.type == "virtiofs" && $0.source == prepared.tag
-                }) != nil
+                })
             else {
                 throw ContainerizationError(
                     .notFound,
@@ -201,8 +201,8 @@ extension FileMountContext {
                 )
             }
 
-            // With unified virtiofs, holding directories are subdirectories under /run/virtiofs
-            let guestPath = "/run/virtiofs/\(prepared.tag)"
+            // Unified providers expose holding directories below their mounted guest device.
+            let guestPath = attachment.guestSource ?? "/run/virtiofs/\(prepared.tag)"
             preparedMounts[i].guestHoldingPath = guestPath
         }
     }
