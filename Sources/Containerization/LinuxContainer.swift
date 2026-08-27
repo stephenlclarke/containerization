@@ -1095,7 +1095,10 @@ extension LinuxContainer {
             var modifiedRootfs = self.rootfs
             modifiedRootfs.options.removeAll(where: { $0 == "ro" })
 
-            let vmMemory = self.memoryInBytes + self.config.memoryOverhead
+            let vmMemory = try Self.virtualMachineMemoryTarget(
+                workloadMemoryInBytes: self.memoryInBytes,
+                overheadInBytes: self.config.memoryOverhead
+            )
 
             let vmCpus = self.cpus + self.config.cpuOverhead
 
@@ -1509,6 +1512,40 @@ extension LinuxContainer {
             try await pausedState.vm.resume()
             state = .started(.init(pausedState))
         }
+    }
+
+    /// Request a live change to the workload memory available in the virtual machine.
+    ///
+    /// `memoryInBytes` is workload-relative. The configured virtual-machine overhead is
+    /// added before forwarding the target to the VMM, matching the memory calculation
+    /// used when the virtual machine is created.
+    ///
+    /// - Parameter memoryInBytes: Target workload memory in bytes.
+    /// - Throws: An error if the target overflows, the container has not been created,
+    ///   or the active VMM cannot apply the target.
+    public func setMemoryTarget(_ memoryInBytes: UInt64) async throws {
+        let vmMemory = try Self.virtualMachineMemoryTarget(
+            workloadMemoryInBytes: memoryInBytes,
+            overheadInBytes: self.config.memoryOverhead
+        )
+        let vm = try await self.state.withLock { state in
+            try state.vm("set memory target")
+        }
+        try await vm.setMemoryTarget(vmMemory)
+    }
+
+    static func virtualMachineMemoryTarget(
+        workloadMemoryInBytes: UInt64,
+        overheadInBytes: UInt64
+    ) throws -> UInt64 {
+        let (target, overflow) = workloadMemoryInBytes.addingReportingOverflow(overheadInBytes)
+        guard !overflow else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "workload memory plus virtual-machine overhead exceeds UInt64.max"
+            )
+        }
+        return target
     }
 
     /// Wait for the container to exit. Returns the exit code.

@@ -611,6 +611,48 @@ struct LinuxContainerTests {
         #expect(vm.resumeCalls == 1)
     }
 
+    @Test func liveMemoryTargetIncludesVirtualMachineOverhead() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "memory-target-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init(
+                process: .init(),
+                memoryInBytes: 512.mib(),
+                memoryOverhead: 64.mib()
+            )
+        )
+
+        try await container.create()
+        try await container.setMemoryTarget(256.mib())
+
+        let vm = try #require(manager.vm)
+        #expect(vm.memoryTargets == [320.mib()])
+    }
+
+    @Test func liveMemoryTargetRequiresCreatedContainer() async throws {
+        let container = try LinuxContainer(
+            "memory-target-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+
+        await #expect(throws: ContainerizationError.self) {
+            try await container.setMemoryTarget(256.mib())
+        }
+    }
+
+    @Test func virtualMachineMemoryTargetRejectsOverflow() throws {
+        #expect(throws: ContainerizationError.self) {
+            try LinuxContainer.virtualMachineMemoryTarget(
+                workloadMemoryInBytes: UInt64.max,
+                overheadInBytes: 1
+            )
+        }
+    }
+
     @Test func createStopsVirtualMachineAfterStartFailure() async throws {
         let startError = ContainerizationError(.internalError, message: "start failed")
         let manager = RecordingVirtualMachineManager(startError: startError)
@@ -1168,6 +1210,7 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
         var stopCalls = 0
         var pauseCalls = 0
         var resumeCalls = 0
+        var memoryTargets: [UInt64] = []
     }
 
     private let storage = Mutex<State>(State())
@@ -1195,6 +1238,10 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
 
     var resumeCalls: Int {
         storage.withLock { $0.resumeCalls }
+    }
+
+    var memoryTargets: [UInt64] {
+        storage.withLock { $0.memoryTargets }
     }
 
     init(
@@ -1255,6 +1302,10 @@ private final class RecordingVirtualMachineInstance: VirtualMachineInstance, @un
             $0.resumeCalls += 1
             $0.value = .running
         }
+    }
+
+    func setMemoryTarget(_ memoryInBytes: UInt64) async throws {
+        storage.withLock { $0.memoryTargets.append(memoryInBytes) }
     }
 }
 
