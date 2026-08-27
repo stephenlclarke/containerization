@@ -49,6 +49,11 @@ public protocol VirtualMachineInstance: Sendable {
     /// How this VMM exposes virtiofs devices to the guest. Defaults to
     /// `.unified` (the VZ-shaped behavior); CH overrides to `.perTag`.
     var virtiofsLayout: VirtiofsLayout { get }
+    /// Tags of boot-created virtiofs devices reserved for runtime shares.
+    var runtimeVirtiofsTags: Set<String> { get }
+    /// Runtime device tags whose final references belong to `id`.
+    /// Callers must unmount these guest mappings before releasing the shares.
+    func runtimeVirtiofsTagsToUnmount(id: String) -> Set<String>
     /// Dial the Agent. It's up the VirtualMachineInstance to determine
     /// what port the agent is listening on.
     func dialAgent() async throws -> Agent
@@ -107,6 +112,8 @@ public protocol VirtualMachineInstance: Sendable {
 
 extension VirtualMachineInstance {
     public var virtiofsLayout: VirtiofsLayout { .unified }
+    public var runtimeVirtiofsTags: Set<String> { [] }
+    public func runtimeVirtiofsTagsToUnmount(id: String) -> Set<String> { [] }
     public func pause() async throws {
         throw ContainerizationError(.unsupported, message: "pause")
     }

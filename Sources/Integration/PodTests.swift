@@ -2410,4 +2410,87 @@ extension IntegrationSuite {
             throw error
         }
     }
+
+    #if os(macOS)
+    /// Adding VZ root filesystems and unrelated runtime shares must not
+    /// invalidate executable mappings held by an already-running workload.
+    func testPodHotplugPreservesRunningWorkload() async throws {
+        let id = "test-pod-hotplug-preserves-running-workload"
+        let bs = try await bootstrap(id)
+        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
+            config.cpus = 4
+            config.memoryInBytes = 1024.mib()
+            config.bootLog = bs.bootLog
+            config.extensions.append(
+                VZPreexposedDirectoryShare(roots: [Self.testDir])
+            )
+        }
+
+        try await pod.addContainer(
+            "seed",
+            rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "seed")
+        ) { config in
+            config.process.arguments = ["/bin/sleep", "30"]
+        }
+        try await pod.create()
+        try await pod.startContainer("seed")
+
+        let stableSource = Self.testDir.appendingPathComponent("\(id)-stable", isDirectory: true)
+        try FileManager.default.createDirectory(at: stableSource, withIntermediateDirectories: true)
+        try "stable".write(
+            to: stableSource.appendingPathComponent("marker"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try await pod.addContainer(
+            "hot-stable",
+            rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "hot-stable")
+        ) { config in
+            config.process.arguments = ["/bin/sleep", "30"]
+            config.mounts.append(
+                .share(source: stableSource.path, destination: "/stable")
+            )
+        }
+        try await pod.startContainer("hot-stable")
+
+        // Updating the separate runtime share for an unrelated mount must not
+        // invalidate the boot-time device backing hot-stable's rootfs.
+        let dynamicSource = FileManager.default.uniqueTemporaryDirectory(create: true)
+        defer { try? FileManager.default.removeItem(at: dynamicSource) }
+        try "dynamic".write(
+            to: dynamicSource.appendingPathComponent("marker"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let output = BufferWriter()
+        try await pod.addContainer(
+            "hot-dynamic",
+            rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "hot-dynamic")
+        ) { config in
+            config.process.arguments = ["/bin/cat", "/dynamic/marker"]
+            config.process.stdout = output
+            config.mounts.append(
+                .share(source: dynamicSource.path, destination: "/dynamic")
+            )
+        }
+        try await pod.startContainer("hot-dynamic")
+        let dynamicStatus = try await pod.waitContainer("hot-dynamic")
+        guard dynamicStatus.exitCode == 0, output.data == Data("dynamic".utf8) else {
+            throw IntegrationError.assert(
+                msg: "dynamic mount failed with status \(dynamicStatus)"
+            )
+        }
+
+        try await pod.killContainer("hot-stable", signal: .term)
+        let stableStatus = try await pod.waitContainer("hot-stable")
+        try await pod.killContainer("seed", signal: .term)
+        let seedStatus = try await pod.waitContainer("seed")
+        try await pod.stop()
+        guard stableStatus.exitCode == 143, seedStatus.exitCode == 143 else {
+            throw IntegrationError.assert(
+                msg: "running workload status \(stableStatus), seed status \(seedStatus)"
+            )
+        }
+    }
+    #endif
 }

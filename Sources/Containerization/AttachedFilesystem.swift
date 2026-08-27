@@ -29,6 +29,12 @@ public struct AttachedFilesystem: Sendable {
     public var options: [String]
     /// Optional relative directory below the attached filesystem to mount.
     public var sourceSubpath: String?
+    /// An already-mounted guest path that should back this attachment.
+    ///
+    /// When set, callers bind from this path instead of mounting `source` as a
+    /// new filesystem. This is used for host paths exposed through an existing
+    /// guest virtiofs mount.
+    public var guestSource: String?
 
     public init(mount: Mount, allocator: any AddressAllocator<Character>) throws {
         switch mount.runtimeOptions {
@@ -45,6 +51,7 @@ public struct AttachedFilesystem: Sendable {
         self.options = mount.options
         self.destination = mount.destination
         self.sourceSubpath = mount.sourceSubpath
+        self.guestSource = nil
     }
 
     public init(
@@ -52,12 +59,14 @@ public struct AttachedFilesystem: Sendable {
         source: String,
         destination: String,
         options: [String],
-        sourceSubpath: String? = nil
+        sourceSubpath: String? = nil,
+        guestSource: String? = nil
     ) {
         self.type = type
         self.source = source
         self.destination = destination
         self.options = options
         self.sourceSubpath = sourceSubpath
+        self.guestSource = guestSource
     }
 }

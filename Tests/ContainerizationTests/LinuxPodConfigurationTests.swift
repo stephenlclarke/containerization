@@ -23,6 +23,52 @@ import Testing
 @testable import Containerization
 
 struct LinuxPodConfigurationTests {
+    @Test func hotplugResourcesRequireGuestUnmountsAndProcessDeletion() {
+        #expect(
+            !LinuxPod.hotplugResourcesAreSafeToRelease(
+                guestUnmountsConfirmed: false,
+                processDeletionConfirmed: true
+            )
+        )
+        #expect(
+            !LinuxPod.hotplugResourcesAreSafeToRelease(
+                guestUnmountsConfirmed: true,
+                processDeletionConfirmed: false
+            )
+        )
+        #expect(
+            LinuxPod.hotplugResourcesAreSafeToRelease(
+                guestUnmountsConfirmed: true,
+                processDeletionConfirmed: true
+            )
+        )
+    }
+
+    @Test func failedGuestUnmountRetainsRuntimeShareAllocation() async {
+        enum UnmountFailure: Error {
+            case unavailable
+        }
+
+        let cleanup = await LinuxPod.unmountHotpluggedGuestPaths(
+            rootfsPath: "/run/container/workload/rootfs",
+            runtimeTags: ["runtime-virtiofs-00", "runtime-virtiofs-01"]
+        ) { path in
+            if path == "/run/runtime-virtiofs-00" {
+                throw UnmountFailure.unavailable
+            }
+        }
+
+        #expect(!cleanup.safeToRelease)
+        #expect(cleanup.runtimeTagsUnmounted == ["runtime-virtiofs-01"])
+    }
+
+    @Test func guestPathRecognizesOnlyExactRootAndDescendants() {
+        #expect(LinuxPod.isGuestPath("/run/runtime-virtiofs", below: "/run/runtime-virtiofs"))
+        #expect(LinuxPod.isGuestPath("/run/runtime-virtiofs/share/data", below: "/run/runtime-virtiofs"))
+        #expect(!LinuxPod.isGuestPath("/run/runtime-virtiofs-old/data", below: "/run/runtime-virtiofs"))
+        #expect(!LinuxPod.isGuestPath("/tmp/runtime-virtiofs", below: "/run/runtime-virtiofs"))
+    }
+
     @Test func guestPathReadinessReturnsAfterImmediateVisibility() async throws {
         let attempts = Mutex(0)
 

@@ -620,6 +620,7 @@ struct IntegrationSuite: AsyncParsableCommand {
                 Test("unix socket into guest long container id", testUnixSocketIntoGuestLongContainerID),
                 Test("unix socket into guest symlink", testUnixSocketIntoGuestSymlink),
                 Test("pod unix socket into guest symlink", testPodUnixSocketIntoGuestSymlink),
+                Test("pod hotplug preserves running workload", testPodHotplugPreservesRunningWorkload),
 
                 // High-concurrency stdio (exceeds CH's prebound stdio pool size)
                 Test("multiple concurrent processes", testMultipleConcurrentProcesses),

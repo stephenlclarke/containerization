@@ -25,60 +25,90 @@ import Synchronization
 /// Runtime filesystem attachment for the Virtualization.framework backend.
 ///
 /// VZ cannot add a virtio-block device after boot. The VM therefore exposes a
-/// single mutable `VZMultipleDirectoryShare`; ext4 images are added to that
-/// share and mounted through guest loop devices. Directory mounts are added to
-/// the same live share. The guest owns loop-device setup and teardown so a
-/// host share is never withdrawn while its filesystem is mounted.
+/// stable boot-time `VZMultipleDirectoryShare` and a pool of runtime devices.
+/// Each runtime device is assigned to one host directory until the final guest
+/// mapping is unmounted, because replacing the share on a mounted VZ device
+/// invalidates existing mappings. Ext4 images below pre-exposed roots use the
+/// stable device and guest loop mounts.
 final class VZHotplugProvider: HotplugProvider {
-    private struct ShareState: Sendable {
-        let source: String
-        var references: Int
-        var writableReferences: Int
+    static let runtimeVirtiofsTagPrefix = "runtime-virtiofs-"
 
-        var readOnly: Bool { writableReferences == 0 }
-    }
-
-    private struct ShareReference: Hashable, Sendable {
+    struct PreexposedDirectory: Equatable, Sendable {
         let tag: String
+        let source: String
         let readOnly: Bool
     }
 
     private struct State: Sendable {
         var mounts: [String: [AttachedFilesystem]]
-        var shares: [String: ShareState]
-        var rootfsShareByID: [String: ShareReference] = [:]
-        var virtiofsSharesByID: [String: Set<ShareReference>] = [:]
+        var runtimeShares: VZRuntimeDirectorySharePool
+        let preexposedDirectories: [PreexposedDirectory]
+        var rootfsShareByID: [String: VZRuntimeDirectorySharePool.Reference] = [:]
+        var virtiofsSharesByID: [String: Set<VZRuntimeDirectorySharePool.Reference>] = [:]
     }
 
     private nonisolated(unsafe) let vm: VZVirtualMachine
     private let queue: DispatchQueue
     private let allocator: any AddressAllocator<Character>
     private let state: Mutex<State>
+    private let configuredRuntimeDeviceTags: Set<String>
 
     init(
         vm: VZVirtualMachine,
         queue: DispatchQueue,
         allocator: any AddressAllocator<Character>,
         initialMounts: [String: [AttachedFilesystem]],
-        bootMounts: [String: [Mount]]
+        preexposedRoots: [URL],
+        runtimeDeviceTags: [String]
     ) throws {
-        var shares: [String: ShareState] = [:]
-        for mounts in bootMounts.values {
-            for mount in mounts {
-                guard case .virtiofs = mount.runtimeOptions else { continue }
-                let tag = try hashFilePath(path: mount.source)
-                try Self.addShare(
-                    tag: tag,
-                    source: mount.source,
-                    readOnly: mount.options.contains("ro"),
-                    to: &shares
+        var preexposedDirectories: [PreexposedDirectory] = []
+        for root in preexposedRoots {
+            let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
+            var isDirectory: ObjCBool = false
+            guard
+                FileManager.default.fileExists(
+                    atPath: canonicalRoot.path,
+                    isDirectory: &isDirectory
+                ),
+                isDirectory.boolValue
+            else {
+                throw ContainerizationError(
+                    .notFound,
+                    message: "pre-exposed runtime root does not exist at \(canonicalRoot.path)"
                 )
             }
+            let tag = try hashFilePath(path: canonicalRoot.path)
+            preexposedDirectories.append(
+                PreexposedDirectory(
+                    tag: tag,
+                    source: canonicalRoot.path,
+                    readOnly: false
+                )
+            )
         }
         self.vm = vm
         self.queue = queue
         self.allocator = allocator
-        self.state = Mutex(State(mounts: initialMounts, shares: shares))
+        self.configuredRuntimeDeviceTags = Set(runtimeDeviceTags)
+        self.state = Mutex(
+            State(
+                mounts: initialMounts,
+                runtimeShares: VZRuntimeDirectorySharePool(
+                    deviceTags: runtimeDeviceTags
+                ),
+                preexposedDirectories: preexposedDirectories
+            )
+        )
+    }
+
+    var runtimeDeviceTags: Set<String> {
+        configuredRuntimeDeviceTags
+    }
+
+    static func runtimeDeviceTags(count: Int) -> [String] {
+        (0..<count).map {
+            runtimeVirtiofsTagPrefix + String(format: "%02d", $0)
+        }
     }
 
     var mounts: [String: [AttachedFilesystem]] {
@@ -111,8 +141,21 @@ final class VZHotplugProvider: HotplugProvider {
                     message: "hotplug rootfs image does not exist at \(rootfsURL.path)"
                 )
             }
+            if let source = Self.preexposedGuestPath(
+                for: rootfsURL.path,
+                in: state.withLock({ $0.preexposedDirectories }),
+                requiresWrite: !rootfs.options.contains("ro")
+            ) {
+                return AttachedFilesystem(
+                    type: rootfs.type,
+                    source: source,
+                    destination: rootfs.destination,
+                    options: rootfs.options + ["loop"],
+                    sourceSubpath: rootfs.sourceSubpath
+                )
+            }
             let tag = try hashFilePath(path: rootfsURL.path)
-            try addRuntimeShare(
+            let deviceTag = try addRuntimeShare(
                 tag: tag,
                 source: rootfsURL.deletingLastPathComponent().path,
                 readOnly: rootfs.options.contains("ro"),
@@ -121,7 +164,7 @@ final class VZHotplugProvider: HotplugProvider {
             )
             return AttachedFilesystem(
                 type: rootfs.type,
-                source: "/run/virtiofs/\(tag)/\(rootfsURL.lastPathComponent)",
+                source: "\(Self.runtimeGuestRoot(deviceTag))/\(tag)/\(rootfsURL.lastPathComponent)",
                 destination: rootfs.destination,
                 options: rootfs.options + ["loop"],
                 sourceSubpath: rootfs.sourceSubpath
@@ -141,15 +184,30 @@ final class VZHotplugProvider: HotplugProvider {
                     message: "hotplug virtiofs root does not exist at \(rootfs.source)"
                 )
             }
+            if let source = Self.preexposedGuestPath(
+                for: rootfs.source,
+                in: state.withLock({ $0.preexposedDirectories }),
+                requiresWrite: !rootfs.options.contains("ro")
+            ) {
+                return AttachedFilesystem(
+                    type: "none",
+                    source: try Self.subpath(root: source, relative: rootfs.sourceSubpath),
+                    destination: rootfs.destination,
+                    options: ["bind"] + rootfs.options.filter { $0 != "bind" }
+                )
+            }
             let tag = try hashFilePath(path: rootfs.source)
-            try addRuntimeShare(
+            let deviceTag = try addRuntimeShare(
                 tag: tag,
                 source: rootfs.source,
                 readOnly: rootfs.options.contains("ro"),
                 id: id,
                 rootfs: true
             )
-            let source = try Self.subpath(root: "/run/virtiofs/\(tag)", relative: rootfs.sourceSubpath)
+            let source = try Self.subpath(
+                root: "\(Self.runtimeGuestRoot(deviceTag))/\(tag)",
+                relative: rootfs.sourceSubpath
+            )
             return AttachedFilesystem(
                 type: "none",
                 source: source,
@@ -172,7 +230,34 @@ final class VZHotplugProvider: HotplugProvider {
     ) throws {
         var attached: [AttachedFilesystem] = [rootfs]
         for mount in additionalMounts {
-            attached.append(try AttachedFilesystem(mount: mount, allocator: allocator))
+            var attachment = try AttachedFilesystem(mount: mount, allocator: allocator)
+            if case .virtiofs = mount.runtimeOptions {
+                let source: String
+                if let preexposedSource = Self.preexposedGuestPath(
+                    for: mount.source,
+                    in: state.withLock({ $0.preexposedDirectories }),
+                    requiresWrite: !mount.options.contains("ro")
+                ) {
+                    source = preexposedSource
+                } else {
+                    let reference = VZRuntimeDirectorySharePool.Reference(
+                        tag: attachment.source,
+                        readOnly: mount.options.contains("ro")
+                    )
+                    let deviceTag = try state.withLock { state in
+                        guard let deviceTag = state.runtimeShares.deviceTag(for: reference) else {
+                            throw ContainerizationError(
+                                .invalidState,
+                                message: "runtime virtiofs share is not registered for \(mount.source)"
+                            )
+                        }
+                        return deviceTag
+                    }
+                    source = "\(Self.runtimeGuestRoot(deviceTag))/\(attachment.source)"
+                }
+                attachment.guestSource = try Self.subpath(root: source, relative: mount.sourceSubpath)
+            }
+            attached.append(attachment)
         }
         state.withLock { state in
             state.mounts[id] = attached
@@ -180,7 +265,7 @@ final class VZHotplugProvider: HotplugProvider {
     }
 
     func releaseHotplug(id: String) async throws {
-        let reference = state.withLock { state -> ShareReference? in
+        let reference = state.withLock { state in
             state.mounts[id] = nil
             return state.rootfsShareByID.removeValue(forKey: id)
         }
@@ -189,8 +274,8 @@ final class VZHotplugProvider: HotplugProvider {
     }
 
     func hotplugVirtioFS(_ mounts: [Mount], id: String) async throws {
-        var additions: [(tag: String, source: String, readOnly: Bool)] = []
-        var seen: Set<String> = []
+        var additions: [(reference: VZRuntimeDirectorySharePool.Reference, source: String)] = []
+        var seen: Set<VZRuntimeDirectorySharePool.Reference> = []
         for mount in mounts {
             guard case .virtiofs = mount.runtimeOptions else { continue }
             var isDirectory: ObjCBool = false
@@ -206,17 +291,23 @@ final class VZHotplugProvider: HotplugProvider {
                     message: "hotplug virtiofs directory does not exist at \(mount.source)"
                 )
             }
+            if Self.preexposedGuestPath(
+                for: mount.source,
+                in: state.withLock({ $0.preexposedDirectories }),
+                requiresWrite: !mount.options.contains("ro")
+            ) != nil {
+                continue
+            }
             let tag = try hashFilePath(path: mount.source)
-            guard seen.insert(tag).inserted else { continue }
-            additions.append((tag, mount.source, mount.options.contains("ro")))
+            let reference = VZRuntimeDirectorySharePool.Reference(
+                tag: tag,
+                readOnly: mount.options.contains("ro")
+            )
+            guard seen.insert(reference).inserted else { continue }
+            additions.append((reference, mount.source))
         }
         guard !additions.isEmpty else { return }
 
-        let references = Set(
-            additions.map {
-                ShareReference(tag: $0.tag, readOnly: $0.readOnly)
-            }
-        )
         try state.withLock { state in
             guard state.virtiofsSharesByID[id] == nil else {
                 throw ContainerizationError(
@@ -224,26 +315,29 @@ final class VZHotplugProvider: HotplugProvider {
                     message: "virtiofs hotplug already exists for \(id)"
                 )
             }
-            var updatedShares = state.shares
-            for addition in additions {
-                try Self.addShare(
-                    tag: addition.tag,
-                    source: addition.source,
-                    readOnly: addition.readOnly,
-                    to: &updatedShares
-                )
+            let originalPool = state.runtimeShares
+            var configuredDevices: Set<String> = []
+            do {
+                for addition in additions {
+                    let acquisition = try state.runtimeShares.acquire(
+                        addition.reference,
+                        source: addition.source
+                    )
+                    if acquisition.newlyAssigned {
+                        try configureRuntimeDevice(
+                            acquisition.deviceTag,
+                            reference: addition.reference,
+                            source: addition.source
+                        )
+                        configuredDevices.insert(acquisition.deviceTag)
+                    }
+                }
+            } catch {
+                try? clearRuntimeDevices(configuredDevices)
+                state.runtimeShares = originalPool
+                throw error
             }
-            state.shares = updatedShares
-            state.virtiofsSharesByID[id] = references
-        }
-        do {
-            try updateDirectoryShare()
-        } catch {
-            state.withLock { state in
-                state.virtiofsSharesByID[id] = nil
-                Self.removeShares(references, from: &state.shares)
-            }
-            throw error
+            state.virtiofsSharesByID[id] = Set(additions.map(\.reference))
         }
     }
 
@@ -261,7 +355,7 @@ final class VZHotplugProvider: HotplugProvider {
         readOnly: Bool,
         id: String,
         rootfs: Bool
-    ) throws {
+    ) throws -> String {
         try state.withLock { state in
             if rootfs {
                 guard state.rootfsShareByID[id] == nil else {
@@ -271,115 +365,143 @@ final class VZHotplugProvider: HotplugProvider {
                     )
                 }
             }
-            try Self.addShare(
+            let reference = VZRuntimeDirectorySharePool.Reference(
                 tag: tag,
-                source: source,
-                readOnly: readOnly,
-                to: &state.shares
+                readOnly: readOnly
             )
-            if rootfs {
-                state.rootfsShareByID[id] = ShareReference(
-                    tag: tag,
-                    readOnly: readOnly
+            let originalPool = state.runtimeShares
+            let acquisition: VZRuntimeDirectorySharePool.Acquisition
+            do {
+                acquisition = try state.runtimeShares.acquire(
+                    reference,
+                    source: source
                 )
-            }
-        }
-        do {
-            try updateDirectoryShare()
-        } catch {
-            state.withLock { state in
-                if rootfs {
-                    state.rootfsShareByID[id] = nil
+                if acquisition.newlyAssigned {
+                    try configureRuntimeDevice(
+                        acquisition.deviceTag,
+                        reference: reference,
+                        source: source
+                    )
                 }
-                Self.removeShares(
-                    [ShareReference(tag: tag, readOnly: readOnly)],
-                    from: &state.shares
-                )
+            } catch {
+                state.runtimeShares = originalPool
+                throw error
             }
-            throw error
+            if rootfs {
+                state.rootfsShareByID[id] = reference
+            }
+            return acquisition.deviceTag
         }
     }
 
     private func removeRuntimeShares(
-        _ references: some Sequence<ShareReference>
+        _ references: some Sequence<VZRuntimeDirectorySharePool.Reference>
     ) throws {
-        state.withLock { state in
-            Self.removeShares(references, from: &state.shares)
+        try state.withLock { state in
+            var updatedPool = state.runtimeShares
+            let releasedDevices = updatedPool.release(references)
+            try clearRuntimeDevices(releasedDevices)
+            state.runtimeShares = updatedPool
         }
-        try updateDirectoryShare()
     }
 
-    private func updateDirectoryShare() throws {
-        let shares = state.withLock { $0.shares }
+    func runtimeDeviceTagsToUnmount(id: String) -> Set<String> {
+        state.withLock { state in
+            var references: [VZRuntimeDirectorySharePool.Reference] = []
+            if let rootfsReference = state.rootfsShareByID[id] {
+                references.append(rootfsReference)
+            }
+            references.append(contentsOf: state.virtiofsSharesByID[id] ?? [])
+            return state.runtimeShares.devicesReleased(by: references)
+        }
+    }
+
+    private func configureRuntimeDevice(
+        _ deviceTag: String,
+        reference: VZRuntimeDirectorySharePool.Reference,
+        source: String
+    ) throws {
         try queue.sync {
             guard
                 let device = vm.directorySharingDevices
                     .compactMap({ $0 as? VZVirtioFileSystemDevice })
-                    .first(where: { $0.tag == "virtiofs" })
+                    .first(where: { $0.tag == deviceTag })
             else {
                 throw ContainerizationError(
                     .notFound,
-                    message: "unified virtiofs device is unavailable"
+                    message: "runtime virtiofs device \(deviceTag) is unavailable"
                 )
             }
-            var directories: [String: VZSharedDirectory] = [:]
-            for (tag, share) in shares {
-                directories[tag] = VZSharedDirectory(
-                    url: URL(fileURLWithPath: share.source),
-                    readOnly: share.readOnly
-                )
-            }
-            device.share = VZMultipleDirectoryShare(directories: directories)
-        }
-    }
-
-    private static func addShare(
-        tag: String,
-        source: String,
-        readOnly: Bool,
-        to shares: inout [String: ShareState]
-    ) throws {
-        // hashFilePath resolves symlinks before deriving the tag. Store and
-        // compare that same canonical source so two paths to one directory
-        // share a reference instead of being misreported as a hash collision.
-        let canonicalSource = URL(fileURLWithPath: source).resolvingSymlinksInPath().path
-        if var existing = shares[tag] {
-            guard existing.source == canonicalSource else {
-                throw ContainerizationError(
-                    .invalidState,
-                    message: "virtiofs tag collision for \(tag)"
-                )
-            }
-            existing.references += 1
-            if !readOnly {
-                existing.writableReferences += 1
-            }
-            shares[tag] = existing
-        } else {
-            shares[tag] = ShareState(
-                source: canonicalSource,
-                references: 1,
-                writableReferences: readOnly ? 0 : 1
+            let canonicalSource = URL(fileURLWithPath: source)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+            device.share = VZMultipleDirectoryShare(
+                directories: [
+                    reference.tag: VZSharedDirectory(
+                        url: canonicalSource,
+                        readOnly: reference.readOnly
+                    )
+                ]
             )
         }
     }
 
-    private static func removeShares(
-        _ references: some Sequence<ShareReference>,
-        from shares: inout [String: ShareState]
-    ) {
-        for reference in references {
-            guard var share = shares[reference.tag] else { continue }
-            share.references -= 1
-            if !reference.readOnly {
-                share.writableReferences -= 1
-            }
-            if share.references == 0 {
-                shares[reference.tag] = nil
-            } else {
-                shares[reference.tag] = share
+    private func clearRuntimeDevices(_ deviceTags: some Sequence<String>) throws {
+        try queue.sync {
+            let devices = Dictionary(
+                uniqueKeysWithValues: vm.directorySharingDevices
+                    .compactMap { $0 as? VZVirtioFileSystemDevice }
+                    .map { ($0.tag, $0) }
+            )
+            for deviceTag in deviceTags {
+                guard let device = devices[deviceTag] else {
+                    throw ContainerizationError(
+                        .notFound,
+                        message: "runtime virtiofs device \(deviceTag) is unavailable"
+                    )
+                }
+                device.share = VZMultipleDirectoryShare(directories: [:])
             }
         }
+    }
+
+    static func preexposedGuestPath(
+        for source: String,
+        in directories: [PreexposedDirectory],
+        requiresWrite: Bool
+    ) -> String? {
+        let sourceComponents = URL(fileURLWithPath: source)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .pathComponents
+        let match =
+            directories
+            .filter { directory in
+                guard !requiresWrite || !directory.readOnly else { return false }
+                let rootComponents = URL(fileURLWithPath: directory.source)
+                    .resolvingSymlinksInPath()
+                    .standardizedFileURL
+                    .pathComponents
+                return sourceComponents.starts(with: rootComponents)
+            }
+            .max { lhs, rhs in
+                URL(fileURLWithPath: lhs.source).pathComponents.count
+                    < URL(fileURLWithPath: rhs.source).pathComponents.count
+            }
+        guard let match else { return nil }
+
+        let rootComponents = URL(fileURLWithPath: match.source)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .pathComponents
+        let relativeComponents = sourceComponents.dropFirst(rootComponents.count)
+        let guestRoot = "/run/virtiofs/\(match.tag)"
+        guard !relativeComponents.isEmpty else { return guestRoot }
+        return guestRoot + "/" + relativeComponents.joined(separator: "/")
+    }
+
+    private static func runtimeGuestRoot(_ deviceTag: String) -> String {
+        "/run/\(deviceTag)"
     }
 
     private static func subpath(root: String, relative: String?) throws -> String {
