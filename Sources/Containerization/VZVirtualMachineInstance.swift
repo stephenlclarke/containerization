@@ -164,11 +164,12 @@ public final class VZVirtualMachineInstance: Sendable {
         self.timeSyncer = .init(logger: logger)
 
         let allocator = Character.blockDeviceTagAllocator()
-        let (mountAttachments, storageDeviceCount) = try config.mountAttachments(allocator: allocator)
+        let (mountAttachments, _) = try config.mountAttachments(allocator: allocator)
         self._mounts = Mutex(mountAttachments)
 
+        let vzConfiguration = try config.toVZ(allocator: allocator)
         self.vm = VZVirtualMachine(
-            configuration: try config.toVZ(allocator: allocator),
+            configuration: vzConfiguration,
             queue: self.queue
         )
         let preexposedShares = config.extensions.compactMap {
@@ -181,7 +182,9 @@ public final class VZVirtualMachineInstance: Sendable {
             initialMounts: mountAttachments,
             preexposedRoots: preexposedShares.flatMap(\.roots),
             runtimeDeviceTags: preexposedShares.flatMap {
-                $0.runtimeDeviceTags(storageDeviceCount: storageDeviceCount)
+                $0.runtimeDeviceTags(
+                    storageDeviceCount: vzConfiguration.storageDevices.count
+                )
             }
         )
 
@@ -601,8 +604,6 @@ extension VZVirtualMachineInstance.Configuration {
         virtiofsDevice.share = multiShare
         config.directorySharingDevices.append(virtiofsDevice)
 
-        let storageDeviceCount = config.storageDevices.count
-
         if self.graphics.isEnabled {
             let device = VZVirtioGraphicsDeviceConfiguration()
             let scanout: (widthInPixels: Int, heightInPixels: Int)
@@ -641,12 +642,39 @@ extension VZVirtualMachineInstance.Configuration {
         platform.isNestedVirtualizationEnabled = self.nestedVirtualization
         config.platform = platform
 
-        for ext in self.extensions.compactMap({ $0 as? any VZInstanceExtension }) {
-            try ext.configureVZ(&config, allocator: allocator, storageDeviceCount: storageDeviceCount, mountsByID: self.mountsByID)
-        }
+        try configureExtensions(&config, allocator: allocator)
 
         try config.validate()
         return config
+    }
+
+    func configureExtensions(
+        _ config: inout VZVirtualMachineConfiguration,
+        allocator: any AddressAllocator<Character>
+    ) throws {
+        let extensions = self.extensions.compactMap {
+            $0 as? any VZInstanceExtension
+        }
+
+        // Runtime share devices and storage devices consume the same boot
+        // budget, so storage-producing extensions must run before the share
+        // pool is finalized, regardless of declaration order.
+        for ext in extensions where !(ext is VZPreexposedDirectoryShare) {
+            try ext.configureVZ(
+                &config,
+                allocator: allocator,
+                storageDeviceCount: config.storageDevices.count,
+                mountsByID: self.mountsByID
+            )
+        }
+        for ext in extensions where ext is VZPreexposedDirectoryShare {
+            try ext.configureVZ(
+                &config,
+                allocator: allocator,
+                storageDeviceCount: config.storageDevices.count,
+                mountsByID: self.mountsByID
+            )
+        }
     }
 
     func configureMemory(on config: VZVirtualMachineConfiguration) {
