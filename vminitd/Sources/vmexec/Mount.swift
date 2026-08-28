@@ -42,12 +42,25 @@ struct ContainerMount {
 
     func configureConsole() throws {
         let ptmx = rootfs + "/dev/ptmx"
-        guard remove(ptmx) == 0 else {
-            throw App.Errno(stage: "remove(ptmx)")
+        let temporaryPtmx = try createTemporaryConsoleSymlink()
+        defer { unlink(temporaryPtmx) }
+
+        guard rename(temporaryPtmx, ptmx) == 0 else {
+            throw App.Errno(stage: "rename(temporary pts/ptmx)")
         }
-        guard symlink("pts/ptmx", ptmx) == 0 else {
-            throw App.Errno(stage: "symlink(pts/ptmx)")
+    }
+
+    private func createTemporaryConsoleSymlink() throws -> String {
+        for _ in 0..<16 {
+            let path = rootfs + "/dev/.ptmx-\(UUID().uuidString)"
+            if symlink("pts/ptmx", path) == 0 {
+                return path
+            }
+            guard errno == EEXIST else {
+                throw App.Errno(stage: "symlink(temporary pts/ptmx)")
+            }
         }
+        throw App.Failure(message: "failed to allocate temporary pts/ptmx symlink")
     }
 }
 
