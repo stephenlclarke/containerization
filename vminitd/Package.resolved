@@ -38,6 +38,15 @@
       }
     },
     {
+      "identity" : "punycodeswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/futamura/PunycodeSwift.git",
+      "state" : {
+        "revision" : "de703481cf48b859a04bac8ef1d98217b9c97aa9",
+        "version" : "4.0.3"
+      }
+    },
+    {
       "identity" : "swift-algorithms",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-algorithms.git",
@@ -241,6 +250,15 @@
       "state" : {
         "revision" : "50688cacbd41d547e9eb9f7a213542340b7c442b",
         "version" : "1.7.5"
+      }
+    },
+    {
+      "identity" : "tldextractswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/futamura/TLDExtractSwift.git",
+      "state" : {
+        "revision" : "5fb29b13f99b24401cd93c6c0c83faf7c23e9918",
+        "version" : "4.0.3"
       }
     },
     {
