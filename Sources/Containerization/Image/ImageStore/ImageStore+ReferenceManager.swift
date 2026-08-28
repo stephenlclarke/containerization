@@ -71,7 +71,7 @@ extension ImageStore {
             init(from decoder: any Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 guard let digest = try? container.decode(String.self, forKey: .digest),
-                    (try? ParsedDigest(parsing: digest)) != nil
+                    (try? ParsedDigest(parsingPathComponent: digest)) != nil
                 else {
                     self.descriptor = nil
                     return

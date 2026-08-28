@@ -199,14 +199,17 @@ struct ImageDigestPoisoningTests {
     /// A descriptor whose root digest is valid can still reference live content
     /// even when another field is unreadable. Loading must fail closed instead of
     /// omitting that digest from garbage collection's keep set.
-    @Test func cleanupPreservesContentForRecordWithValidDigestAndInvalidMetadata() async throws {
+    @Test(arguments: [false, true])
+    func cleanupPreservesContentForRecordWithValidDigestAndInvalidMetadata(usesBareDigest: Bool) async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.dir) }
 
         let healthyDigest = try await seedHealthyImage(fixture, reference: "test/healthy:v1")
+        let persistedDigest = usesBareDigest ? healthyDigest.encoded : healthyDigest.digestString
+        let persistedSize = usesBareDigest ? Self.healthyIndexJSON.utf8.count : -1
         let state = """
             {
-              "test/broken:v1": {"mediaType":"application/vnd.oci.image.index.v1+json","digest":"\(healthyDigest.digestString)","size":-1}
+              "test/broken:v1": {"mediaType":"application/vnd.oci.image.index.v1+json","digest":"\(persistedDigest)","size":\(persistedSize)}
             }
             """
         let statePath = fixture.dir.appendingPathComponent("state.json")
