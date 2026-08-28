@@ -23,6 +23,44 @@ import Testing
 @testable import Containerization
 
 struct LinuxPodConfigurationTests {
+    @Test func rootFilesystemStartPolicyIsExclusiveUnlessExplicitlyPrivate() {
+        var configuration = LinuxPod.ContainerConfiguration()
+        #expect(configuration.rootFilesystemSharing == .potentiallyShared)
+
+        configuration.rootFilesystemSharing = .privateToWorkload
+        #expect(configuration.rootFilesystemSharing == .privateToWorkload)
+    }
+
+    @Test func namespaceDonorsArePinnedOnlyForExplicitContainerSelections() {
+        var configuration = LinuxPod.ContainerConfiguration()
+        configuration.pidNamespace = .container("pid-donor")
+        configuration.ipcNamespace = .container("ipc-donor")
+        configuration.networkNamespace = .container("network-donor")
+        configuration.utsNamespace = .container("uts-donor")
+        configuration.userNamespace = .container("user-donor")
+        configuration.cgroupNamespace = .container("__pause")
+
+        #expect(
+            LinuxPod.namespaceDonorIDs(configuration: configuration) == [
+                "ipc-donor",
+                "network-donor",
+                "pid-donor",
+                "user-donor",
+                "uts-donor",
+            ]
+        )
+    }
+
+    @Test func startingWorkloadStateRoundTripsDistinctly() throws {
+        let encoded = try JSONEncoder().encode(LinuxSandboxWorkloadState.starting)
+        let decoded = try JSONDecoder().decode(
+            LinuxSandboxWorkloadState.self,
+            from: encoded
+        )
+
+        #expect(decoded == .starting)
+    }
+
     @Test func hotplugResourcesRequireGuestUnmountsAndProcessDeletion() {
         #expect(
             !LinuxPod.hotplugResourcesAreSafeToRelease(
