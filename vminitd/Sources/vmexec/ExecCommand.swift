@@ -91,6 +91,24 @@ struct ExecCommand: ParsableCommand {
         guard pidFd > 0 else {
             throw App.Errno(stage: "pidfd_open(\(parentPid))")
         }
+        // Join every namespace the container's init process could have been
+        // placed in by `RunCommand.setupNamespaces` (its `nsTypeToFlag` map).
+        // An exec that lands in a different namespace than the init process
+        // silently observes guest-root state instead of the container's — e.g.
+        // SysV IPC objects, POSIX message queues, and IPC-namespaced sysctls
+        // (`kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`) all read
+        // as the guest default without CLONE_NEWIPC here.
+        //
+        // setns(2) into a namespace the caller is already in is a no-op, so
+        // naming a flag the init process never unshared is harmless. Keeping
+        // this mask a superset of what `setupNamespaces` can unshare is what
+        // stops the two paths from drifting apart; add to it whenever that map
+        // grows.
+        //
+        // The fork supports private user and network namespaces, so both flags
+        // remain part of the complete mask. `enterNS` removes CLONE_NEWUSER
+        // when the target is already the caller's user namespace; otherwise it
+        // enters the target user namespace together with the remaining flags.
         try Self.enterNS(
             pidFd: pidFd,
             parentPid: parentPid,

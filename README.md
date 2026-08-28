@@ -33,8 +33,8 @@ The `stephenlclarke` fork is the runtime library pinned by the matched
 packages. Users install the runtime/plugin stack rather than this library
 directly; the canonical repository roles, current pins, and release policy live
 in `container-compose`'s [README](https://github.com/stephenlclarke/container-compose#project-repositories),
-[STATUS.md](https://github.com/stephenlclarke/container-compose/blob/main/STATUS.md),
-and [BRANCHES.md](https://github.com/stephenlclarke/container-compose/blob/main/BRANCHES.md).
+[STATUS.md](https://github.com/stephenlclarke/container-compose/blob/main/docs/project/STATUS.md),
+and [BUILD.md](https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/BUILD.md).
 
 Containerization provides APIs to:
 

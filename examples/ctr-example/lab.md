@@ -2,7 +2,7 @@
 
 ## Install and test the container tool
 
-For upstream package testing, see <https://github.com/apple/container/releases>. For the supported fork-backed release stack, install the matching `stephenlclarke/tap` `container` lane documented in [`container-compose/INSTALL.md`](https://github.com/stephenlclarke/container-compose/blob/main/INSTALL.md).
+For upstream package testing, see <https://github.com/apple/container/releases>. For the supported fork-backed release stack, install the matching `stephenlclarke/tap` `container` lane documented in [`container-compose` INSTALL.md](https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/INSTALL.md).
 
 Once installed, start the service and follow prompts.
 
