@@ -151,6 +151,7 @@ extension RegistryClient {
         }
 
         var tokenHTTPRequest = HTTPClientRequest(url: url)
+        tokenHTTPRequest.headers.add(name: "User-Agent", value: clientID)
         if let credentials = try await authentication?.token() {
             tokenHTTPRequest.headers.add(name: "Authorization", value: credentials)
         }

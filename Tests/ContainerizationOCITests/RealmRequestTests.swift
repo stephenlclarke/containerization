@@ -212,6 +212,39 @@ struct RealmRequestTests {
     }
 
     @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))
+    func tokenRequestPreservesUserAgent() async throws {
+        let token = "TOKEN"
+        let server = try RecordingTLSServer.start { _ in
+            let body = "{\"access_token\":\"\(token)\"}"
+            return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+        }
+        defer { server.stop() }
+
+        var tls = TLSConfiguration.makeClientConfiguration()
+        tls.certificateVerification = .none
+        let client = RegistryClient(
+            host: "127.0.0.1",
+            scheme: "https",
+            port: server.port,
+            clientID: "realm-test/1.0",
+            retryOptions: nil,
+            tlsConfiguration: tls
+        )
+        let request = TokenRequest(
+            realm: "https://127.0.0.1:\(server.port)/token",
+            service: "registry",
+            clientId: "realm-test/1.0",
+            scope: nil
+        )
+
+        let response = try await client.fetchToken(request: request)
+
+        #expect(response.accessToken == token)
+        #expect(server.seen.count == 1)
+        #expect(server.seen[0].contains("User-Agent: realm-test/1.0"))
+    }
+
+    @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))
     func maliciousRealmIsNeitherFollowedNorCredentialed() async throws {
         let secret = "INTERNAL_SECRET_TOKEN_\(UUID().uuidString)"
 

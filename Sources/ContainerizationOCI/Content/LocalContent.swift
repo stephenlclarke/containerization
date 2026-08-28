@@ -31,6 +31,7 @@ public final class LocalContent: Content {
 
     public let path: URL
     private let file: FileHandle
+    private let fileLock = NSLock()
 
     public init(path: URL) throws {
         // Open with O_NOFOLLOW and verify the target is a regular file.
@@ -54,26 +55,30 @@ public final class LocalContent: Content {
     }
 
     public func digest() throws -> SHA256.Digest {
-        let bufferSize = 64 * 1024  // 64 KB
-        var hasher = SHA256()
+        try withFileLock {
+            let bufferSize = 64 * 1024  // 64 KB
+            var hasher = SHA256()
 
-        try self.file.seek(toOffset: 0)
-        while case let data = file.readData(ofLength: bufferSize), !data.isEmpty {
-            hasher.update(data: data)
+            try self.file.seek(toOffset: 0)
+            while case let data = file.readData(ofLength: bufferSize), !data.isEmpty {
+                hasher.update(data: data)
+            }
+
+            let digest = hasher.finalize()
+
+            try self.file.seek(toOffset: 0)
+            return digest
         }
-
-        let digest = hasher.finalize()
-
-        try self.file.seek(toOffset: 0)
-        return digest
     }
 
     public func data(offset: UInt64 = 0, length size: Int = 0) throws -> Data? {
-        try file.seek(toOffset: offset)
-        if size == 0 {
-            return try file.readToEnd()
+        try withFileLock {
+            try file.seek(toOffset: offset)
+            if size == 0 {
+                return try file.readToEnd()
+            }
+            return try file.read(upToCount: size)
         }
-        return try file.read(upToCount: size)
     }
 
     public func data() throws -> Data {
@@ -91,16 +96,24 @@ public final class LocalContent: Content {
     /// byte past the limit and comparing is also cheaper than a stat plus a
     /// second open.
     private func boundedContents() throws -> Data {
-        let limit = Self.maxDecodedSize
-        try self.file.seek(toOffset: 0)
-        let data = try self.file.read(upToCount: limit + 1) ?? Data()
-        try self.file.seek(toOffset: 0)
-        guard data.count <= limit else {
-            throw ContainerizationError(
-                .invalidArgument,
-                message: "content at \(self.path.absolutePath()) exceeds the \(limit) byte limit for documents read from the content store")
+        try withFileLock {
+            let limit = Self.maxDecodedSize
+            try self.file.seek(toOffset: 0)
+            let data = try self.file.read(upToCount: limit + 1) ?? Data()
+            try self.file.seek(toOffset: 0)
+            guard data.count <= limit else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "content at \(self.path.absolutePath()) exceeds the \(limit) byte limit for documents read from the content store")
+            }
+            return data
         }
-        return data
+    }
+
+    private func withFileLock<T>(_ operation: () throws -> T) rethrows -> T {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+        return try operation()
     }
 
     public func size() throws -> UInt64 {

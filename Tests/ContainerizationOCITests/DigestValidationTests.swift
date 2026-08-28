@@ -335,4 +335,24 @@ struct DigestValidationTests {
         let ok = try #require(try await store.get(digest: atLimitDigest.digestString))
         #expect(try ok.data().count == LocalContent.maxDecodedSize)
     }
+
+    @Test func concurrentReadsReturnCompleteContent() async throws {
+        let dir = FileManager.default.uniqueTemporaryDirectory(create: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let expected = Data((0..<(256 * 1024)).map { UInt8(truncatingIfNeeded: $0) })
+        let path = dir.appendingPathComponent("content")
+        try expected.write(to: path)
+        let content = try LocalContent(path: path)
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<32 {
+                group.addTask {
+                    let actual = try content.data()
+                    #expect(actual == expected)
+                }
+            }
+            try await group.waitForAll()
+        }
+    }
 }
