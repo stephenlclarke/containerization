@@ -203,6 +203,25 @@ struct DigestValidationTests {
         #expect(content == nil)
     }
 
+    @Test func getPropagatesOpenFailureForExistingBlob() async throws {
+        let dir = FileManager.default.uniqueTemporaryDirectory(create: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = try LocalContentStore(path: dir)
+        let blob = dir.appendingPathComponent("blobs/sha256/\(Self.validHex)")
+        // A self-referential link deterministically makes open(2) fail with
+        // ELOOP even on a platform that follows the final symlink despite
+        // O_NOFOLLOW. Unlike permissions, this also fails when tests run as root.
+        try FileManager.default.createSymbolicLink(at: blob, withDestinationURL: blob)
+
+        do {
+            _ = try await store.get(digest: Self.valid)
+            Issue.record("expected the no-follow open failure to propagate")
+        } catch let error as ContainerizationError {
+            #expect(error.code == .internalError)
+        }
+    }
+
     @Test func deleteCannotEscapeBlobRoot() async throws {
         let dir = FileManager.default.uniqueTemporaryDirectory(create: true)
         defer { try? FileManager.default.removeItem(at: dir) }

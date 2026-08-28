@@ -37,7 +37,15 @@ public final class LocalContent: Content {
         // Open with O_NOFOLLOW and verify the target is a regular file.
         let fd = open(path.path, O_RDONLY | O_NOFOLLOW)
         guard fd >= 0 else {
-            throw ContainerizationError(.notFound, message: "content at path \(path.absolutePath())")
+            let savedErrno = errno
+            switch savedErrno {
+            case ENOENT, ENOTDIR:
+                throw ContainerizationError(.notFound, message: "content at path \(path.absolutePath())")
+            default:
+                throw ContainerizationError(
+                    .internalError,
+                    message: "failed to open content at \(path.absolutePath()): \(String(cString: strerror(savedErrno)))")
+            }
         }
 
         var st = stat()
