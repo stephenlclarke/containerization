@@ -116,6 +116,14 @@ public final class LinuxPod: Sendable {
 
     /// Configuration for a container within the pod.
     public struct ContainerConfiguration: Sendable {
+        /// Whether this workload's root filesystem may be mutated by another workload.
+        public enum RootFilesystemSharing: Equatable, Sendable {
+            /// The root filesystem may be shared or its ownership is unknown.
+            case potentiallyShared
+            /// The root filesystem is private to this workload.
+            case privateToWorkload
+        }
+
         /// Selects the Linux namespace a workload joins.
         public enum NamespaceSelection: Equatable, Sendable {
             /// Create a private namespace for the workload.
@@ -202,6 +210,11 @@ public final class LinuxPod: Sendable {
         public var userNamespace: NamespaceSelection?
         /// OCI runtime path used to start this workload.
         public var ociRuntimePath: String?
+        /// Root filesystem ownership used to select a safe process-start policy.
+        ///
+        /// A private root permits this workload's guest process setup to overlap
+        /// setup for other private roots. The default preserves exclusive setup.
+        public var rootFilesystemSharing: RootFilesystemSharing = .potentiallyShared
 
         public init() {}
     }
@@ -275,6 +288,7 @@ public final class LinuxPod: Sendable {
         enum ContainerState: Sendable {
             case registered
             case created
+            case starting
             case started
             case paused
             case stopped
@@ -286,6 +300,8 @@ public final class LinuxPod: Sendable {
                     return .registered
                 case .created:
                     return .created
+                case .starting:
+                    return .starting
                 case .started:
                     return .running
                 case .paused:
@@ -300,6 +316,7 @@ public final class LinuxPod: Sendable {
     }
 
     private let state: AsyncMutex<State>
+    private let sharedRootFilesystemStartLock = AsyncLock()
 
     // Ports to be allocated from for stdio and for
     // unix socket relays that are sharing a guest
@@ -317,6 +334,10 @@ public final class LinuxPod: Sendable {
         var unifiedVirtiofsMounted: Bool = false
         // Boot-created runtime virtiofs devices currently mounted in the guest.
         var mountedRuntimeVirtiofsTags: Set<String> = []
+    }
+
+    private struct PreparedContainerStart: Sendable {
+        let process: LinuxProcess
     }
 
     private enum Phase: Sendable {
@@ -633,6 +654,8 @@ public enum LinuxSandboxWorkloadState: String, Codable, Equatable, Sendable {
     case registered
     /// The root filesystem and runtime resources are ready for process start.
     case created
+    /// The workload's initial process is being created in the guest.
+    case starting
     /// The workload's initial process is active.
     case running
     /// The workload's process cgroup is frozen.
@@ -1323,7 +1346,29 @@ extension LinuxPod {
 
     /// Start a container's initial process.
     public func startContainer(_ containerID: String) async throws {
-        try await self.state.withLock { state in
+        let rootFilesystemSharing = try await self.state.withLock { state in
+            _ = try state.phase.createdState("startContainer")
+            guard let container = state.containers[containerID] else {
+                throw ContainerizationError(
+                    .notFound,
+                    message: "container \(containerID) not found in pod"
+                )
+            }
+            return container.config.rootFilesystemSharing
+        }
+
+        switch rootFilesystemSharing {
+        case .privateToWorkload:
+            try await startContainerProcess(containerID)
+        case .potentiallyShared:
+            try await sharedRootFilesystemStartLock.withLock { _ in
+                try await self.startContainerProcess(containerID)
+            }
+        }
+    }
+
+    private func startContainerProcess(_ containerID: String) async throws {
+        let prepared = try await self.state.withLock { state -> PreparedContainerStart in
             let createdState = try state.phase.createdState("startContainer")
 
             guard var container = state.containers[containerID] else {
@@ -1480,15 +1525,43 @@ extension LinuxPod {
                     vm: createdState.vm,
                     logger: self.logger
                 )
-                try await process.start()
-
-                container.process = process
-                container.state = .started
+                container.state = .starting
                 state.containers[containerID] = container
+                return PreparedContainerStart(process: process)
             } catch {
                 try? await agent.close()
                 throw error
             }
+        }
+
+        do {
+            try await prepared.process.start()
+            try await self.state.withLock { state in
+                _ = try state.phase.createdState("startContainer")
+                guard var container = state.containers[containerID],
+                    container.state == .starting
+                else {
+                    throw ContainerizationError(
+                        .invalidState,
+                        message: "container \(containerID) no longer has a pending start"
+                    )
+                }
+                container.process = prepared.process
+                container.state = .started
+                state.containers[containerID] = container
+            }
+        } catch {
+            try? await prepared.process.delete()
+            await self.state.withLock { state in
+                guard var container = state.containers[containerID],
+                    container.state == .starting
+                else {
+                    return
+                }
+                container.state = .created
+                state.containers[containerID] = container
+            }
+            throw error
         }
     }
 
@@ -1507,6 +1580,16 @@ extension LinuxPod {
             // Allow stop to be called multiple times
             if container.state == .stopped {
                 return
+            }
+
+            if let dependentID = Self.startingNamespaceDependent(
+                on: containerID,
+                in: state.containers
+            ) {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) is a namespace donor for starting container \(dependentID)"
+                )
             }
 
             guard container.state == .created || container.state == .started || container.state == .paused else {
@@ -1616,7 +1699,7 @@ extension LinuxPod {
             switch container.state {
             case .registered, .stopped:
                 state.containers.removeValue(forKey: containerID)
-            case .created, .started, .paused, .errored:
+            case .created, .starting, .started, .paused, .errored:
                 throw ContainerizationError(
                     .invalidState,
                     message: "container \(containerID) must be stopped before removal"
@@ -1629,6 +1712,13 @@ extension LinuxPod {
     public func stop() async throws {
         try await self.state.withLock { state in
             let createdState = try state.phase.createdState("stop")
+
+            guard !state.containers.values.contains(where: { $0.state == .starting }) else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "pod cannot stop while a container start is in progress"
+                )
+            }
 
             do {
                 try await createdState.relayManager.stopAll()
@@ -1781,6 +1871,15 @@ extension LinuxPod {
                 throw ContainerizationError(
                     .notFound,
                     message: "container \(containerID) not found or not started"
+                )
+            }
+            if let dependentID = Self.startingNamespaceDependent(
+                on: containerID,
+                in: state.containers
+            ) {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "container \(containerID) is a namespace donor for starting container \(dependentID)"
                 )
             }
             try await process.kill(signal)
@@ -2063,6 +2162,39 @@ extension LinuxPod {
 }
 
 extension LinuxPod {
+    private static func startingNamespaceDependent(
+        on donorID: String,
+        in containers: [String: PodContainer]
+    ) -> String? {
+        containers.values.first(where: {
+            $0.state == .starting
+                && namespaceDonorIDs(configuration: $0.config).contains(donorID)
+        })?.id
+    }
+
+    package static func namespaceDonorIDs(
+        configuration: ContainerConfiguration
+    ) -> Set<String> {
+        let selections = [
+            configuration.cgroupNamespace,
+            configuration.ipcNamespace,
+            configuration.networkNamespace,
+            configuration.pidNamespace,
+            configuration.utsNamespace,
+            configuration.userNamespace,
+        ]
+        return Set(
+            selections.compactMap { selection in
+                guard case .container(let donorID) = selection,
+                    donorID != "__pause"
+                else {
+                    return nil
+                }
+                return donorID
+            }
+        )
+    }
+
     /// Produces the OCI namespace list for an independently configured
     /// workload. Donor selections are resolved only against active init
     /// processes, so a stopped or unknown donor fails before process start.
