@@ -227,6 +227,76 @@ struct ImageDigestPoisoningTests {
         #expect(try Data(contentsOf: statePath) == Data(state.utf8))
     }
 
+    /// A manifest rejected for one descriptor's metadata can still name other
+    /// live blobs. It must stop garbage collection rather than become an empty
+    /// child list that permits those blobs to be deleted.
+    @Test func manifestWithInvalidDescriptorMetadataDoesNotDropValidChildren() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.dir) }
+
+        let configData = Data("config".utf8)
+        let configDigest = SHA256.hash(data: configData)
+        let layerData = Data("valid layer".utf8)
+        let layerDigest = SHA256.hash(data: layerData)
+        let malformedLayerData = Data("malformed layer metadata".utf8)
+        let malformedLayerDigest = SHA256.hash(data: malformedLayerData)
+        let manifest = Manifest(
+            config: Descriptor(
+                mediaType: MediaTypes.imageConfig,
+                digest: configDigest.digestString,
+                size: Int64(configData.count)),
+            layers: [
+                Descriptor(
+                    mediaType: MediaTypes.imageLayer,
+                    digest: layerDigest.digestString,
+                    size: Int64(layerData.count)),
+                Descriptor(
+                    mediaType: MediaTypes.imageLayer,
+                    digest: malformedLayerDigest.digestString,
+                    size: -1),
+            ])
+        let manifestData = try JSONEncoder().encode(manifest)
+        let manifestDigest = SHA256.hash(data: manifestData)
+        let index = Index(manifests: [
+            Descriptor(
+                mediaType: MediaTypes.imageManifest,
+                digest: manifestDigest.digestString,
+                size: Int64(manifestData.count),
+                platform: Platform(arch: "arm64", os: "linux"))
+        ])
+        let indexData = try JSONEncoder().encode(index)
+        let indexDigest = SHA256.hash(data: indexData)
+
+        try await fixture.contentStore.ingest { ingestDir in
+            try configData.write(to: ingestDir.appendingPathComponent(configDigest.encoded))
+            try layerData.write(to: ingestDir.appendingPathComponent(layerDigest.encoded))
+            try malformedLayerData.write(to: ingestDir.appendingPathComponent(malformedLayerDigest.encoded))
+            try manifestData.write(to: ingestDir.appendingPathComponent(manifestDigest.encoded))
+            try indexData.write(to: ingestDir.appendingPathComponent(indexDigest.encoded))
+        }
+        let image = try await fixture.store.create(
+            description: Containerization.Image.Description(
+                reference: "test/invalid-manifest-metadata:v1",
+                descriptor: Descriptor(
+                    mediaType: MediaTypes.index,
+                    digest: indexDigest.digestString,
+                    size: Int64(indexData.count))))
+
+        await #expect(throws: (any Swift.Error).self) {
+            try await image.referencedDigests()
+        }
+        let blobs = fixture.dir.appendingPathComponent("blobs/sha256")
+        let before = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+        await #expect(throws: (any Swift.Error).self) {
+            try await fixture.store.cleanUpOrphanedBlobs()
+        }
+        let after = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+
+        #expect(after == before)
+        #expect(after.contains(configDigest.encoded))
+        #expect(after.contains(layerDigest.encoded))
+    }
+
     /// An unreadable manifest must not be treated as a childless one. If it were,
     /// its layers would be missing from the keep set and garbage collection would
     /// delete the live blobs of a healthy image.

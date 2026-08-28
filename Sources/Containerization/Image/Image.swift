@@ -122,17 +122,11 @@ public struct Image: Sendable {
                 // child layers to keep.
                 continue
             }
-            let m: Manifest
-            do {
-                m = try content.decode()
-            } catch is DecodingError {
-                // Present but not a manifest, so again no child layers.
-                continue
-            }
-            // Any other failure — notably a document that exceeds the decode
-            // limit — propagates. Treating an unreadable manifest as a childless
-            // one would omit its layers from this list, and a caller garbage
-            // collecting against it would delete them as orphaned.
+            // A present but undecodable manifest must fail closed. It can still
+            // contain valid config or layer digests alongside a malformed field;
+            // treating it as childless would omit those live blobs from a garbage
+            // collection keep set.
+            let m: Manifest = try content.decode()
             let descs = m.layers + [m.config]
             referenced.append(contentsOf: descs.compactMap { try? $0.digest.validatedDigestEncoding() })
         }
