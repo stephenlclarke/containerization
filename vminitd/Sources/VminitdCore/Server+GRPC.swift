@@ -879,7 +879,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
     {
         let path = FilePath(request.path)
         let operation: Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest.OneOf_Operation
-        let containerMountFd: Int32
+        let containerFilesystem: ProcessFilesystemDescriptors
         do {
             if !request.hasContainerID {
                 throw ContainerizationError(
@@ -897,14 +897,17 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
             let container = try await state.get(container: request.containerID)
             operation = requestedOperation
-            containerMountFd = try await container.duplicateMountNamespace()
+            containerFilesystem = try await container.duplicateFilesystemContext()
         } catch let error as ContainerizationError {
             throw error.toRPCError(operation: "filesystemOperation")
         } catch {
             throw RPCError(code: .internalError, message: "filesystemOperation", cause: error)
         }
 
-        defer { close(containerMountFd) }
+        defer {
+            close(containerFilesystem.mountNamespace)
+            close(containerFilesystem.root)
+        }
 
         log.debug(
             "filesystemOperation",
@@ -934,27 +937,35 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         }
         let selfInode = finfo.st_ino
 
-        let containerMountStat = fstat(containerMountFd, &finfo)
+        let containerMountStat = fstat(containerFilesystem.mountNamespace, &finfo)
         if containerMountStat != 0 {
             let error = swiftErrno("fstat")
             throw RPCError(code: .internalError, message: "failed to stat container mount namespace", cause: error)
         }
         let containerInode = finfo.st_ino
 
-        if selfInode == containerInode {
-            try doFilesystemOperation(path: path, operation: operation)
-        } else {
-            try await self.runOnDedicatedThread {
-                if unshare(CLONE_FS) != 0 {
-                    let error = self.swiftErrno("unshare(CLONE_FS)")
-                    throw RPCError(code: .internalError, message: "failed to unshare filesystem namespace", cause: error)
-                }
-                if setns(containerMountFd, CLONE_NEWNS) != 0 {
-                    let error = self.swiftErrno("setns(CLONE_NEWNS)")
-                    throw RPCError(code: .internalError, message: "failed to enter container mount namespace", cause: error)
-                }
-                try self.doFilesystemOperation(path: path, operation: operation)
+        try await self.runOnDedicatedThread {
+            if unshare(CLONE_FS) != 0 {
+                let error = self.swiftErrno("unshare(CLONE_FS)")
+                throw RPCError(code: .internalError, message: "failed to unshare filesystem context", cause: error)
             }
+            if selfInode != containerInode, setns(containerFilesystem.mountNamespace, CLONE_NEWNS) != 0 {
+                let error = self.swiftErrno("setns(CLONE_NEWNS)")
+                throw RPCError(code: .internalError, message: "failed to enter container mount namespace", cause: error)
+            }
+            if fchdir(containerFilesystem.root) != 0 {
+                let error = self.swiftErrno("fchdir(container root)")
+                throw RPCError(code: .internalError, message: "failed to enter container root", cause: error)
+            }
+            if chroot(".") != 0 {
+                let error = self.swiftErrno("chroot(container root)")
+                throw RPCError(code: .internalError, message: "failed to enter container root", cause: error)
+            }
+            if chdir("/") != 0 {
+                let error = self.swiftErrno("chdir(container root)")
+                throw RPCError(code: .internalError, message: "failed to enter container root", cause: error)
+            }
+            try self.doFilesystemOperation(path: path, operation: operation)
         }
 
         return .init()

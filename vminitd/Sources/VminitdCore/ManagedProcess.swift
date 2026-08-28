@@ -48,10 +48,13 @@ final class ManagedProcess: ContainerProcess, Sendable {
         var exitStatus: ContainerExitStatus? = nil
         var pid: Int32?
         var mountNamespace: ProcessMountNamespace?
+        var root: ProcessRoot?
         var hostNetworkConfigured = false
     }
 
     private static let ackPid = "AckPid"
+    private static let rootReady = "RootReady"
+    private static let ackRoot = "AckRoot"
     private static let ackConsole = "AckConsole"
 
     let id: String
@@ -73,12 +76,21 @@ final class ManagedProcess: ContainerProcess, Sendable {
         }
     }
 
-    func duplicateMountNamespace() throws -> Int32 {
+    func duplicateFilesystemContext() throws -> ProcessFilesystemDescriptors {
         try self.state.withLock {
-            guard $0.exitStatus == nil, let mountNamespace = $0.mountNamespace else {
-                throw ContainerizationError(.invalidState, message: "process mount namespace is not available")
+            guard $0.exitStatus == nil, let mountNamespace = $0.mountNamespace, let root = $0.root else {
+                throw ContainerizationError(.invalidState, message: "process filesystem context is not available")
             }
-            return try mountNamespace.duplicate()
+            let mountNamespaceFileDescriptor = try mountNamespace.duplicate()
+            do {
+                return try ProcessFilesystemDescriptors(
+                    mountNamespace: mountNamespaceFileDescriptor,
+                    root: root.duplicate()
+                )
+            } catch {
+                _ = Foundation.close(mountNamespaceFileDescriptor)
+                throw error
+            }
         }
     }
 
@@ -233,6 +245,26 @@ extension ManagedProcess {
                     ])
                 try self.ackPipe.fileHandleForWriting.write(contentsOf: Self.ackPid.data(using: .utf8)!)
 
+                if self.owningPid == nil {
+                    let rootReadySize = Self.rootReady.utf8.count
+                    guard let rootReadyData = try self.syncPipe.fileHandleForReading.read(upToCount: rootReadySize) else {
+                        throw ContainerizationError(
+                            .internalError,
+                            message: "no container root readiness data from sync pipe"
+                        )
+                    }
+                    let rootReady = String(decoding: rootReadyData, as: UTF8.self)
+                    guard rootReady == Self.rootReady else {
+                        throw ContainerizationError(
+                            .internalError,
+                            message: "invalid container root readiness payload"
+                        )
+                    }
+
+                    $0.root = try ProcessRoot(pid: pid)
+                    try self.ackPipe.fileHandleForWriting.write(contentsOf: Self.ackRoot.data(using: .utf8)!)
+                }
+
                 if self.terminal {
                     log.info(
                         "wait for PTY FD",
@@ -285,6 +317,7 @@ extension ManagedProcess {
             self.state.withLock {
                 $0.hostNetworkConfigured = false
                 $0.mountNamespace = nil
+                $0.root = nil
                 $0.pid = nil
             }
             if let errorData = try? self.errorPipe.fileHandleForReading.readToEnd(),
@@ -312,6 +345,7 @@ extension ManagedProcess {
             let exitStatus = ContainerExitStatus(exitCode: status, exitedAt: Date.now)
             state.exitStatus = exitStatus
             state.mountNamespace = nil
+            state.root = nil
             state.pid = nil
 
             do {

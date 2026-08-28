@@ -37,11 +37,11 @@ public actor ManagedContainer {
         self.initProcess.pid
     }
 
-    /// Duplicate the mount namespace descriptor captured for the running init process.
+    /// Duplicate the filesystem descriptors captured for the running init process.
     ///
-    /// The caller owns the returned descriptor and must close it.
-    func duplicateMountNamespace() throws -> Int32 {
-        try self.initProcess.duplicateMountNamespace()
+    /// The caller owns the returned descriptors and must close them.
+    func duplicateFilesystemContext() throws -> ProcessFilesystemDescriptors {
+        try self.initProcess.duplicateFilesystemContext()
     }
 
     init(

@@ -30,31 +30,56 @@ private typealias TestStat = Glibc.stat
 @testable import VminitdCore
 
 struct ProcessMountNamespaceTests {
-    @Test func duplicateReferencesCapturedNamespace() throws {
+    @Test func duplicatesReferenceCapturedFilesystemContext() throws {
         let namespace = try ProcessMountNamespace(pid: getpid())
-        let duplicate = try namespace.duplicate()
-        defer { _ = Foundation.close(duplicate) }
+        let root = try ProcessRoot(pid: getpid())
+        let namespaceDuplicate = try namespace.duplicate()
+        let rootDuplicate = try root.duplicate()
+        defer {
+            _ = Foundation.close(namespaceDuplicate)
+            _ = Foundation.close(rootDuplicate)
+        }
 
-        let current = Foundation.open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC)
-        #expect(current >= 0)
-        defer { _ = Foundation.close(current) }
+        let currentNamespace = Foundation.open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC)
+        let currentRoot = Foundation.open("/proc/self/root", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        #expect(currentNamespace >= 0)
+        #expect(currentRoot >= 0)
+        defer {
+            _ = Foundation.close(currentNamespace)
+            _ = Foundation.close(currentRoot)
+        }
 
-        var duplicateInfo = TestStat()
-        var currentInfo = TestStat()
-        #expect(fstat(duplicate, &duplicateInfo) == 0)
-        #expect(fstat(current, &currentInfo) == 0)
-        #expect(duplicateInfo.st_dev == currentInfo.st_dev)
-        #expect(duplicateInfo.st_ino == currentInfo.st_ino)
+        var namespaceDuplicateInfo = TestStat()
+        var currentNamespaceInfo = TestStat()
+        #expect(fstat(namespaceDuplicate, &namespaceDuplicateInfo) == 0)
+        #expect(fstat(currentNamespace, &currentNamespaceInfo) == 0)
+        #expect(namespaceDuplicateInfo.st_dev == currentNamespaceInfo.st_dev)
+        #expect(namespaceDuplicateInfo.st_ino == currentNamespaceInfo.st_ino)
+
+        var rootDuplicateInfo = TestStat()
+        var currentRootInfo = TestStat()
+        #expect(fstat(rootDuplicate, &rootDuplicateInfo) == 0)
+        #expect(fstat(currentRoot, &currentRootInfo) == 0)
+        #expect(rootDuplicateInfo.st_dev == currentRootInfo.st_dev)
+        #expect(rootDuplicateInfo.st_ino == currentRootInfo.st_ino)
     }
 
     @Test func duplicateOutlivesOwningHandle() throws {
         var namespace: ProcessMountNamespace? = try ProcessMountNamespace(pid: getpid())
-        let duplicate = try #require(namespace).duplicate()
+        var root: ProcessRoot? = try ProcessRoot(pid: getpid())
+        let namespaceDuplicate = try #require(namespace).duplicate()
+        let rootDuplicate = try #require(root).duplicate()
         namespace = nil
-        defer { _ = Foundation.close(duplicate) }
+        root = nil
+        defer {
+            _ = Foundation.close(namespaceDuplicate)
+            _ = Foundation.close(rootDuplicate)
+        }
 
-        var info = TestStat()
-        #expect(fstat(duplicate, &info) == 0)
+        var namespaceInfo = TestStat()
+        var rootInfo = TestStat()
+        #expect(fstat(namespaceDuplicate, &namespaceInfo) == 0)
+        #expect(fstat(rootDuplicate, &rootInfo) == 0)
     }
 }
 
