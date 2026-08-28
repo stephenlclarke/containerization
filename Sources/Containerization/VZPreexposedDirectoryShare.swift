@@ -51,6 +51,40 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
         )
     }
 
+    func finalizeRuntimeDeviceBudget(
+        _ config: inout VZVirtualMachineConfiguration,
+        storageDeviceCount: Int
+    ) throws {
+        let allowedTags = Set(
+            runtimeDeviceTags(storageDeviceCount: storageDeviceCount)
+        )
+        let excessTags = Set(runtimeDeviceTags(storageDeviceCount: 0))
+            .subtracting(allowedTags)
+
+        for device in config.directorySharingDevices.compactMap({
+            $0 as? VZVirtioFileSystemDeviceConfiguration
+        }) where excessTags.contains(device.tag) {
+            guard
+                let share = device.share as? VZMultipleDirectoryShare,
+                share.directories.isEmpty
+            else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "runtime virtiofs device \(device.tag) exceeds the available boot-device budget and is already in use"
+                )
+            }
+        }
+
+        config.directorySharingDevices.removeAll {
+            guard
+                let device = $0 as? VZVirtioFileSystemDeviceConfiguration
+            else {
+                return false
+            }
+            return excessTags.contains(device.tag)
+        }
+    }
+
     public func configureVZ(
         _ config: inout VZVirtualMachineConfiguration,
         allocator: any AddressAllocator<Character>,

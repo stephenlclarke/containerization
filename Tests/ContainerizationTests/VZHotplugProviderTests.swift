@@ -28,6 +28,7 @@ struct VZHotplugProviderTests {
     private struct StorageAddingExtension: VZInstanceExtension {
         let imageURL: URL
         let count: Int
+        let expectedRuntimeDeviceCount: Int
 
         func configureVZ(
             _ config: inout VZVirtualMachineConfiguration,
@@ -35,6 +36,17 @@ struct VZHotplugProviderTests {
             storageDeviceCount: Int,
             mountsByID: [String: [Mount]]
         ) throws {
+            let runtimeDeviceCount = config.directorySharingDevices
+                .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+                .filter { $0.tag.hasPrefix("runtime-virtiofs-") }
+                .count
+            guard runtimeDeviceCount == expectedRuntimeDeviceCount else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "expected \(expectedRuntimeDeviceCount) runtime virtiofs devices before adding storage, found \(runtimeDeviceCount)"
+                )
+            }
+
             let attachment = try VZDiskImageStorageDeviceAttachment(
                 url: imageURL,
                 readOnly: false,
@@ -83,7 +95,11 @@ struct VZHotplugProviderTests {
         var configuration = VZVirtualMachineInstance.Configuration()
         configuration.extensions = [
             VZPreexposedDirectoryShare(roots: []),
-            StorageAddingExtension(imageURL: imageURL, count: 7),
+            StorageAddingExtension(
+                imageURL: imageURL,
+                count: 7,
+                expectedRuntimeDeviceCount: 16
+            ),
         ]
         try configuration.configureExtensions(
             &vzConfiguration,

@@ -175,6 +175,11 @@ public final class VZVirtualMachineInstance: Sendable {
         let preexposedShares = config.extensions.compactMap {
             $0 as? VZPreexposedDirectoryShare
         }
+        let configuredDirectoryTags = Set(
+            vzConfiguration.directorySharingDevices
+                .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+                .map(\.tag)
+        )
         self.hotplugProvider = try VZHotplugProvider(
             vm: self.vm,
             queue: self.queue,
@@ -184,7 +189,7 @@ public final class VZVirtualMachineInstance: Sendable {
             runtimeDeviceTags: preexposedShares.flatMap {
                 $0.runtimeDeviceTags(
                     storageDeviceCount: vzConfiguration.storageDevices.count
-                )
+                ).filter(configuredDirectoryTags.contains)
             }
         )
 
@@ -656,10 +661,7 @@ extension VZVirtualMachineInstance.Configuration {
             $0 as? any VZInstanceExtension
         }
 
-        // Runtime share devices and storage devices consume the same boot
-        // budget, so storage-producing extensions must run before the share
-        // pool is finalized, regardless of declaration order.
-        for ext in extensions where !(ext is VZPreexposedDirectoryShare) {
+        for ext in extensions {
             try ext.configureVZ(
                 &config,
                 allocator: allocator,
@@ -667,12 +669,17 @@ extension VZVirtualMachineInstance.Configuration {
                 mountsByID: self.mountsByID
             )
         }
-        for ext in extensions where ext is VZPreexposedDirectoryShare {
-            try ext.configureVZ(
+
+        // Preserve public extension ordering while reconciling the share pool
+        // against storage devices added by later extensions. An excess device
+        // that another extension has claimed fails explicitly instead of being
+        // removed behind that extension's back.
+        for share in extensions.compactMap({
+            $0 as? VZPreexposedDirectoryShare
+        }) {
+            try share.finalizeRuntimeDeviceBudget(
                 &config,
-                allocator: allocator,
-                storageDeviceCount: config.storageDevices.count,
-                mountsByID: self.mountsByID
+                storageDeviceCount: config.storageDevices.count
             )
         }
     }
