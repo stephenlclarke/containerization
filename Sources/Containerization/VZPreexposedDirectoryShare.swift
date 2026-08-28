@@ -30,6 +30,12 @@ import Foundation
 /// devices that are reused only after their previous guest mapping is
 /// unmounted.
 public struct VZPreexposedDirectoryShare: VZInstanceExtension {
+    /// Virtualization.framework fails to start a VM when the combined number
+    /// of boot-time storage devices and reserved runtime virtiofs devices
+    /// exceeds this budget. Keep ordinary configurations at the requested
+    /// pool size while yielding capacity to explicitly configured storage.
+    static let bootDeviceBudget = 20
+
     public let roots: [URL]
     public let runtimeDeviceCount: Int
 
@@ -38,8 +44,11 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
         self.runtimeDeviceCount = runtimeDeviceCount
     }
 
-    var runtimeDeviceTags: [String] {
-        VZHotplugProvider.runtimeDeviceTags(count: runtimeDeviceCount)
+    func runtimeDeviceTags(storageDeviceCount: Int) -> [String] {
+        let availableCount = max(0, Self.bootDeviceBudget - storageDeviceCount)
+        return VZHotplugProvider.runtimeDeviceTags(
+            count: min(runtimeDeviceCount, availableCount)
+        )
     }
 
     public func configureVZ(
@@ -107,7 +116,7 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
                 .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
                 .map(\.tag)
         )
-        for tag in runtimeDeviceTags {
+        for tag in runtimeDeviceTags(storageDeviceCount: storageDeviceCount) {
             guard !existingTags.contains(tag) else {
                 throw ContainerizationError(
                     .exists,

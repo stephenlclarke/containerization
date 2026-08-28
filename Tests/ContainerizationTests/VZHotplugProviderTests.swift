@@ -34,7 +34,15 @@ struct VZHotplugProviderTests {
         )
 
         #expect(runtimeShare.roots.isEmpty)
-        #expect(runtimeShare.runtimeDeviceTags.count == 16)
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 0).count == 16)
+    }
+
+    @Test func runtimeShareDevicesYieldToBootStorage() throws {
+        let runtimeShare = VZPreexposedDirectoryShare(roots: [])
+
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 4).count == 16)
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 7).count == 13)
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 20).isEmpty)
     }
 
     @Test func preexposedGuestPathUsesMostSpecificContainingRoot() throws {

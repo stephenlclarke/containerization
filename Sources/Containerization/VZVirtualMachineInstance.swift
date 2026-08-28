@@ -164,7 +164,7 @@ public final class VZVirtualMachineInstance: Sendable {
         self.timeSyncer = .init(logger: logger)
 
         let allocator = Character.blockDeviceTagAllocator()
-        let (mountAttachments, _) = try config.mountAttachments(allocator: allocator)
+        let (mountAttachments, storageDeviceCount) = try config.mountAttachments(allocator: allocator)
         self._mounts = Mutex(mountAttachments)
 
         self.vm = VZVirtualMachine(
@@ -180,7 +180,9 @@ public final class VZVirtualMachineInstance: Sendable {
             allocator: allocator,
             initialMounts: mountAttachments,
             preexposedRoots: preexposedShares.flatMap(\.roots),
-            runtimeDeviceTags: preexposedShares.flatMap(\.runtimeDeviceTags)
+            runtimeDeviceTags: preexposedShares.flatMap {
+                $0.runtimeDeviceTags(storageDeviceCount: storageDeviceCount)
+            }
         )
 
         for ext in config.extensions.compactMap({ $0 as? any VZInstanceExtension }) {
