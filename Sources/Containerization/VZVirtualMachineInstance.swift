@@ -167,7 +167,9 @@ public final class VZVirtualMachineInstance: Sendable {
         let (mountAttachments, _) = try config.mountAttachments(allocator: allocator)
         self._mounts = Mutex(mountAttachments)
 
-        let vzConfiguration = try config.toVZ(allocator: allocator)
+        let (vzConfiguration, runtimeDeviceTags) = try config.toVZ(
+            allocator: allocator
+        )
         self.vm = VZVirtualMachine(
             configuration: vzConfiguration,
             queue: self.queue
@@ -175,21 +177,13 @@ public final class VZVirtualMachineInstance: Sendable {
         let preexposedShares = config.extensions.compactMap {
             $0 as? VZPreexposedDirectoryShare
         }
-        let configuredDirectoryTags = Set(
-            vzConfiguration.directorySharingDevices
-                .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
-                .map(\.tag)
-        )
         self.hotplugProvider = try VZHotplugProvider(
             vm: self.vm,
             queue: self.queue,
             allocator: allocator,
             initialMounts: mountAttachments,
             preexposedRoots: preexposedShares.flatMap(\.roots),
-            runtimeDeviceTags: preexposedShares.flatMap {
-                $0.runtimeDeviceTags(for: vzConfiguration)
-                    .filter(configuredDirectoryTags.contains)
-            }
+            runtimeDeviceTags: runtimeDeviceTags
         )
 
         for ext in config.extensions.compactMap({ $0 as? any VZInstanceExtension }) {
@@ -535,7 +529,9 @@ extension VZVirtualMachineInstance.Configuration {
         return [c]
     }
 
-    func toVZ(allocator: any AddressAllocator<Character>) throws -> VZVirtualMachineConfiguration {
+    func toVZ(
+        allocator: any AddressAllocator<Character>
+    ) throws -> (VZVirtualMachineConfiguration, [String]) {
         var config = VZVirtualMachineConfiguration()
 
         config.cpuCount = self.cpus
@@ -646,16 +642,19 @@ extension VZVirtualMachineInstance.Configuration {
         platform.isNestedVirtualizationEnabled = self.nestedVirtualization
         config.platform = platform
 
-        try configureExtensions(&config, allocator: allocator)
+        let runtimeDeviceTags = try configureExtensions(
+            &config,
+            allocator: allocator
+        )
 
         try config.validate()
-        return config
+        return (config, runtimeDeviceTags)
     }
 
     func configureExtensions(
         _ config: inout VZVirtualMachineConfiguration,
         allocator: any AddressAllocator<Character>
-    ) throws {
+    ) throws -> [String] {
         let extensions = self.extensions.compactMap {
             $0 as? any VZInstanceExtension
         }
@@ -698,6 +697,17 @@ extension VZVirtualMachineInstance.Configuration {
                 &config,
                 ownedRuntimeDevices: devices
             )
+        }
+
+        let configuredDeviceIDs = Set(
+            config.directorySharingDevices.map(ObjectIdentifier.init)
+        )
+        return runtimeShareDevices.flatMap { _, devices in
+            devices
+                .filter {
+                    configuredDeviceIDs.contains(ObjectIdentifier($0))
+                }
+                .map(\.tag)
         }
     }
 

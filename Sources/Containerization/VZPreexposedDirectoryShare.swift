@@ -60,27 +60,32 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
     }
 
     func runtimeDeviceTags(
-        for config: VZVirtualMachineConfiguration
+        for config: VZVirtualMachineConfiguration,
+        ownedRuntimeDevices: [VZVirtioFileSystemDeviceConfiguration] = []
     ) -> [String] {
         runtimeDeviceTags(
             storageDeviceCount: config.storageDevices.count,
             additionalDirectorySharingDeviceCount:
-                additionalDirectorySharingDeviceCount(in: config)
+                additionalDirectorySharingDeviceCount(
+                    in: config,
+                    ownedRuntimeDevices: ownedRuntimeDevices
+                )
         )
     }
 
     private func additionalDirectorySharingDeviceCount(
-        in config: VZVirtualMachineConfiguration
+        in config: VZVirtualMachineConfiguration,
+        ownedRuntimeDevices: [VZVirtioFileSystemDeviceConfiguration] = []
     ) -> Int {
-        let possibleRuntimeTags = Set(
-            VZHotplugProvider.runtimeDeviceTags(count: runtimeDeviceCount)
+        let ownedDeviceIDs = Set(
+            ownedRuntimeDevices.map(ObjectIdentifier.init)
         )
         return config
             .directorySharingDevices
             .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
             .filter {
                 $0.tag != "virtiofs"
-                    && !possibleRuntimeTags.contains($0.tag)
+                    && !ownedDeviceIDs.contains(ObjectIdentifier($0))
             }
             .count
     }
@@ -89,23 +94,29 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
         _ config: inout VZVirtualMachineConfiguration,
         ownedRuntimeDevices: [VZVirtioFileSystemDeviceConfiguration]
     ) throws {
-        let allowedTags = Set(runtimeDeviceTags(for: config))
+        let allowedTags = Set(
+            runtimeDeviceTags(
+                for: config,
+                ownedRuntimeDevices: ownedRuntimeDevices
+            )
+        )
         let excessTags = Set(runtimeDeviceTags(storageDeviceCount: 0))
             .subtracting(allowedTags)
 
         let ownedDeviceIDs = Set(
             ownedRuntimeDevices.map(ObjectIdentifier.init)
         )
-        if let foreignDevice = config.directorySharingDevices
+        let ownedTags = Set(ownedRuntimeDevices.map(\.tag))
+        if let conflictingDevice = config.directorySharingDevices
             .compactMap({ $0 as? VZVirtioFileSystemDeviceConfiguration })
             .first(where: {
-                excessTags.contains($0.tag)
+                ownedTags.contains($0.tag)
                     && !ownedDeviceIDs.contains(ObjectIdentifier($0))
             })
         {
             throw ContainerizationError(
                 .exists,
-                message: "virtiofs device tag already exists: \(foreignDevice.tag)"
+                message: "virtiofs device tag already exists: \(conflictingDevice.tag)"
             )
         }
 
