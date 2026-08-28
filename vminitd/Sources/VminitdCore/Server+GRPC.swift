@@ -996,6 +996,13 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     throw RPCError(code: .invalidArgument, message: "trim schedule must be specified")
                 }
             }
+        } catch let error as RPCError {
+            log.error(
+                "filesystemOperation",
+                metadata: [
+                    "error": "\(error)"
+                ])
+            throw error
         } catch {
             log.error(
                 "filesystemOperation",
