@@ -306,14 +306,7 @@ extension Mount {
                 return resultFd
             }
 
-            guard mkdirat(currentFd, component, 0o755) == 0 else {
-                try fail(errno, "failed to create directory '\(component)'")
-            }
-
-            let dirFd = openat(currentFd, component, O_RDONLY | O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC)
-            guard dirFd >= 0 else {
-                try fail(errno, "failed to open created directory '\(component)'")
-            }
+            let dirFd = try openOrCreateMountDirectory(parentFd: currentFd, component: component)
 
             if isLast {
                 resultFd = dirFd
@@ -327,6 +320,19 @@ extension Mount {
         // All components already existed.
         resultFd = currentFd
         return resultFd
+    }
+
+    internal func openOrCreateMountDirectory(parentFd: Int32, component: String) throws -> Int32 {
+        let result = mkdirat(parentFd, component, 0o755)
+        guard result == 0 || errno == EEXIST else {
+            throw Error.errno(errno, "failed to create directory '\(component)'")
+        }
+
+        let dirFd = openat(parentFd, component, O_RDONLY | O_NOFOLLOW | O_DIRECTORY | O_CLOEXEC)
+        guard dirFd >= 0 else {
+            throw Error.errno(errno, "failed to open created directory '\(component)'")
+        }
+        return dirFd
     }
 
     /// Resolve the real filesystem path for an open fd via /proc/self/fd.
