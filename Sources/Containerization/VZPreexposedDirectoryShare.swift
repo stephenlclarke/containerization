@@ -30,6 +30,13 @@ import Foundation
 /// devices that are reused only after their previous guest mapping is
 /// unmounted.
 public struct VZPreexposedDirectoryShare: VZInstanceExtension {
+    /// Virtualization.framework fails to start a VM when the combined number
+    /// of boot-time storage devices, additional directory-sharing devices,
+    /// and reserved runtime virtiofs devices exceeds this budget. The required
+    /// baseline `virtiofs` share is excluded. Keep ordinary configurations at
+    /// the requested pool size while yielding capacity to other devices.
+    static let bootDeviceBudget = 20
+
     public let roots: [URL]
     public let runtimeDeviceCount: Int
 
@@ -38,8 +45,100 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
         self.runtimeDeviceCount = runtimeDeviceCount
     }
 
-    var runtimeDeviceTags: [String] {
-        VZHotplugProvider.runtimeDeviceTags(count: runtimeDeviceCount)
+    func runtimeDeviceTags(
+        storageDeviceCount: Int,
+        additionalDirectorySharingDeviceCount: Int = 0
+    ) -> [String] {
+        let availableCount = max(
+            0,
+            Self.bootDeviceBudget - storageDeviceCount
+                - additionalDirectorySharingDeviceCount
+        )
+        return VZHotplugProvider.runtimeDeviceTags(
+            count: min(runtimeDeviceCount, availableCount)
+        )
+    }
+
+    func runtimeDeviceTags(
+        for config: VZVirtualMachineConfiguration,
+        ownedRuntimeDevices: [VZVirtioFileSystemDeviceConfiguration] = []
+    ) -> [String] {
+        runtimeDeviceTags(
+            storageDeviceCount: config.storageDevices.count,
+            additionalDirectorySharingDeviceCount:
+                additionalDirectorySharingDeviceCount(
+                    in: config,
+                    ownedRuntimeDevices: ownedRuntimeDevices
+                )
+        )
+    }
+
+    private func additionalDirectorySharingDeviceCount(
+        in config: VZVirtualMachineConfiguration,
+        ownedRuntimeDevices: [VZVirtioFileSystemDeviceConfiguration] = []
+    ) -> Int {
+        let ownedDeviceIDs = Set(
+            ownedRuntimeDevices.map(ObjectIdentifier.init)
+        )
+        return config
+            .directorySharingDevices
+            .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+            .filter {
+                $0.tag != "virtiofs"
+                    && !ownedDeviceIDs.contains(ObjectIdentifier($0))
+            }
+            .count
+    }
+
+    func finalizeRuntimeDeviceBudget(
+        _ config: inout VZVirtualMachineConfiguration,
+        ownedRuntimeDevices: [VZVirtioFileSystemDeviceConfiguration]
+    ) throws {
+        let allowedTags = Set(
+            runtimeDeviceTags(
+                for: config,
+                ownedRuntimeDevices: ownedRuntimeDevices
+            )
+        )
+        let excessTags = Set(runtimeDeviceTags(storageDeviceCount: 0))
+            .subtracting(allowedTags)
+
+        let ownedDeviceIDs = Set(
+            ownedRuntimeDevices.map(ObjectIdentifier.init)
+        )
+        let ownedTags = Set(ownedRuntimeDevices.map(\.tag))
+        if let conflictingDevice = config.directorySharingDevices
+            .compactMap({ $0 as? VZVirtioFileSystemDeviceConfiguration })
+            .first(where: {
+                ownedTags.contains($0.tag)
+                    && !ownedDeviceIDs.contains(ObjectIdentifier($0))
+            })
+        {
+            throw ContainerizationError(
+                .exists,
+                message: "virtiofs device tag already exists: \(conflictingDevice.tag)"
+            )
+        }
+
+        let excessDevices = ownedRuntimeDevices.filter {
+            excessTags.contains($0.tag)
+        }
+        for device in excessDevices {
+            guard
+                let share = device.share as? VZMultipleDirectoryShare,
+                share.directories.isEmpty
+            else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "runtime virtiofs device \(device.tag) exceeds the available boot-device budget and is already in use"
+                )
+            }
+        }
+
+        let excessDeviceIDs = Set(excessDevices.map(ObjectIdentifier.init))
+        config.directorySharingDevices.removeAll {
+            excessDeviceIDs.contains(ObjectIdentifier($0))
+        }
     }
 
     public func configureVZ(
@@ -107,7 +206,11 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
                 .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
                 .map(\.tag)
         )
-        for tag in runtimeDeviceTags {
+        for tag in runtimeDeviceTags(
+            storageDeviceCount: storageDeviceCount,
+            additionalDirectorySharingDeviceCount:
+                additionalDirectorySharingDeviceCount(in: config)
+        ) {
             guard !existingTags.contains(tag) else {
                 throw ContainerizationError(
                     .exists,

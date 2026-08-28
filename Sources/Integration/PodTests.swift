@@ -2430,7 +2430,7 @@ extension IntegrationSuite {
             "seed",
             rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "seed")
         ) { config in
-            config.process.arguments = ["/bin/sleep", "30"]
+            config.process.arguments = ["/bin/sleep", "600"]
         }
         try await pod.create()
         try await pod.startContainer("seed")
@@ -2446,7 +2446,7 @@ extension IntegrationSuite {
             "hot-stable",
             rootfs: try cloneRootfs(bs.rootfs, testID: id, containerID: "hot-stable")
         ) { config in
-            config.process.arguments = ["/bin/sleep", "30"]
+            config.process.arguments = ["/bin/sleep", "600"]
             config.mounts.append(
                 .share(source: stableSource.path, destination: "/stable")
             )
@@ -2481,12 +2481,12 @@ extension IntegrationSuite {
             )
         }
 
-        try await pod.killContainer("hot-stable", signal: .term)
+        try await pod.killContainer("hot-stable", signal: .kill)
         let stableStatus = try await pod.waitContainer("hot-stable")
-        try await pod.killContainer("seed", signal: .term)
+        try await pod.killContainer("seed", signal: .kill)
         let seedStatus = try await pod.waitContainer("seed")
         try await pod.stop()
-        guard stableStatus.exitCode == 143, seedStatus.exitCode == 143 else {
+        guard stableStatus.exitCode == 137, seedStatus.exitCode == 137 else {
             throw IntegrationError.assert(
                 msg: "running workload status \(stableStatus), seed status \(seedStatus)"
             )

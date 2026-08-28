@@ -25,6 +25,57 @@ import Virtualization
 @testable import Containerization
 
 struct VZHotplugProviderTests {
+    private struct StorageAddingExtension: VZInstanceExtension {
+        let imageURL: URL
+        let count: Int
+        let expectedRuntimeDeviceCount: Int
+
+        func configureVZ(
+            _ config: inout VZVirtualMachineConfiguration,
+            allocator: any AddressAllocator<Character>,
+            storageDeviceCount: Int,
+            mountsByID: [String: [Mount]]
+        ) throws {
+            let runtimeDeviceCount = config.directorySharingDevices
+                .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+                .filter { $0.tag.hasPrefix("runtime-virtiofs-") }
+                .count
+            guard runtimeDeviceCount == expectedRuntimeDeviceCount else {
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "expected \(expectedRuntimeDeviceCount) runtime virtiofs devices before adding storage, found \(runtimeDeviceCount)"
+                )
+            }
+
+            let attachment = try VZDiskImageStorageDeviceAttachment(
+                url: imageURL,
+                readOnly: false,
+                cachingMode: .cached,
+                synchronizationMode: .fsync
+            )
+            for _ in 0..<count {
+                config.storageDevices.append(
+                    VZVirtioBlockDeviceConfiguration(attachment: attachment)
+                )
+            }
+        }
+    }
+
+    private struct DirectoryShareAddingExtension: VZInstanceExtension {
+        let tag: String
+
+        func configureVZ(
+            _ config: inout VZVirtualMachineConfiguration,
+            allocator: any AddressAllocator<Character>,
+            storageDeviceCount: Int,
+            mountsByID: [String: [Mount]]
+        ) {
+            let device = VZVirtioFileSystemDeviceConfiguration(tag: tag)
+            device.share = VZMultipleDirectoryShare(directories: [:])
+            config.directorySharingDevices.append(device)
+        }
+    }
+
     @Test func ordinaryVZConfigurationReservesRuntimeShareDevices() throws {
         let configuration = VZVirtualMachineInstance.withDefaultRuntimeDirectoryShare(
             .init()
@@ -34,7 +85,132 @@ struct VZHotplugProviderTests {
         )
 
         #expect(runtimeShare.roots.isEmpty)
-        #expect(runtimeShare.runtimeDeviceTags.count == 16)
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 0).count == 16)
+    }
+
+    @Test func runtimeShareDevicesYieldToBootStorage() throws {
+        let runtimeShare = VZPreexposedDirectoryShare(roots: [])
+
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 4).count == 16)
+        #expect(
+            runtimeShare.runtimeDeviceTags(
+                storageDeviceCount: 4,
+                additionalDirectorySharingDeviceCount: 1
+            ).count == 15
+        )
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 7).count == 13)
+        #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 20).isEmpty)
+    }
+
+    @Test func runtimeShareDevicesYieldToAdditionalDirectoryShares() {
+        let configuration = VZVirtualMachineConfiguration()
+        configuration.directorySharingDevices = [
+            VZVirtioFileSystemDeviceConfiguration(tag: "virtiofs"),
+            VZVirtioFileSystemDeviceConfiguration(tag: "rosetta"),
+        ]
+        let runtimeShare = VZPreexposedDirectoryShare(
+            roots: [],
+            runtimeDeviceCount: 20
+        )
+
+        #expect(runtimeShare.runtimeDeviceTags(for: configuration).count == 19)
+    }
+
+    @Test func runtimeShareDevicesYieldToExtensionStorage() throws {
+        let imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try Data(repeating: 0, count: 4096).write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+
+        var vzConfiguration = VZVirtualMachineConfiguration()
+        let bootShare = VZVirtioFileSystemDeviceConfiguration(tag: "virtiofs")
+        bootShare.share = VZMultipleDirectoryShare(directories: [:])
+        vzConfiguration.directorySharingDevices = [bootShare]
+
+        var configuration = VZVirtualMachineInstance.Configuration()
+        configuration.extensions = [
+            VZPreexposedDirectoryShare(roots: []),
+            StorageAddingExtension(
+                imageURL: imageURL,
+                count: 7,
+                expectedRuntimeDeviceCount: 16
+            ),
+        ]
+        _ = try configuration.configureExtensions(
+            &vzConfiguration,
+            allocator: Character.blockDeviceTagAllocator()
+        )
+
+        #expect(vzConfiguration.storageDevices.count == 7)
+        #expect(
+            vzConfiguration.directorySharingDevices
+                .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+                .filter { $0.tag.hasPrefix("runtime-virtiofs-") }
+                .count == 13
+        )
+    }
+
+    @Test func runtimeBudgetCountsExtensionOwnedRuntimeTag() throws {
+        let imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try Data(repeating: 0, count: 4096).write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+
+        var vzConfiguration = VZVirtualMachineConfiguration()
+        let bootShare = VZVirtioFileSystemDeviceConfiguration(tag: "virtiofs")
+        bootShare.share = VZMultipleDirectoryShare(directories: [:])
+        vzConfiguration.directorySharingDevices = [bootShare]
+
+        let reservedTag = "runtime-virtiofs-15"
+        var configuration = VZVirtualMachineInstance.Configuration()
+        configuration.extensions = [
+            StorageAddingExtension(
+                imageURL: imageURL,
+                count: 7,
+                expectedRuntimeDeviceCount: 0
+            ),
+            DirectoryShareAddingExtension(tag: reservedTag),
+            VZPreexposedDirectoryShare(roots: []),
+        ]
+        let runtimeDeviceTags = try configuration.configureExtensions(
+            &vzConfiguration,
+            allocator: Character.blockDeviceTagAllocator()
+        )
+
+        let configuredTags = vzConfiguration.directorySharingDevices
+            .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+            .map(\.tag)
+        #expect(configuredTags.contains(reservedTag))
+        #expect(runtimeDeviceTags.count == 12)
+        #expect(
+            vzConfiguration.storageDevices.count + configuredTags.count - 1
+                == 20
+        )
+    }
+
+    @Test func runtimeBudgetCountsForeignTagBeyondPoolLimit() throws {
+        var vzConfiguration = VZVirtualMachineConfiguration()
+        let bootShare = VZVirtioFileSystemDeviceConfiguration(tag: "virtiofs")
+        bootShare.share = VZMultipleDirectoryShare(directories: [:])
+        vzConfiguration.directorySharingDevices = [bootShare]
+
+        let reservedTag = "runtime-virtiofs-20"
+        var configuration = VZVirtualMachineInstance.Configuration()
+        configuration.extensions = [
+            DirectoryShareAddingExtension(tag: reservedTag),
+            VZPreexposedDirectoryShare(roots: [], runtimeDeviceCount: 64),
+        ]
+        let runtimeDeviceTags = try configuration.configureExtensions(
+            &vzConfiguration,
+            allocator: Character.blockDeviceTagAllocator()
+        )
+
+        let configuredTags = vzConfiguration.directorySharingDevices
+            .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+            .map(\.tag)
+        #expect(configuredTags.contains(reservedTag))
+        #expect(runtimeDeviceTags.count == 19)
+        #expect(configuredTags.count - 1 == 20)
     }
 
     @Test func preexposedGuestPathUsesMostSpecificContainingRoot() throws {

@@ -167,8 +167,11 @@ public final class VZVirtualMachineInstance: Sendable {
         let (mountAttachments, _) = try config.mountAttachments(allocator: allocator)
         self._mounts = Mutex(mountAttachments)
 
+        let (vzConfiguration, runtimeDeviceTags) = try config.toVZ(
+            allocator: allocator
+        )
         self.vm = VZVirtualMachine(
-            configuration: try config.toVZ(allocator: allocator),
+            configuration: vzConfiguration,
             queue: self.queue
         )
         let preexposedShares = config.extensions.compactMap {
@@ -180,7 +183,7 @@ public final class VZVirtualMachineInstance: Sendable {
             allocator: allocator,
             initialMounts: mountAttachments,
             preexposedRoots: preexposedShares.flatMap(\.roots),
-            runtimeDeviceTags: preexposedShares.flatMap(\.runtimeDeviceTags)
+            runtimeDeviceTags: runtimeDeviceTags
         )
 
         for ext in config.extensions.compactMap({ $0 as? any VZInstanceExtension }) {
@@ -526,7 +529,9 @@ extension VZVirtualMachineInstance.Configuration {
         return [c]
     }
 
-    func toVZ(allocator: any AddressAllocator<Character>) throws -> VZVirtualMachineConfiguration {
+    func toVZ(
+        allocator: any AddressAllocator<Character>
+    ) throws -> (VZVirtualMachineConfiguration, [String]) {
         var config = VZVirtualMachineConfiguration()
 
         config.cpuCount = self.cpus
@@ -599,8 +604,6 @@ extension VZVirtualMachineInstance.Configuration {
         virtiofsDevice.share = multiShare
         config.directorySharingDevices.append(virtiofsDevice)
 
-        let storageDeviceCount = config.storageDevices.count
-
         if self.graphics.isEnabled {
             let device = VZVirtioGraphicsDeviceConfiguration()
             let scanout: (widthInPixels: Int, heightInPixels: Int)
@@ -639,12 +642,73 @@ extension VZVirtualMachineInstance.Configuration {
         platform.isNestedVirtualizationEnabled = self.nestedVirtualization
         config.platform = platform
 
-        for ext in self.extensions.compactMap({ $0 as? any VZInstanceExtension }) {
-            try ext.configureVZ(&config, allocator: allocator, storageDeviceCount: storageDeviceCount, mountsByID: self.mountsByID)
-        }
+        let runtimeDeviceTags = try configureExtensions(
+            &config,
+            allocator: allocator
+        )
 
         try config.validate()
-        return config
+        return (config, runtimeDeviceTags)
+    }
+
+    func configureExtensions(
+        _ config: inout VZVirtualMachineConfiguration,
+        allocator: any AddressAllocator<Character>
+    ) throws -> [String] {
+        let extensions = self.extensions.compactMap {
+            $0 as? any VZInstanceExtension
+        }
+        var runtimeShareDevices:
+            [(
+                extension: VZPreexposedDirectoryShare,
+                devices: [VZVirtioFileSystemDeviceConfiguration]
+            )] = []
+
+        for ext in extensions {
+            let existingDirectoryDeviceIDs = Set(
+                config.directorySharingDevices.map(ObjectIdentifier.init)
+            )
+            try ext.configureVZ(
+                &config,
+                allocator: allocator,
+                storageDeviceCount: config.storageDevices.count,
+                mountsByID: self.mountsByID
+            )
+            if let share = ext as? VZPreexposedDirectoryShare {
+                let ownedDevices = config.directorySharingDevices
+                    .compactMap {
+                        $0 as? VZVirtioFileSystemDeviceConfiguration
+                    }
+                    .filter {
+                        !existingDirectoryDeviceIDs.contains(
+                            ObjectIdentifier($0)
+                        )
+                    }
+                runtimeShareDevices.append((share, ownedDevices))
+            }
+        }
+
+        // Preserve public extension ordering while reconciling the share pool
+        // against storage devices added by later extensions. An excess device
+        // that another extension has claimed fails explicitly instead of being
+        // removed behind that extension's back.
+        for (share, devices) in runtimeShareDevices {
+            try share.finalizeRuntimeDeviceBudget(
+                &config,
+                ownedRuntimeDevices: devices
+            )
+        }
+
+        let configuredDeviceIDs = Set(
+            config.directorySharingDevices.map(ObjectIdentifier.init)
+        )
+        return runtimeShareDevices.flatMap { _, devices in
+            devices
+                .filter {
+                    configuredDeviceIDs.contains(ObjectIdentifier($0))
+                }
+                .map(\.tag)
+        }
     }
 
     func configureMemory(on config: VZVirtualMachineConfiguration) {
