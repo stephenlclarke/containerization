@@ -1443,7 +1443,11 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
 
     func close() async throws {}
 
-    func filesystemOperation(operation: FilesystemOperation, path: String) async throws {}
+    func filesystemOperation(
+        operation: FilesystemOperation,
+        path: String,
+        containerID: String?
+    ) async throws {}
 
     func getenv(key: String) async throws -> String {
         ""

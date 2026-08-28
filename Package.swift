@@ -51,6 +51,7 @@ let package = Package(
             url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
             revision: "09c5c9adcdd2a459187e45fe0143eb01063f244a",
         ),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.20.1"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.1.0"),
@@ -208,6 +209,8 @@ let package = Package(
                 "ContainerizationIO",
                 "HTTPTestSupport",
                 .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "X509", package: "swift-certificates"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ]
