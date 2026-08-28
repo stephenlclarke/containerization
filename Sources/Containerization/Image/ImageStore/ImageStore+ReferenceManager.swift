@@ -48,23 +48,35 @@ extension ImageStore {
             }
         }
 
-        /// Decodes one state entry, tolerating a record that cannot be read.
+        /// Decodes one state entry, tolerating only a record whose digest cannot
+        /// name content in the store.
         ///
         /// `Descriptor` rejects malformed digests at decode time, so without this
         /// a single unreadable record would make `load()` throw and take every
         /// other image in the store with it — listing, pulling and deleting all
         /// go through here.
         ///
-        /// - Note: A skipped record is dropped silently, and because `save()`
-        ///   writes back only what `load()` returned, the next mutation removes it
-        ///   from `state.json` permanently. That is acceptable because a record
-        ///   whose descriptor cannot be decoded is unusable anyway, but it does
-        ///   mean the image disappears without a diagnostic.
+        /// A record with a valid digest but another invalid field must still fail
+        /// the load. Silently dropping it would remove its root digest from the
+        /// garbage-collection keep set and could delete live content. A skipped
+        /// digest-invalid record cannot reference content safely and is removed
+        /// by the next successful state mutation.
         private struct SkippableDescriptor: Decodable {
             let descriptor: Descriptor?
 
+            private enum CodingKeys: String, CodingKey {
+                case digest
+            }
+
             init(from decoder: any Decoder) throws {
-                self.descriptor = try? Descriptor(from: decoder)
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                guard let digest = try? container.decode(String.self, forKey: .digest),
+                    (try? ParsedDigest(parsing: digest)) != nil
+                else {
+                    self.descriptor = nil
+                    return
+                }
+                self.descriptor = try Descriptor(from: decoder)
             }
         }
 

@@ -196,6 +196,34 @@ struct ImageDigestPoisoningTests {
         }
     }
 
+    /// A descriptor whose root digest is valid can still reference live content
+    /// even when another field is unreadable. Loading must fail closed instead of
+    /// omitting that digest from garbage collection's keep set.
+    @Test func cleanupPreservesContentForRecordWithValidDigestAndInvalidMetadata() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.dir) }
+
+        let healthyDigest = try await seedHealthyImage(fixture, reference: "test/healthy:v1")
+        let state = """
+            {
+              "test/broken:v1": {"mediaType":"application/vnd.oci.image.index.v1+json","digest":"\(healthyDigest.digestString)","size":-1}
+            }
+            """
+        let statePath = fixture.dir.appendingPathComponent("state.json")
+        try Data(state.utf8).write(to: statePath)
+
+        let blobs = fixture.dir.appendingPathComponent("blobs/sha256")
+        let before = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+        await #expect(throws: (any Swift.Error).self) {
+            try await fixture.store.cleanUpOrphanedBlobs()
+        }
+        let after = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+
+        #expect(after == before)
+        #expect(after.contains(healthyDigest.encoded))
+        #expect(try Data(contentsOf: statePath) == Data(state.utf8))
+    }
+
     /// An unreadable manifest must not be treated as a childless one. If it were,
     /// its layers would be missing from the keep set and garbage collection would
     /// delete the live blobs of a healthy image.
