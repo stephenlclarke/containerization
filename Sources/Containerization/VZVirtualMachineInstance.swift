@@ -659,24 +659,45 @@ extension VZVirtualMachineInstance.Configuration {
         let extensions = self.extensions.compactMap {
             $0 as? any VZInstanceExtension
         }
+        var runtimeShareDevices:
+            [(
+                extension: VZPreexposedDirectoryShare,
+                devices: [VZVirtioFileSystemDeviceConfiguration]
+            )] = []
 
         for ext in extensions {
+            let existingDirectoryDeviceIDs = Set(
+                config.directorySharingDevices.map(ObjectIdentifier.init)
+            )
             try ext.configureVZ(
                 &config,
                 allocator: allocator,
                 storageDeviceCount: config.storageDevices.count,
                 mountsByID: self.mountsByID
             )
+            if let share = ext as? VZPreexposedDirectoryShare {
+                let ownedDevices = config.directorySharingDevices
+                    .compactMap {
+                        $0 as? VZVirtioFileSystemDeviceConfiguration
+                    }
+                    .filter {
+                        !existingDirectoryDeviceIDs.contains(
+                            ObjectIdentifier($0)
+                        )
+                    }
+                runtimeShareDevices.append((share, ownedDevices))
+            }
         }
 
         // Preserve public extension ordering while reconciling the share pool
         // against storage devices added by later extensions. An excess device
         // that another extension has claimed fails explicitly instead of being
         // removed behind that extension's back.
-        for share in extensions.compactMap({
-            $0 as? VZPreexposedDirectoryShare
-        }) {
-            try share.finalizeRuntimeDeviceBudget(&config)
+        for (share, devices) in runtimeShareDevices {
+            try share.finalizeRuntimeDeviceBudget(
+                &config,
+                ownedRuntimeDevices: devices
+            )
         }
     }
 

@@ -86,15 +86,33 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
     }
 
     func finalizeRuntimeDeviceBudget(
-        _ config: inout VZVirtualMachineConfiguration
+        _ config: inout VZVirtualMachineConfiguration,
+        ownedRuntimeDevices: [VZVirtioFileSystemDeviceConfiguration]
     ) throws {
         let allowedTags = Set(runtimeDeviceTags(for: config))
         let excessTags = Set(runtimeDeviceTags(storageDeviceCount: 0))
             .subtracting(allowedTags)
 
-        for device in config.directorySharingDevices.compactMap({
-            $0 as? VZVirtioFileSystemDeviceConfiguration
-        }) where excessTags.contains(device.tag) {
+        let ownedDeviceIDs = Set(
+            ownedRuntimeDevices.map(ObjectIdentifier.init)
+        )
+        if let foreignDevice = config.directorySharingDevices
+            .compactMap({ $0 as? VZVirtioFileSystemDeviceConfiguration })
+            .first(where: {
+                excessTags.contains($0.tag)
+                    && !ownedDeviceIDs.contains(ObjectIdentifier($0))
+            })
+        {
+            throw ContainerizationError(
+                .exists,
+                message: "virtiofs device tag already exists: \(foreignDevice.tag)"
+            )
+        }
+
+        let excessDevices = ownedRuntimeDevices.filter {
+            excessTags.contains($0.tag)
+        }
+        for device in excessDevices {
             guard
                 let share = device.share as? VZMultipleDirectoryShare,
                 share.directories.isEmpty
@@ -106,13 +124,9 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
             }
         }
 
+        let excessDeviceIDs = Set(excessDevices.map(ObjectIdentifier.init))
         config.directorySharingDevices.removeAll {
-            guard
-                let device = $0 as? VZVirtioFileSystemDeviceConfiguration
-            else {
-                return false
-            }
-            return excessTags.contains(device.tag)
+            excessDeviceIDs.contains(ObjectIdentifier($0))
         }
     }
 

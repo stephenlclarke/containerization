@@ -61,6 +61,21 @@ struct VZHotplugProviderTests {
         }
     }
 
+    private struct DirectoryShareAddingExtension: VZInstanceExtension {
+        let tag: String
+
+        func configureVZ(
+            _ config: inout VZVirtualMachineConfiguration,
+            allocator: any AddressAllocator<Character>,
+            storageDeviceCount: Int,
+            mountsByID: [String: [Mount]]
+        ) {
+            let device = VZVirtioFileSystemDeviceConfiguration(tag: tag)
+            device.share = VZMultipleDirectoryShare(directories: [:])
+            config.directorySharingDevices.append(device)
+        }
+    }
+
     @Test func ordinaryVZConfigurationReservesRuntimeShareDevices() throws {
         let configuration = VZVirtualMachineInstance.withDefaultRuntimeDirectoryShare(
             .init()
@@ -133,6 +148,44 @@ struct VZHotplugProviderTests {
                 .filter { $0.tag.hasPrefix("runtime-virtiofs-") }
                 .count == 13
         )
+    }
+
+    @Test func runtimeBudgetRejectsExtensionOwnedRuntimeTag() throws {
+        let imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try Data(repeating: 0, count: 4096).write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+
+        var vzConfiguration = VZVirtualMachineConfiguration()
+        let bootShare = VZVirtioFileSystemDeviceConfiguration(tag: "virtiofs")
+        bootShare.share = VZMultipleDirectoryShare(directories: [:])
+        vzConfiguration.directorySharingDevices = [bootShare]
+
+        let reservedTag = "runtime-virtiofs-15"
+        var configuration = VZVirtualMachineInstance.Configuration()
+        configuration.extensions = [
+            StorageAddingExtension(
+                imageURL: imageURL,
+                count: 7,
+                expectedRuntimeDeviceCount: 0
+            ),
+            DirectoryShareAddingExtension(tag: reservedTag),
+            VZPreexposedDirectoryShare(roots: []),
+        ]
+        do {
+            try configuration.configureExtensions(
+                &vzConfiguration,
+                allocator: Character.blockDeviceTagAllocator()
+            )
+            Issue.record("expected extension-owned runtime tag collision")
+        } catch let error as ContainerizationError {
+            #expect(error.code == .exists)
+        }
+
+        let runtimeTags = vzConfiguration.directorySharingDevices
+            .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+            .map(\.tag)
+        #expect(runtimeTags.contains(reservedTag))
     }
 
     @Test func preexposedGuestPathUsesMostSpecificContainingRoot() throws {
