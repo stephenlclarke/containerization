@@ -48,6 +48,14 @@ private final class SeenBox: @unchecked Sendable {
 private let basicChallenge =
     "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"Registry Realm\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 
+private struct CustomBasicAuthentication: Authentication {
+    let value: String
+
+    func token() async throws -> String {
+        value
+    }
+}
+
 /// Records request heads and replies with a canned response. One request per connection.
 private final class RecordingHTTPServer: @unchecked Sendable {
     private let listener: NWListener
@@ -189,6 +197,20 @@ struct RealmRequestTests {
             && ProxyUtils.proxyFromEnvironment(scheme: "https", host: "127.0.0.1") == nil
     }
 
+    @Test func realmComparisonUsesRegistrableDomains() throws {
+        let client = RegistryClient(host: "registry.foo.co.uk")
+
+        try client.validateRealm(try #require(URLComponents(string: "https://auth.foo.co.uk/token")))
+
+        let error = #expect(throws: RegistryClient.Error.self) {
+            try client.validateRealm(try #require(URLComponents(string: "https://attacker.bar.co.uk/token")))
+        }
+        guard case .insecureCredentialExchange = error else {
+            Issue.record("expected insecureCredentialExchange, got \(String(describing: error))")
+            return
+        }
+    }
+
     @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))
     func maliciousRealmIsNeitherFollowedNorCredentialed() async throws {
         let secret = "INTERNAL_SECRET_TOKEN_\(UUID().uuidString)"
@@ -289,6 +311,28 @@ struct RealmRequestTests {
         #expect(registry.seen.count == 2, "expected one unauthenticated request and exactly one retry")
         #expect(registry.seen.first?.contains("Authorization") == false, "credentials must not be sent before the challenge")
         #expect(registry.seen.last?.contains(basic) == true, "the retry must carry the Basic credentials")
+    }
+
+    @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))
+    func customAuthenticationAnswersBasicChallenge() async throws {
+        let expected = "Basic " + Data("custom:credential".utf8).base64EncodedString()
+        let registry = try RecordingTLSServer.start { head in
+            if head.contains("Authorization: \(expected)") {
+                return "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            }
+            return basicChallenge
+        }
+        defer { registry.stop() }
+
+        let client = Self.insecureTLSClient(
+            port: registry.port,
+            authentication: CustomBasicAuthentication(value: expected)
+        )
+        try await client.ping()
+
+        #expect(registry.seen.count == 2, "expected one unauthenticated request and exactly one retry")
+        #expect(registry.seen.first?.contains("Authorization") == false)
+        #expect(registry.seen.last?.contains(expected) == true)
     }
 
     @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))

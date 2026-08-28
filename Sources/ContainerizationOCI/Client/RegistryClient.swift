@@ -219,11 +219,11 @@ public final class RegistryClient: ContentClient {
                     if !challenges.contains(where: { $0.type.caseInsensitiveCompare("Bearer") == .orderedSame }),
                         challenges.contains(where: { $0.type.caseInsensitiveCompare("Basic") == .orderedSame })
                     {
-                        guard !attemptedBasicAuth, let basicAuth = authentication as? BasicAuthentication else {
+                        guard !attemptedBasicAuth, let authentication else {
                             throw Error.invalidStatus(url: path, _response.status, reason: "access denied or wrong credentials")
                         }
                         attemptedBasicAuth = true
-                        request.headers.replaceOrAdd(name: "Authorization", value: try await basicAuth.token())
+                        request.headers.replaceOrAdd(name: "Authorization", value: try await authentication.token())
                         continue
                     }
 

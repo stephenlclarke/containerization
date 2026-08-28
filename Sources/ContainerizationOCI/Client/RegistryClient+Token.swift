@@ -19,6 +19,21 @@ import ContainerizationError
 import ContainerizationExtras
 import Foundation
 import NIOHTTP1
+import TLDExtractSwift
+
+private final class PublicSuffixExtractor: @unchecked Sendable {
+    private let extractor: TLDExtract?
+
+    init() {
+        self.extractor = try? TLDExtract(useFrozenData: true)
+    }
+
+    func registrableDomain(_ host: String) -> String? {
+        extractor?.parse(host)?.rootDomain?.lowercased()
+    }
+}
+
+private let publicSuffixExtractor = PublicSuffixExtractor()
 
 struct TokenRequest: Sendable {
     public static let authenticateHeaderName = "WWW-Authenticate"
@@ -182,18 +197,13 @@ extension RegistryClient {
         }
     }
 
-    /// The last two labels of a fully qualified host name, or `nil` if the host is unqualified or
-    /// an IP literal. No public suffix list is consulted, so hosts sharing a multi-label public
-    /// suffix (`foo.co.uk`, `bar.co.uk`) compare as related.
+    /// The public-suffix-aware registrable domain of a fully qualified host name, or `nil` if the
+    /// host is unqualified, an IP literal, or cannot be parsed using the bundled suffix snapshot.
     private static func registrableDomain(_ host: String) -> String? {
         if host.contains(":") || (try? IPv4Address(host)) != nil {
             return nil
         }
-        let labels = host.lowercased().split(separator: ".", omittingEmptySubsequences: true)
-        guard labels.count >= 2 else {
-            return nil
-        }
-        return labels.suffix(2).joined(separator: ".")
+        return publicSuffixExtractor.registrableDomain(host)
     }
 
     internal func createTokenRequest(parsing authenticateHeaders: [String]) throws -> TokenRequest {
@@ -205,7 +215,7 @@ extension RegistryClient {
     }
 
     internal func createTokenRequest(from parsedHeaders: [AuthenticateChallenge]) throws -> TokenRequest {
-        let bearerChallenge = parsedHeaders.first { $0.type == "Bearer" }
+        let bearerChallenge = parsedHeaders.first { $0.type.caseInsensitiveCompare("Bearer") == .orderedSame }
         guard let bearerChallenge else {
             throw ContainerizationError(.invalidArgument, message: "missing Bearer challenge in \(TokenRequest.authenticateHeaderName) header")
         }
