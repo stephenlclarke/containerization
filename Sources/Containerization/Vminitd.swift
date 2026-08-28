@@ -286,8 +286,14 @@ extension Vminitd: VirtualMachineAgent {
             })
     }
 
-    /// Perform a filesystem operation on a path inside the sandbox's environment.
-    public func filesystemOperation(operation: FilesystemOperation, path: String, containerID: String? = nil) async throws {
+    /// Perform a filesystem operation on a path inside a container's mount namespace.
+    ///
+    /// - Parameters:
+    ///   - operation: The filesystem operation to perform.
+    ///   - path: The absolute path inside the container's mount namespace.
+    ///   - containerID: The container whose mount namespace contains the path.
+    /// - Throws: An error when the request is invalid or the filesystem operation fails.
+    public func filesystemOperation(operation: FilesystemOperation, path: String, containerID: String?) async throws {
         _ = try await client.filesystemOperation(
             .with {
                 $0.operation = operation.toProtoOperation()
@@ -413,10 +419,10 @@ extension Vminitd: VirtualMachineAgent {
             let resp = try await client.waitProcess(request, options: callOpts)
             return ExitStatus(exitCode: resp.exitCode, exitedAt: resp.exitedAt.date)
         } catch {
-            if let err = error as? RPCError, err.code == .deadlineExceeded {
+            if let timeoutInSeconds, let err = error as? RPCError, err.code == .deadlineExceeded {
                 throw ContainerizationError(
                     .timeout,
-                    message: "failed to wait for process exit within timeout of \(timeoutInSeconds!) seconds",
+                    message: "failed to wait for process exit within timeout of \(timeoutInSeconds) seconds",
                     cause: err
                 )
             }
