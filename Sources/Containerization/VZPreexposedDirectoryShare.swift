@@ -31,9 +31,10 @@ import Foundation
 /// unmounted.
 public struct VZPreexposedDirectoryShare: VZInstanceExtension {
     /// Virtualization.framework fails to start a VM when the combined number
-    /// of boot-time storage devices and reserved runtime virtiofs devices
-    /// exceeds this budget. Keep ordinary configurations at the requested
-    /// pool size while yielding capacity to explicitly configured storage.
+    /// of boot-time storage devices, additional directory-sharing devices,
+    /// and reserved runtime virtiofs devices exceeds this budget. The required
+    /// baseline `virtiofs` share is excluded. Keep ordinary configurations at
+    /// the requested pool size while yielding capacity to other devices.
     static let bootDeviceBudget = 20
 
     public let roots: [URL]
@@ -44,20 +45,50 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
         self.runtimeDeviceCount = runtimeDeviceCount
     }
 
-    func runtimeDeviceTags(storageDeviceCount: Int) -> [String] {
-        let availableCount = max(0, Self.bootDeviceBudget - storageDeviceCount)
+    func runtimeDeviceTags(
+        storageDeviceCount: Int,
+        additionalDirectorySharingDeviceCount: Int = 0
+    ) -> [String] {
+        let availableCount = max(
+            0,
+            Self.bootDeviceBudget - storageDeviceCount
+                - additionalDirectorySharingDeviceCount
+        )
         return VZHotplugProvider.runtimeDeviceTags(
             count: min(runtimeDeviceCount, availableCount)
         )
     }
 
-    func finalizeRuntimeDeviceBudget(
-        _ config: inout VZVirtualMachineConfiguration,
-        storageDeviceCount: Int
-    ) throws {
-        let allowedTags = Set(
-            runtimeDeviceTags(storageDeviceCount: storageDeviceCount)
+    func runtimeDeviceTags(
+        for config: VZVirtualMachineConfiguration
+    ) -> [String] {
+        runtimeDeviceTags(
+            storageDeviceCount: config.storageDevices.count,
+            additionalDirectorySharingDeviceCount:
+                additionalDirectorySharingDeviceCount(in: config)
         )
+    }
+
+    private func additionalDirectorySharingDeviceCount(
+        in config: VZVirtualMachineConfiguration
+    ) -> Int {
+        let possibleRuntimeTags = Set(
+            VZHotplugProvider.runtimeDeviceTags(count: runtimeDeviceCount)
+        )
+        return config
+            .directorySharingDevices
+            .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
+            .filter {
+                $0.tag != "virtiofs"
+                    && !possibleRuntimeTags.contains($0.tag)
+            }
+            .count
+    }
+
+    func finalizeRuntimeDeviceBudget(
+        _ config: inout VZVirtualMachineConfiguration
+    ) throws {
+        let allowedTags = Set(runtimeDeviceTags(for: config))
         let excessTags = Set(runtimeDeviceTags(storageDeviceCount: 0))
             .subtracting(allowedTags)
 
@@ -150,7 +181,11 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
                 .compactMap { $0 as? VZVirtioFileSystemDeviceConfiguration }
                 .map(\.tag)
         )
-        for tag in runtimeDeviceTags(storageDeviceCount: storageDeviceCount) {
+        for tag in runtimeDeviceTags(
+            storageDeviceCount: storageDeviceCount,
+            additionalDirectorySharingDeviceCount:
+                additionalDirectorySharingDeviceCount(in: config)
+        ) {
             guard !existingTags.contains(tag) else {
                 throw ContainerizationError(
                     .exists,

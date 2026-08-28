@@ -77,8 +77,28 @@ struct VZHotplugProviderTests {
         let runtimeShare = VZPreexposedDirectoryShare(roots: [])
 
         #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 4).count == 16)
+        #expect(
+            runtimeShare.runtimeDeviceTags(
+                storageDeviceCount: 4,
+                additionalDirectorySharingDeviceCount: 1
+            ).count == 15
+        )
         #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 7).count == 13)
         #expect(runtimeShare.runtimeDeviceTags(storageDeviceCount: 20).isEmpty)
+    }
+
+    @Test func runtimeShareDevicesYieldToAdditionalDirectoryShares() {
+        let configuration = VZVirtualMachineConfiguration()
+        configuration.directorySharingDevices = [
+            VZVirtioFileSystemDeviceConfiguration(tag: "virtiofs"),
+            VZVirtioFileSystemDeviceConfiguration(tag: "rosetta"),
+        ]
+        let runtimeShare = VZPreexposedDirectoryShare(
+            roots: [],
+            runtimeDeviceCount: 20
+        )
+
+        #expect(runtimeShare.runtimeDeviceTags(for: configuration).count == 19)
     }
 
     @Test func runtimeShareDevicesYieldToExtensionStorage() throws {

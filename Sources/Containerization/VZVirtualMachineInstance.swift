@@ -187,9 +187,8 @@ public final class VZVirtualMachineInstance: Sendable {
             initialMounts: mountAttachments,
             preexposedRoots: preexposedShares.flatMap(\.roots),
             runtimeDeviceTags: preexposedShares.flatMap {
-                $0.runtimeDeviceTags(
-                    storageDeviceCount: vzConfiguration.storageDevices.count
-                ).filter(configuredDirectoryTags.contains)
+                $0.runtimeDeviceTags(for: vzConfiguration)
+                    .filter(configuredDirectoryTags.contains)
             }
         )
 
@@ -677,10 +676,7 @@ extension VZVirtualMachineInstance.Configuration {
         for share in extensions.compactMap({
             $0 as? VZPreexposedDirectoryShare
         }) {
-            try share.finalizeRuntimeDeviceBudget(
-                &config,
-                storageDeviceCount: config.storageDevices.count
-            )
+            try share.finalizeRuntimeDeviceBudget(&config)
         }
     }
 
