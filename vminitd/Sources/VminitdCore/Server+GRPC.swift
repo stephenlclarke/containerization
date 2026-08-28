@@ -878,33 +878,38 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         async throws -> Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse
     {
         let path = FilePath(request.path)
-        if !request.hasContainerID {
-            throw ContainerizationError(
-                .invalidArgument,
-                message: "containerID is required"
-            )
+        let operation: Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest.OneOf_Operation
+        let containerMountFd: Int32
+        do {
+            if !request.hasContainerID {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "containerID is required"
+                )
+            }
+
+            guard let requestedOperation = request.operation else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "operation is required"
+                )
+            }
+
+            let container = try await state.get(container: request.containerID)
+            operation = requestedOperation
+            containerMountFd = try await container.duplicateMountNamespace()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "filesystemOperation")
+        } catch {
+            throw RPCError(code: .internalError, message: "filesystemOperation", cause: error)
         }
 
-        guard let operation = request.operation else {
-            throw ContainerizationError(
-                .invalidArgument,
-                message: "operation is required"
-            )
-        }
-
-        let container = try await state.get(container: request.containerID)
-        guard let containerPid = await container.pid else {
-            throw ContainerizationError(
-                .invalidArgument,
-                message: "container PID is not present"
-            )
-        }
+        defer { close(containerMountFd) }
 
         log.debug(
             "filesystemOperation",
             metadata: [
                 "containerID": "\(request.containerID)",
-                "containerPid": "\(containerPid)",
                 "operation": "\(operation)",
                 "path": "\(path)",
             ])
@@ -920,14 +925,6 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         }
 
         defer { close(selfMountFd) }
-
-        let containerMountFd = open("/proc/\(containerPid)/ns/mnt", O_RDONLY | O_CLOEXEC)
-        if containerMountFd < 0 {
-            let error = swiftErrno("open")
-            throw RPCError(code: .internalError, message: "failed to open container mount namespace", cause: error)
-        }
-
-        defer { close(containerMountFd) }
 
         var finfo = _stat_struct()
         let selfMountStat = fstat(selfMountFd, &finfo)

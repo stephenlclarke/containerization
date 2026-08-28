@@ -36,6 +36,11 @@ protocol ContainerProcess: Sendable {
     /// Process ID of the running container (nil if not started)
     var pid: Int32? { get }
 
+    /// Duplicate the mount namespace descriptor captured for the running process.
+    ///
+    /// The caller owns the returned descriptor and must close it.
+    func duplicateMountNamespace() throws -> Int32
+
     /// Start the container process
     /// - Returns: The process ID of the started container
     /// - Throws: If the process fails to start

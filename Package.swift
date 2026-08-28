@@ -109,7 +109,12 @@ let package = Package(
         ),
         .testTarget(
             name: "VminitdCoreTests",
-            dependencies: ["Cgroup", "VminitdCore"],
+            dependencies: [
+                "Cgroup",
+                "ContainerizationError",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                "VminitdCore",
+            ],
             path: "Tests/VminitdCoreTests"
         ),
         .target(

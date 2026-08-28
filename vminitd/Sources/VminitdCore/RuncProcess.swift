@@ -48,6 +48,7 @@ final class RuncProcess: ContainerProcess, Sendable {
     private struct State {
         var state: ProcessState = .initial
         var waiters: [CheckedContinuation<ContainerExitStatus, Never>] = []
+        var mountNamespace: ProcessMountNamespace?
     }
 
     let id: String
@@ -68,6 +69,15 @@ final class RuncProcess: ContainerProcess, Sendable {
             default:
                 return nil
             }
+        }
+    }
+
+    func duplicateMountNamespace() throws -> Int32 {
+        try self.state.withLock {
+            guard case .running = $0.state, let mountNamespace = $0.mountNamespace else {
+                throw ContainerizationError(.invalidState, message: "process mount namespace is not available")
+            }
+            return try mountNamespace.duplicate()
         }
     }
 
@@ -160,6 +170,7 @@ final class RuncProcess: ContainerProcess, Sendable {
         }
 
         let pid = Int32(pidInt)
+        let mountNamespace = try ProcessMountNamespace(pid: pid)
 
         self.log.info(
             "container created",
@@ -189,6 +200,7 @@ final class RuncProcess: ContainerProcess, Sendable {
 
         self.state.withLock {
             $0.state = .running(pid: pid)
+            $0.mountNamespace = mountNamespace
         }
 
         self.log.info(
@@ -211,6 +223,7 @@ final class RuncProcess: ContainerProcess, Sendable {
 
             let exitStatus = ContainerExitStatus(exitCode: status, exitedAt: Date.now)
             $0.state = .exited(exitStatus)
+            $0.mountNamespace = nil
 
             do {
                 try self.io.close()

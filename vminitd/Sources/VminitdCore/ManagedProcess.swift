@@ -47,6 +47,7 @@ final class ManagedProcess: ContainerProcess, Sendable {
         var waiters: [CheckedContinuation<ContainerExitStatus, Never>] = []
         var exitStatus: ContainerExitStatus? = nil
         var pid: Int32?
+        var mountNamespace: ProcessMountNamespace?
         var hostNetworkConfigured = false
     }
 
@@ -68,7 +69,16 @@ final class ManagedProcess: ContainerProcess, Sendable {
 
     var pid: Int32? {
         self.state.withLock {
-            $0.pid
+            $0.exitStatus == nil ? $0.pid : nil
+        }
+    }
+
+    func duplicateMountNamespace() throws -> Int32 {
+        try self.state.withLock {
+            guard $0.exitStatus == nil, let mountNamespace = $0.mountNamespace else {
+                throw ContainerizationError(.invalidState, message: "process mount namespace is not available")
+            }
+            return try mountNamespace.duplicate()
         }
     }
 
@@ -202,7 +212,9 @@ extension ManagedProcess {
                     metadata: [
                         "pid": "\(pid)"
                     ])
+                let mountNamespace = try ProcessMountNamespace(pid: pid)
                 $0.pid = pid
+                $0.mountNamespace = mountNamespace
 
                 // This should probably happen in vmexec, but we don't need to set any cgroup
                 // toggles so the problem is much simpler to just do it here.
@@ -270,7 +282,11 @@ extension ManagedProcess {
             }
         } catch {
             self.cleanupHostNetwork()
-            self.state.withLock { $0.hostNetworkConfigured = false }
+            self.state.withLock {
+                $0.hostNetworkConfigured = false
+                $0.mountNamespace = nil
+                $0.pid = nil
+            }
             if let errorData = try? self.errorPipe.fileHandleForReading.readToEnd(),
                 let errorString = String(data: errorData, encoding: .utf8),
                 !errorString.isEmpty
@@ -295,6 +311,8 @@ extension ManagedProcess {
 
             let exitStatus = ContainerExitStatus(exitCode: status, exitedAt: Date.now)
             state.exitStatus = exitStatus
+            state.mountNamespace = nil
+            state.pid = nil
 
             do {
                 try state.io.close()
