@@ -362,7 +362,8 @@ struct RegistryNetworkTests: ~Copyable {
         #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
     }
 
-    @Test func registryRequestsBoundReadInactivity() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func registryRequestsBoundReadInactivity() async throws {
         let requestFinished = AsyncStream<Void>.makeStream()
         let server = try await StubHTTPServer(binding: .tcp) { _ in
             Thread.sleep(forTimeInterval: 0.5)
@@ -388,7 +389,9 @@ struct RegistryNetworkTests: ~Copyable {
             }
             #expect(error == .readTimeout)
 
-            if error == .readTimeout {
+            let stubReceivedRequest = !server.recordedRequests().isEmpty
+            #expect(stubReceivedRequest)
+            if stubReceivedRequest {
                 for await _ in requestFinished.stream {
                     break
                 }
