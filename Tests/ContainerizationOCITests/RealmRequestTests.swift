@@ -224,17 +224,6 @@ struct RealmRequestTests {
             && ProxyUtils.proxyFromEnvironment(scheme: "https", host: "127.0.0.1") == nil
     }
 
-    @Test func tokenClientsShareAnIsolatedEventLoopGroup() {
-        let first = RegistryClient(host: "registry.example.com")
-        let second = RegistryClient(host: "registry.example.com")
-
-        let dataPlaneGroup = ObjectIdentifier(first.client.eventLoopGroup)
-        let firstTokenGroup = ObjectIdentifier(first.tokenClient.eventLoopGroup)
-        let secondTokenGroup = ObjectIdentifier(second.tokenClient.eventLoopGroup)
-        #expect(firstTokenGroup != dataPlaneGroup)
-        #expect(firstTokenGroup == secondTokenGroup)
-    }
-
     @Test func realmComparisonUsesRegistrableDomains() throws {
         let client = RegistryClient(host: "registry.foo.co.uk")
 

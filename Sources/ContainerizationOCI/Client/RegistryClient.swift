@@ -52,10 +52,6 @@ internal enum RequestRetryPolicy {
 
 /// A client for interacting with OCI compliant container registries.
 public final class RegistryClient: ContentClient {
-    /// Token exchanges use a small, dedicated pool so registry data-plane activity cannot
-    /// starve authentication progress or cleanup on the process-wide HTTP event loops.
-    private static let tokenEventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-
     private static let defaultRetryOptions = RetryOptions(
         maxRetries: 3,
         retryInterval: 1_000_000_000,
@@ -161,28 +157,18 @@ public final class RegistryClient: ContentClient {
             httpConfiguration.tlsConfiguration = tlsConfiguration
         }
 
-        func makeClient(
-            _ configuration: HTTPClient.Configuration,
-            eventLoopGroupProvider: HTTPClient.EventLoopGroupProvider = .singleton
-        ) -> HTTPClient {
+        func makeClient(_ configuration: HTTPClient.Configuration) -> HTTPClient {
             guard let logger else {
-                return HTTPClient(eventLoopGroupProvider: eventLoopGroupProvider, configuration: configuration)
+                return HTTPClient(eventLoopGroupProvider: .singleton, configuration: configuration)
             }
-            return HTTPClient(
-                eventLoopGroupProvider: eventLoopGroupProvider,
-                configuration: configuration,
-                backgroundActivityLogger: logger
-            )
+            return HTTPClient(eventLoopGroupProvider: .singleton, configuration: configuration, backgroundActivityLogger: logger)
         }
 
         self.client = makeClient(httpConfiguration)
 
         var tokenConfiguration = httpConfiguration
         tokenConfiguration.redirectConfiguration = .disallow
-        self.tokenClient = makeClient(
-            tokenConfiguration,
-            eventLoopGroupProvider: .shared(Self.tokenEventLoopGroup)
-        )
+        self.tokenClient = makeClient(tokenConfiguration)
     }
 
     deinit {
