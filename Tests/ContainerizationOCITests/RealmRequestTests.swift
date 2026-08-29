@@ -217,7 +217,7 @@ private final class RecordingTLSServer: @unchecked Sendable {
 }
 
 /// A registry must not be able to aim the token fetch at a host of its choosing.
-struct RealmRequestTests {
+extension RegistryNetworkTests {
     /// A proxy resolved at init would intercept the loopback servers these tests assert on.
     static var loopbackIsDirect: Bool {
         ProxyUtils.proxyFromEnvironment(scheme: "http", host: "127.0.0.1") == nil

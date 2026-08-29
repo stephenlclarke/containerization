@@ -29,11 +29,11 @@ import Testing
 
 @testable import ContainerizationOCI
 
-// The live-registry cases exercise several independent authentication services. Running them
-// concurrently creates avoidable connection pressure in Network.framework and can starve the
-// security-separated token clients on constrained hosted macOS runners.
+// Registry tests exercise live services and independent loopback listeners. Keep them behind one
+// serialization boundary so they cannot exhaust the constrained hosted macOS runner's network
+// resources while unrelated unit tests remain parallel.
 @Suite(.serialized)
-struct OCIClientTests: ~Copyable {
+struct RegistryNetworkTests: ~Copyable {
     private var contentPath: URL
     private let fileManager = FileManager.default
     private var encoder = JSONEncoder()
