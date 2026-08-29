@@ -13,7 +13,7 @@ on:
       - release/*
 
 concurrency:
-  group: containerization-build-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: containerization-build-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -23,8 +23,32 @@ jobs:
     outputs:
       heavy: ${{ steps.filter.outputs.heavy }}
     steps:
+      - name: Detect duplicate release PR validation
+        id: duplicate
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          open_prs=0
+          if value="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/pulls" \
+            -f state=open \
+            -f head="${GITHUB_REPOSITORY_OWNER}:${GITHUB_REF_NAME}" \
+            --jq 'length')"; then
+            open_prs="$value"
+          else
+            echo "::warning::Could not query open pull requests; retaining push validation"
+          fi
+
+          if [[ "$open_prs" != "0" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout for push diff
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.duplicate.outputs.skip != 'true'
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 0
@@ -33,9 +57,14 @@ jobs:
         id: filter
         env:
           GH_TOKEN: ${{ github.token }}
+          SKIP_HEAVY: ${{ steps.duplicate.outputs.skip }}
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "${SKIP_HEAVY:-false}" == "true" ]]; then
+            echo "heavy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           changed_files="${RUNNER_TEMP}/changed-files.txt"
 
           case "${GITHUB_EVENT_NAME}" in

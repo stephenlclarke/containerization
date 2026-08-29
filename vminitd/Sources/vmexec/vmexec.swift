@@ -37,6 +37,8 @@ import Glibc
 @main
 struct App: ParsableCommand {
     static let ackPid = "AckPid"
+    static let rootReady = "RootReady"
+    static let ackRoot = "AckRoot"
     static let ackConsole = "AckConsole"
 
     static let configuration = CommandConfiguration(

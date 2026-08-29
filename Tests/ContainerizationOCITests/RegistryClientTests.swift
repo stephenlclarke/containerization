@@ -16,6 +16,7 @@
 
 //
 
+import AsyncHTTPClient
 import ContainerizationError
 import ContainerizationIO
 import Crypto
@@ -28,7 +29,11 @@ import Testing
 
 @testable import ContainerizationOCI
 
-struct OCIClientTests: ~Copyable {
+// Registry tests exercise live services and independent loopback listeners. Keep them behind one
+// serialization boundary so they cannot exhaust the constrained hosted macOS runner's network
+// resources while unrelated unit tests remain parallel.
+@Suite(.serialized)
+struct RegistryNetworkTests: ~Copyable {
     private var contentPath: URL
     private let fileManager = FileManager.default
     private var encoder = JSONEncoder()
@@ -315,16 +320,17 @@ struct OCIClientTests: ~Copyable {
                 return StubResponse.status(.methodNotAllowed)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
-        let descriptor = try await client.resolve(name: "example/image", tag: "latest")
+            let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
+            let descriptor = try await client.resolve(name: "example/image", tag: "latest")
 
-        #expect(descriptor.mediaType == MediaTypes.imageManifest)
-        #expect(descriptor.digest == SHA256.hash(data: manifest).digest)
-        #expect(descriptor.size == Int64(manifest.count))
-        #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+            #expect(descriptor.mediaType == MediaTypes.imageManifest)
+            #expect(descriptor.digest == SHA256.hash(data: manifest).digest)
+            #expect(descriptor.size == Int64(manifest.count))
+            #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+        }
     }
 
     @Test func resolveBoundsFallbackManifestSize() async throws {
@@ -341,20 +347,58 @@ struct OCIClientTests: ~Copyable {
                 return StubResponse.status(.methodNotAllowed)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            bufferSize: 16
-        )
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                bufferSize: 16
+            )
 
-        await #expect(throws: (any Error).self) {
-            _ = try await client.resolve(name: "example/image", tag: "latest")
+            await #expect(throws: (any Error).self) {
+                _ = try await client.resolve(name: "example/image", tag: "latest")
+            }
+            #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
         }
-        #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func registryRequestsBoundReadInactivity() async throws {
+        let requestFinished = AsyncStream<Void>.makeStream()
+        let server = try await StubHTTPServer(binding: .tcp) { _ in
+            Thread.sleep(forTimeInterval: 0.5)
+            requestFinished.continuation.yield()
+            requestFinished.continuation.finish()
+            return StubResponse.status(.ok)
+        }
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                httpTimeout: HTTPClient.Configuration.Timeout(
+                    connect: .seconds(1),
+                    read: .milliseconds(50),
+                    write: .seconds(1)
+                )
+            )
+
+            let error = await #expect(throws: HTTPClientError.self) {
+                try await client.ping()
+            }
+            #expect(error == .readTimeout)
+
+            let stubReceivedRequest = !server.recordedRequests().isEmpty
+            #expect(stubReceivedRequest)
+            if stubReceivedRequest {
+                for await _ in requestFinished.stream {
+                    break
+                }
+            }
+        }
     }
 
     @Test func blobPushRestartsWithFreshSessionAfterECR416() async throws {
@@ -384,36 +428,37 @@ struct OCIClientTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
-        )
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
+            )
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
+            )
 
-        try await client.push(
-            name: "example",
-            ref: "latest",
-            descriptor: descriptor,
-            streamGenerator: { Self.stream(payload) },
-            progress: nil
-        )
+            try await client.push(
+                name: "example",
+                ref: "latest",
+                descriptor: descriptor,
+                streamGenerator: { Self.stream(payload) },
+                progress: nil
+            )
 
-        let requests = server.recordedRequests()
-        let posts = requests.filter { $0.method == .POST }
-        let puts = requests.filter { $0.method == .PUT }
-        #expect(posts.count == 2)
-        #expect(puts.map(\.uri).contains { $0.contains("session-1") })
-        #expect(puts.map(\.uri).contains { $0.contains("session-2") })
-        #expect(puts.allSatisfy { $0.body == payload })
+            let requests = server.recordedRequests()
+            let posts = requests.filter { $0.method == .POST }
+            let puts = requests.filter { $0.method == .PUT }
+            #expect(posts.count == 2)
+            #expect(puts.map(\.uri).contains { $0.contains("session-1") })
+            #expect(puts.map(\.uri).contains { $0.contains("session-2") })
+            #expect(puts.allSatisfy { $0.body == payload })
+        }
     }
 
     @Test func blobPushDoesNotInventRetries() async throws {
@@ -434,30 +479,31 @@ struct OCIClientTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
-
-        let error = await #expect(throws: RegistryClient.Error.self) {
-            try await client.push(
-                name: "example",
-                ref: "latest",
-                descriptor: descriptor,
-                streamGenerator: { Self.stream(payload) },
-                progress: nil
+            let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
             )
-        }
-        #expect(error != nil)
 
-        let requests = server.recordedRequests()
-        #expect(requests.filter { $0.method == .POST }.count == 1)
-        #expect(requests.filter { $0.method == .PUT }.count == 1)
+            let error = await #expect(throws: RegistryClient.Error.self) {
+                try await client.push(
+                    name: "example",
+                    ref: "latest",
+                    descriptor: descriptor,
+                    streamGenerator: { Self.stream(payload) },
+                    progress: nil
+                )
+            }
+            #expect(error != nil)
+
+            let requests = server.recordedRequests()
+            #expect(requests.filter { $0.method == .POST }.count == 1)
+            #expect(requests.filter { $0.method == .PUT }.count == 1)
+        }
     }
 
     @Test func blobPushRestartsWithFreshSessionAfterServerFailure() async throws {
@@ -486,32 +532,33 @@ struct OCIClientTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
-        )
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
+            )
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
+            )
 
-        try await client.push(
-            name: "example",
-            ref: "latest",
-            descriptor: descriptor,
-            streamGenerator: { Self.stream(payload) },
-            progress: nil
-        )
+            try await client.push(
+                name: "example",
+                ref: "latest",
+                descriptor: descriptor,
+                streamGenerator: { Self.stream(payload) },
+                progress: nil
+            )
 
-        let requests = server.recordedRequests()
-        #expect(requests.filter { $0.method == .POST }.count == 2)
-        #expect(requests.filter { $0.method == .PUT }.count == 2)
+            let requests = server.recordedRequests()
+            #expect(requests.filter { $0.method == .POST }.count == 2)
+            #expect(requests.filter { $0.method == .PUT }.count == 2)
+        }
     }
 
     @Test func blobPushDoesNotRestartForUnrelated416() async throws {
@@ -532,38 +579,53 @@ struct OCIClientTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
-        )
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
-
-        let error = await #expect(throws: RegistryClient.Error.self) {
-            try await client.push(
-                name: "example",
-                ref: "latest",
-                descriptor: descriptor,
-                streamGenerator: { Self.stream(payload) },
-                progress: nil
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
             )
-        }
-        #expect(error != nil)
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
+            )
 
-        let requests = server.recordedRequests()
-        #expect(requests.filter { $0.method == .POST }.count == 1)
-        #expect(requests.filter { $0.method == .PUT }.count == 1)
+            let error = await #expect(throws: RegistryClient.Error.self) {
+                try await client.push(
+                    name: "example",
+                    ref: "latest",
+                    descriptor: descriptor,
+                    streamGenerator: { Self.stream(payload) },
+                    progress: nil
+                )
+            }
+            #expect(error != nil)
+
+            let requests = server.recordedRequests()
+            #expect(requests.filter { $0.method == .POST }.count == 1)
+            #expect(requests.filter { $0.method == .PUT }.count == 1)
+        }
     }
 
     // MARK: private functions
+
+    private static func withAwaitedShutdown<T>(
+        _ server: StubHTTPServer,
+        operation: () async throws -> T
+    ) async throws -> T {
+        do {
+            let result = try await operation()
+            try await server.shutdown()
+            return result
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+    }
 
     static var hasRegistryCredentials: Bool {
         authentication != nil

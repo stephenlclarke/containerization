@@ -36,6 +36,11 @@ protocol ContainerProcess: Sendable {
     /// Process ID of the running container (nil if not started)
     var pid: Int32? { get }
 
+    /// Duplicate the filesystem descriptors captured for the running process.
+    ///
+    /// The caller owns the returned descriptors and must close them.
+    func duplicateFilesystemContext() throws -> ProcessFilesystemDescriptors
+
     /// Start the container process
     /// - Returns: The process ID of the started container
     /// - Throws: If the process fails to start

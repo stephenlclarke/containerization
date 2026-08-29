@@ -51,8 +51,10 @@ let package = Package(
             url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
             revision: "09c5c9adcdd2a459187e45fe0143eb01063f244a",
         ),
+        .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.20.1"),
         .package(url: "https://github.com/apple/swift-system.git", from: "1.6.4"),
+        .package(url: "https://github.com/futamura/TLDExtractSwift.git", exact: "4.0.3"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin", from: "1.1.0"),
         .package(url: "https://github.com/facebook/zstd.git", exact: "1.5.7"),
     ],
@@ -107,7 +109,12 @@ let package = Package(
         ),
         .testTarget(
             name: "VminitdCoreTests",
-            dependencies: ["Cgroup", "VminitdCore"],
+            dependencies: [
+                "Cgroup",
+                "ContainerizationError",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                "VminitdCore",
+            ],
             path: "Tests/VminitdCoreTests"
         ),
         .target(
@@ -195,6 +202,7 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "_NIOFileSystem", package: "swift-nio"),
+                .product(name: "TLDExtractSwift", package: "TLDExtractSwift"),
                 "ContainerizationError",
                 "ContainerizationOS",
                 "ContainerizationExtras",
@@ -208,6 +216,8 @@ let package = Package(
                 "ContainerizationIO",
                 "HTTPTestSupport",
                 .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "X509", package: "swift-certificates"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ]
@@ -342,6 +352,7 @@ let package = Package(
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
+                "CShim",
                 "LCShim",
                 "Cgroup",
             ],

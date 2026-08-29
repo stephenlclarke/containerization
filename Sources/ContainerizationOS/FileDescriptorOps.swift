@@ -251,6 +251,7 @@ public enum FileDescriptorOps {
         let childComponents = FilePath.ComponentView(relativeComponents.dropFirst())
 
         var componentFd = openat(fd.rawValue, currentComponent.string, O_NOFOLLOW | O_RDONLY | O_DIRECTORY)
+        var createdComponent = false
         if componentFd < 0 {
             guard makeIntermediates || childComponents.isEmpty else {
                 throw Error.invalidPathComponent
@@ -262,6 +263,7 @@ public enum FileDescriptorOps {
             guard mkdirat(fd.rawValue, currentComponent.string, permissions?.rawValue ?? 0o755) == 0 else {
                 throw Error.systemError("directory creation during file descriptor mkdir", errno)
             }
+            createdComponent = true
 
             componentFd = openat(fd.rawValue, currentComponent.string, O_NOFOLLOW | O_RDONLY | O_DIRECTORY)
             guard componentFd >= 0 else {
@@ -271,6 +273,10 @@ public enum FileDescriptorOps {
 
         let componentFileDescriptor = FileDescriptor(rawValue: componentFd)
         defer { try? componentFileDescriptor.close() }
+
+        if createdComponent, let permissions, fchmod(componentFd, permissions.rawValue) != 0 {
+            throw Error.systemError("directory permission update during file descriptor mkdir", errno)
+        }
 
         guard !childComponents.isEmpty else {
             try completion(componentFileDescriptor)

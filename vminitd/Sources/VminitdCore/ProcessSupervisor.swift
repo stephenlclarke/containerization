@@ -130,8 +130,8 @@ final class ProcessSupervisor: Sendable {
                             "status": "\(status)",
                             "count": "\(state.processes.count - 1)",
                         ])
-                    proc.setExit(status)
                     state.processes.removeAll(where: { $0.pid == pid })
+                    proc.setExit(status)
                 }
             }
         }

@@ -48,6 +48,8 @@ final class RuncProcess: ContainerProcess, Sendable {
     private struct State {
         var state: ProcessState = .initial
         var waiters: [CheckedContinuation<ContainerExitStatus, Never>] = []
+        var mountNamespace: ProcessMountNamespace?
+        var root: ProcessRoot?
     }
 
     let id: String
@@ -67,6 +69,24 @@ final class RuncProcess: ContainerProcess, Sendable {
                 return pid
             default:
                 return nil
+            }
+        }
+    }
+
+    func duplicateFilesystemContext() throws -> ProcessFilesystemDescriptors {
+        try self.state.withLock {
+            guard case .running = $0.state, let mountNamespace = $0.mountNamespace, let root = $0.root else {
+                throw ContainerizationError(.invalidState, message: "process filesystem context is not available")
+            }
+            let mountNamespaceFileDescriptor = try mountNamespace.duplicate()
+            do {
+                return try ProcessFilesystemDescriptors(
+                    mountNamespace: mountNamespaceFileDescriptor,
+                    root: root.duplicate()
+                )
+            } catch {
+                _ = Foundation.close(mountNamespaceFileDescriptor)
+                throw error
             }
         }
     }
@@ -160,6 +180,8 @@ final class RuncProcess: ContainerProcess, Sendable {
         }
 
         let pid = Int32(pidInt)
+        let mountNamespace = try ProcessMountNamespace(pid: pid)
+        let root = try ProcessRoot(pid: pid)
 
         self.log.info(
             "container created",
@@ -189,6 +211,8 @@ final class RuncProcess: ContainerProcess, Sendable {
 
         self.state.withLock {
             $0.state = .running(pid: pid)
+            $0.mountNamespace = mountNamespace
+            $0.root = root
         }
 
         self.log.info(
@@ -211,6 +235,8 @@ final class RuncProcess: ContainerProcess, Sendable {
 
             let exitStatus = ContainerExitStatus(exitCode: status, exitedAt: Date.now)
             $0.state = .exited(exitStatus)
+            $0.mountNamespace = nil
+            $0.root = nil
 
             do {
                 try self.io.close()

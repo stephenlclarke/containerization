@@ -27,6 +27,7 @@ import ContainerizationOS
 import Foundation
 import GRPCCore
 import GRPCProtobuf
+import LCShim
 import Logging
 import NIOCore
 import NIOPosix
@@ -877,11 +878,42 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         async throws -> Com_Apple_Containerization_Sandbox_V3_FilesystemOperationResponse
     {
         let path = FilePath(request.path)
+        let operation: Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest.OneOf_Operation
+        let containerFilesystem: ProcessFilesystemDescriptors
+        do {
+            if !request.hasContainerID {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "containerID is required"
+                )
+            }
+
+            guard let requestedOperation = request.operation else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "operation is required"
+                )
+            }
+
+            let container = try await state.get(container: request.containerID)
+            operation = requestedOperation
+            containerFilesystem = try await container.duplicateFilesystemContext()
+        } catch let error as ContainerizationError {
+            throw error.toRPCError(operation: "filesystemOperation")
+        } catch {
+            throw RPCError(code: .internalError, message: "filesystemOperation", cause: error)
+        }
+
+        defer {
+            close(containerFilesystem.mountNamespace)
+            close(containerFilesystem.root)
+        }
 
         log.debug(
             "filesystemOperation",
             metadata: [
-                "operation": "\(String(describing: request.operation))",
+                "containerID": "\(request.containerID)",
+                "operation": "\(operation)",
                 "path": "\(path)",
             ])
 
@@ -889,40 +921,89 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             throw RPCError(code: .invalidArgument, message: "path must be absolute")
         }
 
-        var finfo = _stat_struct()
-        let rc = _stat(path.string, &finfo)
-        if rc != 0 {
-            let error = swiftErrno("stat")
-            throw RPCError(code: .notFound, message: "failed to stat path", cause: error)
+        let selfMountFd = open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC)
+        if selfMountFd < 0 {
+            let error = swiftErrno("open")
+            throw RPCError(code: .internalError, message: "failed to open self mount namespace", cause: error)
         }
 
-        let fd = open(path.string, O_RDONLY | O_NOFOLLOW)
-        if fd < 0 {
-            if errno == ELOOP {
-                throw RPCError(code: .internalError, message: "path cannot be a symlink")
+        defer { close(selfMountFd) }
+
+        var finfo = _stat_struct()
+        let selfMountStat = fstat(selfMountFd, &finfo)
+        if selfMountStat != 0 {
+            let error = swiftErrno("fstat")
+            throw RPCError(code: .internalError, message: "failed to stat self mount namespace", cause: error)
+        }
+        let selfInode = finfo.st_ino
+
+        let containerMountStat = fstat(containerFilesystem.mountNamespace, &finfo)
+        if containerMountStat != 0 {
+            let error = swiftErrno("fstat")
+            throw RPCError(code: .internalError, message: "failed to stat container mount namespace", cause: error)
+        }
+        let containerInode = finfo.st_ino
+
+        try await self.runOnDedicatedThread {
+            if unshare(CLONE_FS) != 0 {
+                let error = self.swiftErrno("unshare(CLONE_FS)")
+                throw RPCError(code: .internalError, message: "failed to unshare filesystem context", cause: error)
             }
-            let error = swiftErrno("open")
+            if selfInode != containerInode, setns(containerFilesystem.mountNamespace, CLONE_NEWNS) != 0 {
+                let error = self.swiftErrno("setns(CLONE_NEWNS)")
+                throw RPCError(code: .internalError, message: "failed to enter container mount namespace", cause: error)
+            }
+            try self.doFilesystemOperation(root: containerFilesystem.root, path: path, operation: operation)
+        }
+
+        return .init()
+    }
+
+    private func doFilesystemOperation(
+        root: Int32,
+        path: FilePath,
+        operation: Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest.OneOf_Operation
+    ) throws {
+        let fd = FilesystemPathResolver.open(
+            root: root,
+            path: path.string,
+            flags: O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+        )
+        if fd < 0 {
+            if errno == ENOENT {
+                let error = swiftErrno("openat2")
+                throw RPCError(code: .notFound, message: "failed to open path", cause: error)
+            }
+            if errno == ELOOP {
+                throw RPCError(code: .invalidArgument, message: "path cannot contain magic links or end in a symlink")
+            }
+            let error = swiftErrno("openat2")
             throw RPCError(code: .internalError, message: "failed to open path", cause: error)
         }
 
         defer { close(fd) }
 
         do {
-            switch request.operation {
-            case .freeze:
+            switch operation {
+            case .freeze(_):
                 try freezeFilesystem(fd: fd)
-            case .thaw:
+            case .thaw(_):
                 try thawFilesystem(fd: fd)
             case .trim(let params):
                 switch params.schedule {
-                case .oneShot:
+                case .oneShot(_):
                     try trimFilesystem(fd: fd)
                 case .none:
                     throw RPCError(code: .invalidArgument, message: "trim schedule must be specified")
                 }
-            case .none:
-                throw RPCError(code: .invalidArgument, message: "invalid operation")
             }
+        } catch let error as RPCError {
+            log.error(
+                "filesystemOperation",
+                metadata: [
+                    "error": "\(error)"
+                ])
+            throw error
         } catch {
             log.error(
                 "filesystemOperation",
@@ -931,8 +1012,6 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 ])
             throw RPCError(code: .internalError, message: "filesystemOperation", cause: error)
         }
-
-        return .init()
     }
 
     private func freezeFilesystem(fd: Int32) throws {
@@ -1989,6 +2068,22 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 "error": "\(error)"
             ])
         return error
+    }
+
+    private func runOnDedicatedThread<T: Sendable>(
+        _ work: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            let thread = Thread {
+                do {
+                    let result = try work()
+                    continuation.resume(returning: result)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            thread.start()
+        }
     }
 
     // NOTE: This is just crummy. It works because today the assumption is

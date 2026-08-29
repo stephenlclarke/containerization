@@ -16,13 +16,96 @@
 
 import AsyncHTTPClient
 import ContainerizationError
+import ContainerizationExtras
+import Dispatch
 import Foundation
+import NIOCore
+import NIOHTTP1
+import TLDExtractSwift
+
+private final class PublicSuffixExtractor: @unchecked Sendable {
+    private let extractor: TLDExtract?
+
+    init() {
+        self.extractor = try? TLDExtract(useFrozenData: true)
+    }
+
+    func registrableDomain(_ host: String) -> String? {
+        extractor?.parse(host)?.rootDomain?.lowercased()
+    }
+}
+
+private let publicSuffixExtractor = PublicSuffixExtractor()
+
+private final class TokenRequestCompletion<Response: Sendable>: @unchecked Sendable {
+    typealias RequestCancellation = @Sendable (any Swift.Error) -> Void
+
+    private let lock = NSLock()
+    private var completed = false
+    private var continuation: CheckedContinuation<Response, any Swift.Error>?
+    private var pending: (result: Result<Response, any Swift.Error>, cancelUnderlyingRequest: Bool)?
+    private var watchdog: (any DispatchSourceTimer)?
+    private var requestCancellation: RequestCancellation?
+
+    func install(
+        continuation: CheckedContinuation<Response, any Swift.Error>,
+        watchdog: any DispatchSourceTimer,
+        requestCancellation: @escaping RequestCancellation
+    ) {
+        lock.lock()
+        guard completed else {
+            self.continuation = continuation
+            self.watchdog = watchdog
+            self.requestCancellation = requestCancellation
+            lock.unlock()
+            return
+        }
+        let pending = self.pending
+        self.pending = nil
+        lock.unlock()
+
+        watchdog.cancel()
+        guard let pending else {
+            return
+        }
+        if pending.cancelUnderlyingRequest, case .failure(let error) = pending.result {
+            requestCancellation(error)
+        }
+        continuation.resume(with: pending.result)
+    }
+
+    @discardableResult
+    func resume(with result: Result<Response, any Swift.Error>, cancelUnderlyingRequest: Bool = false) -> Bool {
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return false
+        }
+        completed = true
+        guard let continuation else {
+            pending = (result, cancelUnderlyingRequest)
+            lock.unlock()
+            return true
+        }
+        let watchdog = self.watchdog
+        self.watchdog = nil
+        let requestCancellation = self.requestCancellation
+        self.requestCancellation = nil
+        self.continuation = nil
+        lock.unlock()
+
+        watchdog?.cancel()
+        if cancelUnderlyingRequest, case .failure(let error) = result {
+            requestCancellation?(error)
+        }
+        continuation.resume(with: result)
+        return true
+    }
+}
 
 struct TokenRequest: Sendable {
     public static let authenticateHeaderName = "WWW-Authenticate"
 
-    /// The credentials that will be used in the authentication header when fetching the token.
-    let authentication: Authentication?
     /// The realm against which the token should be requested.
     let realm: String
     /// The name of the service which hosts the resource.
@@ -39,15 +122,13 @@ struct TokenRequest: Sendable {
         service: String,
         clientId: String,
         scope: String?,
-        offlineToken: Bool = false,
-        authentication: Authentication? = nil
+        offlineToken: Bool = false
     ) {
         self.realm = realm
         self.service = service
         self.offlineToken = offlineToken
         self.clientId = clientId
         self.scope = scope
-        self.authentication = authentication
     }
 }
 
@@ -119,6 +200,7 @@ extension RegistryClient {
         guard var components = URLComponents(string: request.realm) else {
             throw ContainerizationError(.invalidArgument, message: "cannot create URL from \(request.realm)")
         }
+        try validateRealm(components)
         components.queryItems = [
             URLQueryItem(name: "client_id", value: request.clientId),
             URLQueryItem(name: "service", value: request.service),
@@ -132,18 +214,114 @@ extension RegistryClient {
         if request.offlineToken {
             components.queryItems?.append(URLQueryItem(name: "offline_token", value: "true"))
         }
-        var response: TokenResponse = try await requestJSON(components: components, headers: [])
+        guard let url = components.url?.absoluteString else {
+            throw ContainerizationError(.invalidArgument, message: "invalid url \(components.path)")
+        }
+
+        var tokenHeaders = HTTPHeaders()
+        tokenHeaders.add(name: "User-Agent", value: clientID)
+        if let credentials = try await authentication?.token() {
+            tokenHeaders.add(name: "Authorization", value: credentials)
+        }
+        let tokenHTTPRequest = try HTTPClient.Request(url: url, headers: tokenHeaders)
+        let responseAccumulator = ResponseAccumulator(
+            request: tokenHTTPRequest,
+            maxBodySize: self.bufferSize
+        )
+        // Authorization responses are small control-plane documents. Bound the complete
+        // exchange as well as socket inactivity so a server that sends headers (or trickles
+        // bytes) cannot hold the token path open indefinitely.
+        let requestTask = tokenClient.execute(
+            request: tokenHTTPRequest,
+            delegate: responseAccumulator
+        )
+        let completion = TokenRequestCompletion<HTTPClient.Response>()
+        let httpResponse: HTTPClient.Response = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Keep the deadline off Swift's cooperative executor: callers may saturate it
+                // with blocking I/O, but that must not prevent an authorization timeout.
+                let watchdog = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+                let timeoutNanoseconds = max(0, Int(clamping: tokenRequestTimeout.nanoseconds))
+                watchdog.schedule(deadline: .now() + .nanoseconds(timeoutNanoseconds))
+                watchdog.setEventHandler { [weak completion] in
+                    completion?.resume(with: .failure(HTTPClientError.deadlineExceeded), cancelUnderlyingRequest: true)
+                }
+                watchdog.resume()
+                completion.install(
+                    continuation: continuation,
+                    watchdog: watchdog,
+                    requestCancellation: { error in requestTask.fail(reason: error) }
+                )
+                requestTask.futureResult.whenComplete { result in
+                    completion.resume(with: result)
+                }
+            }
+        } onCancel: {
+            completion.resume(with: .failure(CancellationError()), cancelUnderlyingRequest: true)
+        }
+
+        guard !(300..<400).contains(httpResponse.status.code) else {
+            throw Error.insecureCredentialExchange(message: "authorization server \(request.realm) redirected the token request")
+        }
+        guard httpResponse.headers[TokenRequest.authenticateHeaderName].isEmpty else {
+            throw Error.insecureCredentialExchange(message: "authorization server \(request.realm) issued its own authentication challenge")
+        }
+        guard httpResponse.status == .ok else {
+            let reason = ErrorResponse.fromResponseBody(httpResponse.body)?.jsonString
+            throw Error.invalidStatus(url: url, httpResponse.status, reason: reason)
+        }
+
+        guard let body = httpResponse.body else {
+            throw ContainerizationError(.internalError, message: "authorization server returned no token response body")
+        }
+        var response = try JSONDecoder().decode(TokenResponse.self, from: Data(body.readableBytesView))
         response.scope = scope
         return response
     }
 
+    /// Credentials and bearer tokens are only ever exchanged with an authorization server that
+    /// the registry itself demonstrably controls, over TLS.
+    internal func validateRealm(_ realm: URLComponents) throws {
+        guard let registryHost = base.host, let realmHost = realm.host else {
+            throw Error.insecureCredentialExchange(message: "cannot determine registry or authorization server host")
+        }
+        guard base.scheme == "https", realm.scheme == "https" else {
+            throw Error.insecureCredentialExchange(message: "token exchange between \(registryHost) and \(realmHost) requires https on both endpoints")
+        }
+
+        let registryDomain = Self.registrableDomain(registryHost)
+        let realmDomain = Self.registrableDomain(realmHost)
+        if registryDomain != nil || realmDomain != nil {
+            guard let registryDomain, let realmDomain, registryDomain == realmDomain else {
+                throw Error.insecureCredentialExchange(message: "authorization server \(realmHost) is not in the same registrable domain as registry \(registryHost)")
+            }
+            return
+        }
+
+        guard registryHost.lowercased() == realmHost.lowercased(), base.port ?? 443 == realm.port ?? 443 else {
+            throw Error.insecureCredentialExchange(message: "authorization server \(realmHost) does not match registry \(registryHost)")
+        }
+    }
+
+    /// The public-suffix-aware registrable domain of a fully qualified host name, or `nil` if the
+    /// host is unqualified, an IP literal, or cannot be parsed using the bundled suffix snapshot.
+    private static func registrableDomain(_ host: String) -> String? {
+        if host.contains(":") || (try? IPv4Address(host)) != nil {
+            return nil
+        }
+        return publicSuffixExtractor.registrableDomain(host)
+    }
+
     internal func createTokenRequest(parsing authenticateHeaders: [String]) throws -> TokenRequest {
+        guard base.scheme == "https" else {
+            throw Error.insecureCredentialExchange(message: "registry \(host()) requested authentication over an insecure connection")
+        }
         let parsedHeaders = Self.parseWWWAuthenticateHeaders(headers: authenticateHeaders)
         return try createTokenRequest(from: parsedHeaders)
     }
 
     internal func createTokenRequest(from parsedHeaders: [AuthenticateChallenge]) throws -> TokenRequest {
-        let bearerChallenge = parsedHeaders.first { $0.type == "Bearer" }
+        let bearerChallenge = parsedHeaders.first { $0.type.caseInsensitiveCompare("Bearer") == .orderedSame }
         guard let bearerChallenge else {
             throw ContainerizationError(.invalidArgument, message: "missing Bearer challenge in \(TokenRequest.authenticateHeaderName) header")
         }
@@ -154,7 +332,7 @@ extension RegistryClient {
             throw ContainerizationError(.invalidArgument, message: "cannot parse service from \(TokenRequest.authenticateHeaderName) header")
         }
         let scope = bearerChallenge.scope
-        let tokenRequest = TokenRequest(realm: realm, service: service, clientId: self.clientID, scope: scope, authentication: self.authentication)
+        let tokenRequest = TokenRequest(realm: realm, service: service, clientId: self.clientID, scope: scope)
         return tokenRequest
     }
 

@@ -16,18 +16,24 @@
 
 import AsyncHTTPClient
 import Foundation
+import NIOCore
 import NIOHTTP1
 
 extension RegistryClient {
     /// `RegistryClient` errors.
     public enum Error: Swift.Error, CustomStringConvertible {
         case invalidStatus(url: String, HTTPResponseStatus, reason: String? = nil)
+        /// The registry asked for credentials to be exchanged in a way that could disclose them
+        /// to a party other than the registry itself.
+        case insecureCredentialExchange(message: String)
 
         /// Description of the errors.
         public var description: String {
             switch self {
             case .invalidStatus(let u, let response, let reason):
                 return "HTTP request to \(u) failed with response: \(response.description). Reason: \(reason ?? "Unknown")"
+            case .insecureCredentialExchange(let message):
+                return "refusing insecure credential exchange: \(message)"
             }
         }
     }
@@ -56,6 +62,13 @@ extension RegistryClient {
                 return nil
             }
             return jsonError
+        }
+
+        internal static func fromResponseBody(_ body: ByteBuffer?) -> ErrorResponse? {
+            guard let body else {
+                return nil
+            }
+            return try? JSONDecoder().decode(ErrorResponse.self, from: Data(body.readableBytesView))
         }
 
         public var jsonString: String {

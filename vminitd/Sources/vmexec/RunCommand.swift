@@ -207,6 +207,29 @@ struct RunCommand: ParsableCommand {
             throw App.Failure(message: "configure container rootfs: \(error)")
         }
 
+        do {
+            let rootReady = Array(App.rootReady.utf8)
+            let rootReadyBytesWritten = try rootReady.withUnsafeBytes { buffer in
+                try syncPipe.write(buffer)
+            }
+            guard rootReadyBytesWritten == rootReady.count else {
+                throw App.Failure(message: "write root readiness")
+            }
+            var rootAckBuffer = [UInt8](repeating: 0, count: App.ackRoot.count)
+            let rootAckBytesRead = try rootAckBuffer.withUnsafeMutableBytes { buffer in
+                try ackPipe.read(into: buffer)
+            }
+            guard rootAckBytesRead > 0 else {
+                throw App.Failure(message: "read root acknowledgement")
+            }
+            let rootAck = String(decoding: rootAckBuffer[..<rootAckBytesRead], as: UTF8.self)
+            guard rootAck == App.ackRoot else {
+                throw App.Failure(message: "received invalid root acknowledgement: \(rootAck)")
+            }
+        } catch {
+            throw App.Failure(message: "synchronize container root: \(error)")
+        }
+
         if process.terminal {
             let pty = try Console()
             try pty.configureStdIO()

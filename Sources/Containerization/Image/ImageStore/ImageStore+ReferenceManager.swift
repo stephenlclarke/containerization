@@ -41,9 +41,60 @@ extension ImageStore {
             }
             do {
                 let data = try Data(contentsOf: statePath)
-                return try JSONDecoder().decode(State.self, from: data)
+                let entries = try JSONDecoder().decode([String: SkippableDescriptor].self, from: data)
+                return entries.compactMapValues { $0.descriptor }
             } catch {
                 throw ContainerizationError(.internalError, message: "failed to load image state \(error.localizedDescription)")
+            }
+        }
+
+        /// Decodes one state entry, tolerating only a record whose digest cannot
+        /// name content in the store.
+        ///
+        /// `Descriptor` rejects malformed digests at decode time, so without this
+        /// a single unreadable record would make `load()` throw and take every
+        /// other image in the store with it — listing, pulling and deleting all
+        /// go through here.
+        ///
+        /// A record with a valid digest but another invalid field must still fail
+        /// the load. Silently dropping it would remove its root digest from the
+        /// garbage-collection keep set and could delete live content. A skipped
+        /// digest-invalid record cannot reference content safely and is removed
+        /// by the next successful state mutation.
+        private struct SkippableDescriptor: Decodable {
+            let descriptor: Descriptor?
+
+            private enum CodingKeys: String, CodingKey {
+                case digest
+            }
+
+            /// Before digest validation, state lookup stripped any single-colon
+            /// prefix and used the result directly as a filename. Treat every
+            /// safe legacy path component as capable of naming content so
+            /// migration fails closed instead of dropping a live root from the
+            /// garbage-collection keep set.
+            private static func canNameStoredContent(_ digest: String) -> Bool {
+                let components = digest.split(separator: ":")
+                let legacyPathComponent = components.count == 2 ? String(components[1]) : digest
+
+                guard !legacyPathComponent.isEmpty,
+                    legacyPathComponent != ".",
+                    legacyPathComponent != ".."
+                else {
+                    return false
+                }
+                return !legacyPathComponent.contains("/") && !legacyPathComponent.utf8.contains(0)
+            }
+
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                guard let digest = try? container.decode(String.self, forKey: .digest),
+                    Self.canNameStoredContent(digest)
+                else {
+                    self.descriptor = nil
+                    return
+                }
+                self.descriptor = try Descriptor(from: decoder)
             }
         }
 

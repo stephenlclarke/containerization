@@ -47,10 +47,14 @@ final class ManagedProcess: ContainerProcess, Sendable {
         var waiters: [CheckedContinuation<ContainerExitStatus, Never>] = []
         var exitStatus: ContainerExitStatus? = nil
         var pid: Int32?
+        var mountNamespace: ProcessMountNamespace?
+        var root: ProcessRoot?
         var hostNetworkConfigured = false
     }
 
     private static let ackPid = "AckPid"
+    private static let rootReady = "RootReady"
+    private static let ackRoot = "AckRoot"
     private static let ackConsole = "AckConsole"
 
     let id: String
@@ -68,7 +72,25 @@ final class ManagedProcess: ContainerProcess, Sendable {
 
     var pid: Int32? {
         self.state.withLock {
-            $0.pid
+            $0.exitStatus == nil ? $0.pid : nil
+        }
+    }
+
+    func duplicateFilesystemContext() throws -> ProcessFilesystemDescriptors {
+        try self.state.withLock {
+            guard $0.exitStatus == nil, let mountNamespace = $0.mountNamespace, let root = $0.root else {
+                throw ContainerizationError(.invalidState, message: "process filesystem context is not available")
+            }
+            let mountNamespaceFileDescriptor = try mountNamespace.duplicate()
+            do {
+                return try ProcessFilesystemDescriptors(
+                    mountNamespace: mountNamespaceFileDescriptor,
+                    root: root.duplicate()
+                )
+            } catch {
+                _ = Foundation.close(mountNamespaceFileDescriptor)
+                throw error
+            }
         }
     }
 
@@ -202,7 +224,9 @@ extension ManagedProcess {
                     metadata: [
                         "pid": "\(pid)"
                     ])
+                let mountNamespace = try ProcessMountNamespace(pid: pid)
                 $0.pid = pid
+                $0.mountNamespace = mountNamespace
 
                 // This should probably happen in vmexec, but we don't need to set any cgroup
                 // toggles so the problem is much simpler to just do it here.
@@ -220,6 +244,26 @@ extension ManagedProcess {
                         "pid": "\(pid)"
                     ])
                 try self.ackPipe.fileHandleForWriting.write(contentsOf: Self.ackPid.data(using: .utf8)!)
+
+                if self.owningPid == nil {
+                    let rootReadySize = Self.rootReady.utf8.count
+                    guard let rootReadyData = try self.syncPipe.fileHandleForReading.read(upToCount: rootReadySize) else {
+                        throw ContainerizationError(
+                            .internalError,
+                            message: "no container root readiness data from sync pipe"
+                        )
+                    }
+                    let rootReady = String(decoding: rootReadyData, as: UTF8.self)
+                    guard rootReady == Self.rootReady else {
+                        throw ContainerizationError(
+                            .internalError,
+                            message: "invalid container root readiness payload"
+                        )
+                    }
+
+                    $0.root = try ProcessRoot(pid: pid)
+                    try self.ackPipe.fileHandleForWriting.write(contentsOf: Self.ackRoot.data(using: .utf8)!)
+                }
 
                 if self.terminal {
                     log.info(
@@ -270,7 +314,12 @@ extension ManagedProcess {
             }
         } catch {
             self.cleanupHostNetwork()
-            self.state.withLock { $0.hostNetworkConfigured = false }
+            self.state.withLock {
+                $0.hostNetworkConfigured = false
+                $0.mountNamespace = nil
+                $0.root = nil
+                $0.pid = nil
+            }
             if let errorData = try? self.errorPipe.fileHandleForReading.readToEnd(),
                 let errorString = String(data: errorData, encoding: .utf8),
                 !errorString.isEmpty
@@ -295,6 +344,9 @@ extension ManagedProcess {
 
             let exitStatus = ContainerExitStatus(exitCode: status, exitedAt: Date.now)
             state.exitStatus = exitStatus
+            state.mountNamespace = nil
+            state.root = nil
+            state.pid = nil
 
             do {
                 try state.io.close()

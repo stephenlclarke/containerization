@@ -126,6 +126,7 @@ jobs:
           BUILD_CONFIGURATION: ${{ inputs.release && 'release' || 'debug' }}
 
       - name: Test containerization
+        timeout-minutes: 15
         run: |
           make test
         env:

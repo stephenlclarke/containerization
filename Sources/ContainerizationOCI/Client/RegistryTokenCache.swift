@@ -16,6 +16,47 @@
 
 import Foundation
 
+private final class TokenTaskWaiter<Response: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+    private var continuation: CheckedContinuation<Response, any Swift.Error>?
+    private var pending: Result<Response, any Swift.Error>?
+
+    func install(_ continuation: CheckedContinuation<Response, any Swift.Error>) {
+        lock.lock()
+        guard completed else {
+            self.continuation = continuation
+            lock.unlock()
+            return
+        }
+        let pending = self.pending
+        self.pending = nil
+        lock.unlock()
+
+        if let pending {
+            continuation.resume(with: pending)
+        }
+    }
+
+    func resume(with result: Result<Response, any Swift.Error>) {
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
+        }
+        completed = true
+        guard let continuation else {
+            pending = result
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+
+        continuation.resume(with: result)
+    }
+}
+
 actor RegistryTokenCache {
     private struct Key: Hashable {
         let realm: String
@@ -34,9 +75,14 @@ actor RegistryTokenCache {
         let expiresAt: Date
     }
 
+    private struct InFlight {
+        let id: UUID
+        let task: Task<TokenResponse, any Swift.Error>
+    }
+
     private let now: @Sendable () -> Date
     private var entries: [Key: Entry] = [:]
-    private var inFlight: [Key: Task<TokenResponse, Error>] = [:]
+    private var inFlight: [Key: InFlight] = [:]
 
     init(now: @escaping @Sendable () -> Date = { Date() }) {
         self.now = now
@@ -53,22 +99,45 @@ actor RegistryTokenCache {
         }
         entries[key] = nil
 
-        if let task = inFlight[key] {
-            return try await task.value
+        if let inFlight = inFlight[key] {
+            return try await Self.value(of: inFlight.task)
         }
 
+        let id = UUID()
         let task = Task { try await fetch() }
-        inFlight[key] = task
-        do {
-            let response = try await task.value
+        inFlight[key] = InFlight(id: id, task: task)
+        Task {
+            let result = await task.result
+            guard self.inFlight[key]?.id == id else {
+                return
+            }
+            self.inFlight[key] = nil
+            guard case .success(let response) = result else {
+                return
+            }
             entries[key] = Entry(
                 response: response,
                 expiresAt: expirationDate(for: response, receivedAt: now()))
-            inFlight[key] = nil
-            return response
-        } catch {
-            inFlight[key] = nil
-            throw error
+        }
+        return try await Self.value(of: task)
+    }
+
+    /// Awaits a shared fetch without making one caller's cancellation cancel the
+    /// request on behalf of every waiter. The caller still resumes immediately;
+    /// the shared task continues and populates the cache when it completes.
+    private nonisolated static func value(
+        of task: Task<TokenResponse, any Swift.Error>
+    ) async throws -> TokenResponse {
+        let waiter = TokenTaskWaiter<TokenResponse>()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                waiter.install(continuation)
+                Task {
+                    waiter.resume(with: await task.result)
+                }
+            }
+        } onCancel: {
+            waiter.resume(with: .failure(CancellationError()))
         }
     }
 

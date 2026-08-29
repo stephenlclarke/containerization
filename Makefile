@@ -384,10 +384,12 @@ update-libarchive-source:
 .PHONY: test
 test:
 	@echo Testing all test targets...
-	@$(SWIFT) test --enable-code-coverage $(SWIFT_CONFIGURATION)
+	@$(SWIFT) test $(SWIFT_CONFIGURATION)
 
 .PHONY: coverage
-coverage: test
+coverage:
+	@echo Testing all test targets with code coverage...
+	@$(SWIFT) test --enable-code-coverage $(SWIFT_CONFIGURATION)
 	@echo Generating code coverage report...
 	@xcrun llvm-cov show --compilation-dir=`pwd` \
 		-instr-profile=$(COV_DATA_DIR)/default.profdata \

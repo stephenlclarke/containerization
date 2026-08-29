@@ -15,61 +15,125 @@
 //===----------------------------------------------------------------------===//
 
 import ContainerizationError
+import ContainerizationOS
 import Crypto
 import Foundation
 
 public final class LocalContent: Content {
+    /// Maximum size of a document (image manifest, index, or config) that will be
+    /// read whole out of the content store by ``data()`` or ``decode()``.
+    ///
+    /// This matches the 4 MiB response buffer `RegistryClient` already enforces
+    /// for the same documents fetched over HTTP, so a document that is readable
+    /// from a registry is readable from disk and vice versa. Layer blobs are not
+    /// read through these methods; they are streamed or copied.
+    public static let maxDecodedSize = Int(4.mib())
+
     public let path: URL
     private let file: FileHandle
+    private let fileLock = NSLock()
 
     public init(path: URL) throws {
-        guard FileManager.default.fileExists(atPath: path.path) else {
-            throw ContainerizationError(.notFound, message: "content at path \(path.absolutePath())")
+        // Open with O_NOFOLLOW and verify the target is a regular file.
+        let fd = open(path.path, O_RDONLY | O_NOFOLLOW)
+        guard fd >= 0 else {
+            let savedErrno = errno
+            switch savedErrno {
+            case ENOENT, ENOTDIR:
+                throw ContainerizationError(.notFound, message: "content at path \(path.absolutePath())")
+            default:
+                throw ContainerizationError(
+                    .internalError,
+                    message: "failed to open content at \(path.absolutePath()): \(String(cString: strerror(savedErrno)))")
+            }
         }
 
-        self.file = try FileHandle(forReadingFrom: path)
+        var st = stat()
+        guard fstat(fd, &st) == 0 else {
+            close(fd)
+            throw ContainerizationError(.internalError, message: "failed to stat \(path.absolutePath())")
+        }
+        guard (st.st_mode & S_IFMT) == S_IFREG else {
+            close(fd)
+            throw ContainerizationError(.internalError, message: "refusing to read non-regular file at \(path.absolutePath())")
+        }
+
+        self.file = FileHandle(fileDescriptor: fd)
         self.path = path
     }
 
     public func digest() throws -> SHA256.Digest {
-        let bufferSize = 64 * 1024  // 64 KB
-        var hasher = SHA256()
+        try withFileLock {
+            let bufferSize = 64 * 1024  // 64 KB
+            var hasher = SHA256()
 
-        try self.file.seek(toOffset: 0)
-        while case let data = file.readData(ofLength: bufferSize), !data.isEmpty {
-            hasher.update(data: data)
+            try self.file.seek(toOffset: 0)
+            while case let data = file.readData(ofLength: bufferSize), !data.isEmpty {
+                hasher.update(data: data)
+            }
+
+            let digest = hasher.finalize()
+
+            try self.file.seek(toOffset: 0)
+            return digest
         }
-
-        let digest = hasher.finalize()
-
-        try self.file.seek(toOffset: 0)
-        return digest
     }
 
     public func data(offset: UInt64 = 0, length size: Int = 0) throws -> Data? {
-        try file.seek(toOffset: offset)
-        if size == 0 {
-            return try file.readToEnd()
+        try withFileLock {
+            try file.seek(toOffset: offset)
+            if size == 0 {
+                return try file.readToEnd()
+            }
+            return try file.read(upToCount: size)
         }
-        return try file.read(upToCount: size)
     }
 
     public func data() throws -> Data {
-        try Data(contentsOf: self.path)
+        try self.boundedContents()
+    }
+
+    /// Read the entire file through the already-open descriptor, refusing
+    /// anything larger than ``maxDecodedSize``.
+    ///
+    /// Reading through the open descriptor rather than re-opening the path
+    /// deliberately keeps the limit check and the read on the same inode.
+    /// ``size()`` uses `attributesOfItem`, which does not traverse symlinks,
+    /// while `Data(contentsOf:)` does — so checking the size of a path and then
+    /// reading it could be defeated by a symlink at the blob name. Reading one
+    /// byte past the limit and comparing is also cheaper than a stat plus a
+    /// second open.
+    private func boundedContents() throws -> Data {
+        try withFileLock {
+            let limit = Self.maxDecodedSize
+            try self.file.seek(toOffset: 0)
+            let data = try self.file.read(upToCount: limit + 1) ?? Data()
+            try self.file.seek(toOffset: 0)
+            guard data.count <= limit else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "content at \(self.path.absolutePath()) exceeds the \(limit) byte limit for documents read from the content store")
+            }
+            return data
+        }
+    }
+
+    private func withFileLock<T>(_ operation: () throws -> T) rethrows -> T {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+        return try operation()
     }
 
     public func size() throws -> UInt64 {
-        let fileAttrs = try FileManager.default.attributesOfItem(atPath: self.path.absolutePath())
-        if let size = fileAttrs[FileAttributeKey.size] as? UInt64 {
-            return size
+        var st = stat()
+        guard fstat(self.file.fileDescriptor, &st) == 0 else {
+            throw ContainerizationError(.internalError, message: "could not determine file size for \(path.absolutePath())")
         }
-        throw ContainerizationError(.internalError, message: "could not determine file size for \(path.absolutePath())")
+        return UInt64(st.st_size)
     }
 
     public func decode<T>() throws -> T where T: Decodable {
-        let json = JSONDecoder()
-        let data = try Data(contentsOf: self.path)
-        return try json.decode(T.self, from: data)
+        try JSONDecoder().decode(T.self, from: self.boundedContents())
     }
 
     deinit {

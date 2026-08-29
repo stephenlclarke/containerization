@@ -52,6 +52,11 @@ struct AuthChallengeTests {
                 Bearer realm="https://auth.server.io/token",service="registry.server.io"
                 """,
             expected: .init(type: "Bearer", realm: "https://auth.server.io/token", service: "registry.server.io", scope: nil, error: nil)),
+        .init(
+            input: """
+                Basic realm="Registry Realm"
+                """,
+            expected: .init(type: "Basic", realm: "Registry Realm", service: nil, scope: nil, error: nil)),
 
     ]
 
@@ -86,5 +91,22 @@ struct AuthChallengeTests {
         )
 
         #expect(reason == nil)
+    }
+
+    @Test func bearerSchemeIsCaseInsensitive() throws {
+        let client = RegistryClient(host: "registry.example.com")
+        let request = try client.createTokenRequest(from: [
+            AuthenticateChallenge(
+                type: "bearer",
+                realm: "https://auth.example.com/token",
+                service: "registry.example.com",
+                scope: "repository:example/image:pull",
+                error: nil
+            )
+        ])
+
+        #expect(request.realm == "https://auth.example.com/token")
+        #expect(request.service == "registry.example.com")
+        #expect(request.scope == "repository:example/image:pull")
     }
 }
