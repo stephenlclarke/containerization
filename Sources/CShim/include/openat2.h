@@ -25,6 +25,18 @@
 #ifndef RESOLVE_NO_MAGICLINKS
 #define RESOLVE_NO_MAGICLINKS 0x02
 #endif
+#ifndef RESOLVE_NO_XDEV
+#define RESOLVE_NO_XDEV 0x01
+#endif
+#ifndef RESOLVE_NO_SYMLINKS
+#define RESOLVE_NO_SYMLINKS 0x04
+#endif
+#ifndef RESOLVE_BENEATH
+#define RESOLVE_BENEATH 0x08
+#endif
+#ifndef CZ_O_PATH
+#define CZ_O_PATH 010000000
+#endif
 
 struct cz_open_how {
   unsigned long long flags;

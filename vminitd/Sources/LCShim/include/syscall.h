@@ -105,6 +105,11 @@ int CZ_pidfd_open(pid_t pid, unsigned int flags);
 #endif
 int CZ_pidfd_getfd(int pidfd, int targetfd, unsigned int flags);
 
+#ifndef SYS_pidfd_send_signal
+#define SYS_pidfd_send_signal 424
+#endif
+int CZ_pidfd_send_signal(int pidfd, int signal, unsigned int flags);
+
 int CZ_prctl_set_no_new_privs();
 
 #endif
