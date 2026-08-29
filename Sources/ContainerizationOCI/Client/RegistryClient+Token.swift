@@ -17,6 +17,7 @@
 import AsyncHTTPClient
 import ContainerizationError
 import ContainerizationExtras
+import Dispatch
 import Foundation
 import NIOCore
 import NIOHTTP1
@@ -39,9 +40,9 @@ private let publicSuffixExtractor = PublicSuffixExtractor()
 private final class TokenRequestCompletion<Response: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var completed = false
-    private var watchdog: Task<Void, Never>?
+    private var watchdog: DispatchWorkItem?
 
-    func install(watchdog: Task<Void, Never>) {
+    func install(watchdog: DispatchWorkItem) {
         lock.lock()
         if completed {
             lock.unlock()
@@ -210,17 +211,18 @@ extension RegistryClient {
             requestTask.futureResult.whenComplete { result in
                 completion.resume(continuation, with: result)
             }
-            let watchdog = Task<Void, Never> {
-                do {
-                    try await Task.sleep(for: .nanoseconds(tokenRequestTimeout.nanoseconds))
-                } catch {
-                    return
-                }
+            // Keep the deadline off Swift's cooperative executor: callers may saturate it
+            // with blocking I/O, but that must not prevent an authorization timeout.
+            let watchdog = DispatchWorkItem {
                 if completion.resume(continuation, with: .failure(HTTPClientError.deadlineExceeded)) {
                     requestTask.fail(reason: HTTPClientError.deadlineExceeded)
                 }
             }
             completion.install(watchdog: watchdog)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                deadline: .now() + .nanoseconds(Int(tokenRequestTimeout.nanoseconds)),
+                execute: watchdog
+            )
         }
 
         guard !(300..<400).contains(httpResponse.status.code) else {
