@@ -953,41 +953,31 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 let error = self.swiftErrno("setns(CLONE_NEWNS)")
                 throw RPCError(code: .internalError, message: "failed to enter container mount namespace", cause: error)
             }
-            if fchdir(containerFilesystem.root) != 0 {
-                let error = self.swiftErrno("fchdir(container root)")
-                throw RPCError(code: .internalError, message: "failed to enter container root", cause: error)
-            }
-            if chroot(".") != 0 {
-                let error = self.swiftErrno("chroot(container root)")
-                throw RPCError(code: .internalError, message: "failed to enter container root", cause: error)
-            }
-            if chdir("/") != 0 {
-                let error = self.swiftErrno("chdir(container root)")
-                throw RPCError(code: .internalError, message: "failed to enter container root", cause: error)
-            }
-            try self.doFilesystemOperation(path: path, operation: operation)
+            try self.doFilesystemOperation(root: containerFilesystem.root, path: path, operation: operation)
         }
 
         return .init()
     }
 
     private func doFilesystemOperation(
+        root: Int32,
         path: FilePath,
         operation: Com_Apple_Containerization_Sandbox_V3_FilesystemOperationRequest.OneOf_Operation
     ) throws {
-        var finfo = _stat_struct()
-        let rc = _stat(path.string, &finfo)
-        if rc != 0 {
-            let error = swiftErrno("stat")
-            throw RPCError(code: .notFound, message: "failed to stat path", cause: error)
-        }
-
-        let fd = open(path.string, O_RDONLY | O_NOFOLLOW)
+        let fd = FilesystemPathResolver.open(
+            root: root,
+            path: path.string,
+            flags: O_RDONLY | O_NOFOLLOW | O_CLOEXEC
+        )
         if fd < 0 {
-            if errno == ELOOP {
-                throw RPCError(code: .internalError, message: "path cannot be a symlink")
+            if errno == ENOENT {
+                let error = swiftErrno("openat2")
+                throw RPCError(code: .notFound, message: "failed to open path", cause: error)
             }
-            let error = swiftErrno("open")
+            if errno == ELOOP {
+                throw RPCError(code: .invalidArgument, message: "path cannot contain magic links or end in a symlink")
+            }
+            let error = swiftErrno("openat2")
             throw RPCError(code: .internalError, message: "failed to open path", cause: error)
         }
 
