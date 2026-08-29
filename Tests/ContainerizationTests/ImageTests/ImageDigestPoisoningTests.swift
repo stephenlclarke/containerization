@@ -257,6 +257,42 @@ struct ImageDigestPoisoningTests {
         #expect(try Data(contentsOf: statePath) == Data(state.utf8))
     }
 
+    /// A case-folding filesystem resolves uppercase hex aliases to the same
+    /// lowercase blob filename used by current releases. Migration must treat
+    /// those predecessor spellings as capable of naming live content too.
+    @Test(arguments: ["bare", "canonical", "legacy-prefix"])
+    func cleanupPreservesContentForCaseFoldedLegacyDigest(spelling: String) async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.dir) }
+
+        let healthyDigest = try await seedHealthyImage(fixture, reference: "test/healthy:v1")
+        let uppercaseHex = healthyDigest.encoded.uppercased()
+        let persistedDigest =
+            switch spelling {
+            case "bare": uppercaseHex
+            case "canonical": "sha256:\(uppercaseHex)"
+            default: "legacy:\(uppercaseHex)"
+            }
+        let state = """
+            {
+              "test/legacy:v1": {"mediaType":"application/vnd.oci.image.index.v1+json","digest":"\(persistedDigest)","size":\(Self.healthyIndexJSON.utf8.count)}
+            }
+            """
+        let statePath = fixture.dir.appendingPathComponent("state.json")
+        try Data(state.utf8).write(to: statePath)
+
+        let blobs = fixture.dir.appendingPathComponent("blobs/sha256")
+        let before = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+        await #expect(throws: (any Swift.Error).self) {
+            try await fixture.store.cleanUpOrphanedBlobs()
+        }
+        let after = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+
+        #expect(after == before)
+        #expect(after.contains(healthyDigest.encoded))
+        #expect(try Data(contentsOf: statePath) == Data(state.utf8))
+    }
+
     /// A manifest rejected for one descriptor's metadata can still name other
     /// live blobs. It must stop garbage collection rather than become an empty
     /// child list that permits those blobs to be deleted.

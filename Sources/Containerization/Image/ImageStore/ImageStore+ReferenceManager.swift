@@ -73,14 +73,13 @@ extension ImageStore {
             /// validated suffix so migration fails closed instead of dropping a
             /// live root from the garbage-collection keep set.
             private static func canNameStoredContent(_ digest: String) -> Bool {
-                if (try? ParsedDigest(parsingPathComponent: digest)) != nil {
-                    return true
-                }
                 let components = digest.split(separator: ":")
-                guard components.count == 2 else {
-                    return false
-                }
-                return (try? ParsedDigest(parsingPathComponent: String(components[1]))) != nil
+                let legacyPathComponent = components.count == 2 ? String(components[1]) : digest
+
+                // The predecessor used this component directly as a filename. A
+                // case-folding filesystem can therefore resolve uppercase or
+                // mixed-case hex to the canonical lowercase blob as well.
+                return (try? ParsedDigest(parsingPathComponent: legacyPathComponent.lowercased())) != nil
             }
 
             init(from decoder: any Decoder) throws {
