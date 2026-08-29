@@ -320,16 +320,17 @@ struct RegistryNetworkTests: ~Copyable {
                 return StubResponse.status(.methodNotAllowed)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
-        let descriptor = try await client.resolve(name: "example/image", tag: "latest")
+            let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
+            let descriptor = try await client.resolve(name: "example/image", tag: "latest")
 
-        #expect(descriptor.mediaType == MediaTypes.imageManifest)
-        #expect(descriptor.digest == SHA256.hash(data: manifest).digest)
-        #expect(descriptor.size == Int64(manifest.count))
-        #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+            #expect(descriptor.mediaType == MediaTypes.imageManifest)
+            #expect(descriptor.digest == SHA256.hash(data: manifest).digest)
+            #expect(descriptor.size == Int64(manifest.count))
+            #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+        }
     }
 
     @Test func resolveBoundsFallbackManifestSize() async throws {
@@ -346,20 +347,21 @@ struct RegistryNetworkTests: ~Copyable {
                 return StubResponse.status(.methodNotAllowed)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            bufferSize: 16
-        )
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                bufferSize: 16
+            )
 
-        await #expect(throws: (any Error).self) {
-            _ = try await client.resolve(name: "example/image", tag: "latest")
+            await #expect(throws: (any Error).self) {
+                _ = try await client.resolve(name: "example/image", tag: "latest")
+            }
+            #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
         }
-        #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -371,7 +373,7 @@ struct RegistryNetworkTests: ~Copyable {
             requestFinished.continuation.finish()
             return StubResponse.status(.ok)
         }
-        do {
+        try await Self.withAwaitedShutdown(server) {
             let port = try #require(server.port)
             let client = RegistryClient(
                 host: "127.0.0.1",
@@ -396,10 +398,6 @@ struct RegistryNetworkTests: ~Copyable {
                     break
                 }
             }
-            try await server.shutdown()
-        } catch {
-            try? await server.shutdown()
-            throw error
         }
     }
 
@@ -430,36 +428,37 @@ struct RegistryNetworkTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
-        )
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
+            )
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
+            )
 
-        try await client.push(
-            name: "example",
-            ref: "latest",
-            descriptor: descriptor,
-            streamGenerator: { Self.stream(payload) },
-            progress: nil
-        )
+            try await client.push(
+                name: "example",
+                ref: "latest",
+                descriptor: descriptor,
+                streamGenerator: { Self.stream(payload) },
+                progress: nil
+            )
 
-        let requests = server.recordedRequests()
-        let posts = requests.filter { $0.method == .POST }
-        let puts = requests.filter { $0.method == .PUT }
-        #expect(posts.count == 2)
-        #expect(puts.map(\.uri).contains { $0.contains("session-1") })
-        #expect(puts.map(\.uri).contains { $0.contains("session-2") })
-        #expect(puts.allSatisfy { $0.body == payload })
+            let requests = server.recordedRequests()
+            let posts = requests.filter { $0.method == .POST }
+            let puts = requests.filter { $0.method == .PUT }
+            #expect(posts.count == 2)
+            #expect(puts.map(\.uri).contains { $0.contains("session-1") })
+            #expect(puts.map(\.uri).contains { $0.contains("session-2") })
+            #expect(puts.allSatisfy { $0.body == payload })
+        }
     }
 
     @Test func blobPushDoesNotInventRetries() async throws {
@@ -480,30 +479,31 @@ struct RegistryNetworkTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
-
-        let error = await #expect(throws: RegistryClient.Error.self) {
-            try await client.push(
-                name: "example",
-                ref: "latest",
-                descriptor: descriptor,
-                streamGenerator: { Self.stream(payload) },
-                progress: nil
+            let client = RegistryClient(host: "127.0.0.1", scheme: "http", port: port)
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
             )
-        }
-        #expect(error != nil)
 
-        let requests = server.recordedRequests()
-        #expect(requests.filter { $0.method == .POST }.count == 1)
-        #expect(requests.filter { $0.method == .PUT }.count == 1)
+            let error = await #expect(throws: RegistryClient.Error.self) {
+                try await client.push(
+                    name: "example",
+                    ref: "latest",
+                    descriptor: descriptor,
+                    streamGenerator: { Self.stream(payload) },
+                    progress: nil
+                )
+            }
+            #expect(error != nil)
+
+            let requests = server.recordedRequests()
+            #expect(requests.filter { $0.method == .POST }.count == 1)
+            #expect(requests.filter { $0.method == .PUT }.count == 1)
+        }
     }
 
     @Test func blobPushRestartsWithFreshSessionAfterServerFailure() async throws {
@@ -532,32 +532,33 @@ struct RegistryNetworkTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
-        )
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
+            )
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
+            )
 
-        try await client.push(
-            name: "example",
-            ref: "latest",
-            descriptor: descriptor,
-            streamGenerator: { Self.stream(payload) },
-            progress: nil
-        )
+            try await client.push(
+                name: "example",
+                ref: "latest",
+                descriptor: descriptor,
+                streamGenerator: { Self.stream(payload) },
+                progress: nil
+            )
 
-        let requests = server.recordedRequests()
-        #expect(requests.filter { $0.method == .POST }.count == 2)
-        #expect(requests.filter { $0.method == .PUT }.count == 2)
+            let requests = server.recordedRequests()
+            #expect(requests.filter { $0.method == .POST }.count == 2)
+            #expect(requests.filter { $0.method == .PUT }.count == 2)
+        }
     }
 
     @Test func blobPushDoesNotRestartForUnrelated416() async throws {
@@ -578,38 +579,53 @@ struct RegistryNetworkTests: ~Copyable {
                 return StubResponse.status(.badRequest)
             }
         }
-        defer { Task { try? await server.shutdown() } }
-        let port = try #require(server.port)
+        try await Self.withAwaitedShutdown(server) {
+            let port = try #require(server.port)
 
-        let client = RegistryClient(
-            host: "127.0.0.1",
-            scheme: "http",
-            port: port,
-            retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
-        )
-        let descriptor = Descriptor(
-            mediaType: MediaTypes.imageLayer,
-            digest: digest,
-            size: Int64(payload.count)
-        )
-
-        let error = await #expect(throws: RegistryClient.Error.self) {
-            try await client.push(
-                name: "example",
-                ref: "latest",
-                descriptor: descriptor,
-                streamGenerator: { Self.stream(payload) },
-                progress: nil
+            let client = RegistryClient(
+                host: "127.0.0.1",
+                scheme: "http",
+                port: port,
+                retryOptions: RetryOptions(maxRetries: 1, retryInterval: 0)
             )
-        }
-        #expect(error != nil)
+            let descriptor = Descriptor(
+                mediaType: MediaTypes.imageLayer,
+                digest: digest,
+                size: Int64(payload.count)
+            )
 
-        let requests = server.recordedRequests()
-        #expect(requests.filter { $0.method == .POST }.count == 1)
-        #expect(requests.filter { $0.method == .PUT }.count == 1)
+            let error = await #expect(throws: RegistryClient.Error.self) {
+                try await client.push(
+                    name: "example",
+                    ref: "latest",
+                    descriptor: descriptor,
+                    streamGenerator: { Self.stream(payload) },
+                    progress: nil
+                )
+            }
+            #expect(error != nil)
+
+            let requests = server.recordedRequests()
+            #expect(requests.filter { $0.method == .POST }.count == 1)
+            #expect(requests.filter { $0.method == .PUT }.count == 1)
+        }
     }
 
     // MARK: private functions
+
+    private static func withAwaitedShutdown<T>(
+        _ server: StubHTTPServer,
+        operation: () async throws -> T
+    ) async throws -> T {
+        do {
+            let result = try await operation()
+            try await server.shutdown()
+            return result
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+    }
 
     static var hasRegistryCredentials: Bool {
         authentication != nil
