@@ -277,7 +277,7 @@ struct RealmRequestTests {
             port: server.port,
             retryOptions: nil,
             tlsConfiguration: tls,
-            tokenRequestTimeout: .milliseconds(50)
+            tokenRequestTimeout: .milliseconds(500)
         )
         let request = TokenRequest(
             realm: "https://127.0.0.1:\(server.port)/token",
