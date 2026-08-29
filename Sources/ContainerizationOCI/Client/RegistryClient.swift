@@ -77,6 +77,11 @@ public final class RegistryClient: ContentClient {
         insecure: Bool = false,
         auth: Authentication? = nil,
         tlsConfiguration: TLSConfiguration? = nil,
+        httpTimeout: HTTPClient.Configuration.Timeout = HTTPClient.Configuration.Timeout(
+            connect: .seconds(10),
+            read: .seconds(60),
+            write: .seconds(60)
+        ),
         logger: Logger? = nil,
     ) throws {
         let ref = try Reference.parse(reference)
@@ -99,6 +104,8 @@ public final class RegistryClient: ContentClient {
             authentication: auth,
             retryOptions: Self.defaultRetryOptions,
             tlsConfiguration: tlsConfiguration,
+            httpTimeout: httpTimeout,
+            logger: logger,
         )
     }
 
@@ -111,6 +118,11 @@ public final class RegistryClient: ContentClient {
         retryOptions: RetryOptions? = nil,
         bufferSize: Int = Int(4.mib()),
         tlsConfiguration: TLSConfiguration? = nil,
+        httpTimeout: HTTPClient.Configuration.Timeout = HTTPClient.Configuration.Timeout(
+            connect: .seconds(10),
+            read: .seconds(60),
+            write: .seconds(60)
+        ),
         logger: Logger? = nil,
     ) {
         var components = URLComponents()
@@ -124,6 +136,11 @@ public final class RegistryClient: ContentClient {
         self.retryOptions = retryOptions
         self.bufferSize = bufferSize
         var httpConfiguration = HTTPClient.Configuration()
+        // A registry or authorization server must not be able to leave an OCI operation
+        // suspended forever after a connection has been established. These are inactivity
+        // limits rather than whole-request deadlines, so large layer transfers can continue
+        // for as long as they keep making progress.
+        httpConfiguration.timeout = httpTimeout
 
         // proxy configuration assumes all client requests will go to `base` URL
         self.proxyURL = ProxyUtils.proxyFromEnvironment(scheme: scheme, host: host)

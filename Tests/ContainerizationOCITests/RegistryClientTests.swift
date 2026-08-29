@@ -16,6 +16,7 @@
 
 //
 
+import AsyncHTTPClient
 import ContainerizationError
 import ContainerizationIO
 import Crypto
@@ -28,6 +29,10 @@ import Testing
 
 @testable import ContainerizationOCI
 
+// The live-registry cases exercise several independent authentication services. Running them
+// concurrently creates avoidable connection pressure in Network.framework and can starve the
+// security-separated token clients on constrained hosted macOS runners.
+@Suite(.serialized)
 struct OCIClientTests: ~Copyable {
     private var contentPath: URL
     private let fileManager = FileManager.default
@@ -355,6 +360,30 @@ struct OCIClientTests: ~Copyable {
             _ = try await client.resolve(name: "example/image", tag: "latest")
         }
         #expect(server.recordedRequests().map(\.method) == [.HEAD, .GET])
+    }
+
+    @Test func registryRequestsBoundReadInactivity() async throws {
+        let server = try await StubHTTPServer(binding: .tcp) { _ in
+            Thread.sleep(forTimeInterval: 0.5)
+            return StubResponse.status(.ok)
+        }
+        defer { Task { try? await server.shutdown() } }
+        let port = try #require(server.port)
+        let client = RegistryClient(
+            host: "127.0.0.1",
+            scheme: "http",
+            port: port,
+            httpTimeout: HTTPClient.Configuration.Timeout(
+                connect: .seconds(1),
+                read: .milliseconds(50),
+                write: .seconds(1)
+            )
+        )
+
+        let error = await #expect(throws: HTTPClientError.self) {
+            try await client.ping()
+        }
+        #expect(error == .readTimeout)
     }
 
     @Test func blobPushRestartsWithFreshSessionAfterECR416() async throws {
