@@ -164,11 +164,20 @@ extension RegistryClient {
         // Authorization responses are small control-plane documents. Bound the complete
         // exchange as well as socket inactivity so a server that sends headers (or trickles
         // bytes) cannot hold the token path open indefinitely.
-        let httpResponse = try await tokenClient.execute(
+        let requestTask = tokenClient.execute(
             request: tokenHTTPRequest,
-            delegate: responseAccumulator,
-            deadline: NIODeadline.now() + tokenRequestTimeout
-        ).futureResult.get()
+            delegate: responseAccumulator
+        )
+        let watchdog = Task<Void, Never> {
+            do {
+                try await Task.sleep(for: .nanoseconds(tokenRequestTimeout.nanoseconds))
+            } catch {
+                return
+            }
+            requestTask.fail(reason: HTTPClientError.deadlineExceeded)
+        }
+        defer { watchdog.cancel() }
+        let httpResponse = try await requestTask.futureResult.get()
 
         guard !(300..<400).contains(httpResponse.status.code) else {
             throw Error.insecureCredentialExchange(message: "authorization server \(request.realm) redirected the token request")
