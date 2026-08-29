@@ -293,6 +293,48 @@ struct RealmRequestTests {
     }
 
     @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))
+    func tokenRequestPropagatesCancellation() async throws {
+        let server = try RecordingTLSServer.start(closeAfterResponse: false) { _ in
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1\r\n\r\n"
+        }
+        defer { server.stop() }
+
+        var tls = TLSConfiguration.makeClientConfiguration()
+        tls.certificateVerification = .none
+        let client = RegistryClient(
+            host: "127.0.0.1",
+            scheme: "https",
+            port: server.port,
+            retryOptions: nil,
+            tlsConfiguration: tls,
+            tokenRequestTimeout: .seconds(30)
+        )
+        let request = TokenRequest(
+            realm: "https://127.0.0.1:\(server.port)/token",
+            service: "registry",
+            clientId: "realm-test/1.0",
+            scope: nil
+        )
+
+        let task = Task { try await client.fetchToken(request: request) }
+        defer { task.cancel() }
+
+        let clock = ContinuousClock()
+        let requestDeadline = clock.now + .seconds(2)
+        while server.seen.isEmpty && clock.now < requestDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(!server.seen.isEmpty)
+
+        let cancellationStarted = clock.now
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+        #expect(clock.now - cancellationStarted < .seconds(1))
+    }
+
+    @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))
     func maliciousRealmIsNeitherFollowedNorCredentialed() async throws {
         let secret = "INTERNAL_SECRET_TOKEN_\(UUID().uuidString)"
 

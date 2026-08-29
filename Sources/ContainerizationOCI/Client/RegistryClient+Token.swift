@@ -38,37 +38,66 @@ private final class PublicSuffixExtractor: @unchecked Sendable {
 private let publicSuffixExtractor = PublicSuffixExtractor()
 
 private final class TokenRequestCompletion<Response: Sendable>: @unchecked Sendable {
+    typealias RequestCancellation = @Sendable (any Swift.Error) -> Void
+
     private let lock = NSLock()
     private var completed = false
-    private var watchdog: DispatchWorkItem?
+    private var continuation: CheckedContinuation<Response, any Swift.Error>?
+    private var pending: (result: Result<Response, any Swift.Error>, cancelUnderlyingRequest: Bool)?
+    private var watchdog: (any DispatchSourceTimer)?
+    private var requestCancellation: RequestCancellation?
 
-    func install(watchdog: DispatchWorkItem) {
+    func install(
+        continuation: CheckedContinuation<Response, any Swift.Error>,
+        watchdog: any DispatchSourceTimer,
+        requestCancellation: @escaping RequestCancellation
+    ) {
         lock.lock()
-        if completed {
+        guard completed else {
+            self.continuation = continuation
+            self.watchdog = watchdog
+            self.requestCancellation = requestCancellation
             lock.unlock()
-            watchdog.cancel()
             return
         }
-        self.watchdog = watchdog
+        let pending = self.pending
+        self.pending = nil
         lock.unlock()
+
+        watchdog.cancel()
+        guard let pending else {
+            return
+        }
+        if pending.cancelUnderlyingRequest, case .failure(let error) = pending.result {
+            requestCancellation(error)
+        }
+        continuation.resume(with: pending.result)
     }
 
     @discardableResult
-    func resume(
-        _ continuation: CheckedContinuation<Response, any Swift.Error>,
-        with result: Result<Response, any Swift.Error>
-    ) -> Bool {
+    func resume(with result: Result<Response, any Swift.Error>, cancelUnderlyingRequest: Bool = false) -> Bool {
         lock.lock()
         guard !completed else {
             lock.unlock()
             return false
         }
         completed = true
+        guard let continuation else {
+            pending = (result, cancelUnderlyingRequest)
+            lock.unlock()
+            return true
+        }
         let watchdog = self.watchdog
         self.watchdog = nil
+        let requestCancellation = self.requestCancellation
+        self.requestCancellation = nil
+        self.continuation = nil
         lock.unlock()
 
         watchdog?.cancel()
+        if cancelUnderlyingRequest, case .failure(let error) = result {
+            requestCancellation?(error)
+        }
         continuation.resume(with: result)
         return true
     }
@@ -207,22 +236,28 @@ extension RegistryClient {
             delegate: responseAccumulator
         )
         let completion = TokenRequestCompletion<HTTPClient.Response>()
-        let httpResponse: HTTPClient.Response = try await withCheckedThrowingContinuation { continuation in
-            requestTask.futureResult.whenComplete { result in
-                completion.resume(continuation, with: result)
-            }
-            // Keep the deadline off Swift's cooperative executor: callers may saturate it
-            // with blocking I/O, but that must not prevent an authorization timeout.
-            let watchdog = DispatchWorkItem {
-                if completion.resume(continuation, with: .failure(HTTPClientError.deadlineExceeded)) {
-                    requestTask.fail(reason: HTTPClientError.deadlineExceeded)
+        let httpResponse: HTTPClient.Response = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Keep the deadline off Swift's cooperative executor: callers may saturate it
+                // with blocking I/O, but that must not prevent an authorization timeout.
+                let watchdog = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+                let timeoutNanoseconds = max(0, Int(clamping: tokenRequestTimeout.nanoseconds))
+                watchdog.schedule(deadline: .now() + .nanoseconds(timeoutNanoseconds))
+                watchdog.setEventHandler { [weak completion] in
+                    completion?.resume(with: .failure(HTTPClientError.deadlineExceeded), cancelUnderlyingRequest: true)
+                }
+                watchdog.resume()
+                completion.install(
+                    continuation: continuation,
+                    watchdog: watchdog,
+                    requestCancellation: { error in requestTask.fail(reason: error) }
+                )
+                requestTask.futureResult.whenComplete { result in
+                    completion.resume(with: result)
                 }
             }
-            completion.install(watchdog: watchdog)
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(
-                deadline: .now() + .nanoseconds(Int(tokenRequestTimeout.nanoseconds)),
-                execute: watchdog
-            )
+        } onCancel: {
+            completion.resume(with: .failure(CancellationError()), cancelUnderlyingRequest: true)
         }
 
         guard !(300..<400).contains(httpResponse.status.code) else {
