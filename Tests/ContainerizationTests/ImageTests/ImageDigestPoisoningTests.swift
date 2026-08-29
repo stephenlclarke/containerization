@@ -293,6 +293,39 @@ struct ImageDigestPoisoningTests {
         #expect(try Data(contentsOf: statePath) == Data(state.utf8))
     }
 
+    /// Pre-validation releases used the suffix after a single colon as the
+    /// blob filename without constraining the algorithm or encoding. Every safe
+    /// filename that could still name content must stop migration from deleting
+    /// that root.
+    @Test(arguments: [
+        ("sha512:\(String(repeating: "a", count: 128))", String(repeating: "a", count: 128)),
+        ("legacy:blob-name", "blob-name"),
+        ("multi:colon:blob", "multi:colon:blob"),
+    ])
+    func cleanupPreservesContentForLegacyBlobFilename(persistedDigest: String, blobName: String) async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.dir) }
+
+        let blob = fixture.dir.appendingPathComponent("blobs/sha256/\(blobName)")
+        let contents = Data("legacy content".utf8)
+        try contents.write(to: blob)
+        let state = """
+            {
+              "test/legacy:v1": {"mediaType":"application/vnd.oci.image.index.v1+json","digest":"\(persistedDigest)","size":\(contents.count)}
+            }
+            """
+        let statePath = fixture.dir.appendingPathComponent("state.json")
+        try Data(state.utf8).write(to: statePath)
+
+        await #expect(throws: (any Swift.Error).self) {
+            try await fixture.store.cleanUpOrphanedBlobs()
+        }
+
+        #expect(FileManager.default.fileExists(atPath: blob.path))
+        #expect(try Data(contentsOf: blob) == contents)
+        #expect(try Data(contentsOf: statePath) == Data(state.utf8))
+    }
+
     /// A manifest rejected for one descriptor's metadata can still name other
     /// live blobs. It must stop garbage collection rather than become an empty
     /// child list that permits those blobs to be deleted.

@@ -69,17 +69,21 @@ extension ImageStore {
             }
 
             /// Before digest validation, state lookup stripped any single-colon
-            /// prefix. Treat those legacy spellings as capable of naming their
-            /// validated suffix so migration fails closed instead of dropping a
-            /// live root from the garbage-collection keep set.
+            /// prefix and used the result directly as a filename. Treat every
+            /// safe legacy path component as capable of naming content so
+            /// migration fails closed instead of dropping a live root from the
+            /// garbage-collection keep set.
             private static func canNameStoredContent(_ digest: String) -> Bool {
                 let components = digest.split(separator: ":")
                 let legacyPathComponent = components.count == 2 ? String(components[1]) : digest
 
-                // The predecessor used this component directly as a filename. A
-                // case-folding filesystem can therefore resolve uppercase or
-                // mixed-case hex to the canonical lowercase blob as well.
-                return (try? ParsedDigest(parsingPathComponent: legacyPathComponent.lowercased())) != nil
+                guard !legacyPathComponent.isEmpty,
+                    legacyPathComponent != ".",
+                    legacyPathComponent != ".."
+                else {
+                    return false
+                }
+                return !legacyPathComponent.contains("/") && !legacyPathComponent.utf8.contains(0)
             }
 
             init(from decoder: any Decoder) throws {
