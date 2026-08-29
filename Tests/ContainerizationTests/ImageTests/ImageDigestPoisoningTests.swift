@@ -227,6 +227,36 @@ struct ImageDigestPoisoningTests {
         #expect(try Data(contentsOf: statePath) == Data(state.utf8))
     }
 
+    /// Pre-validation releases resolved any single-colon digest prefix to the
+    /// same stored blob. Migration must fail closed for those records rather
+    /// than silently removing their live roots from garbage collection.
+    @Test(arguments: ["SHA256", "legacy"])
+    func cleanupPreservesContentForLegacyDigestPrefix(prefix: String) async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.dir) }
+
+        let healthyDigest = try await seedHealthyImage(fixture, reference: "test/healthy:v1")
+        let persistedDigest = "\(prefix):\(healthyDigest.encoded)"
+        let state = """
+            {
+              "test/legacy:v1": {"mediaType":"application/vnd.oci.image.index.v1+json","digest":"\(persistedDigest)","size":\(Self.healthyIndexJSON.utf8.count)}
+            }
+            """
+        let statePath = fixture.dir.appendingPathComponent("state.json")
+        try Data(state.utf8).write(to: statePath)
+
+        let blobs = fixture.dir.appendingPathComponent("blobs/sha256")
+        let before = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+        await #expect(throws: (any Swift.Error).self) {
+            try await fixture.store.cleanUpOrphanedBlobs()
+        }
+        let after = try FileManager.default.contentsOfDirectory(atPath: blobs.path).sorted()
+
+        #expect(after == before)
+        #expect(after.contains(healthyDigest.encoded))
+        #expect(try Data(contentsOf: statePath) == Data(state.utf8))
+    }
+
     /// A manifest rejected for one descriptor's metadata can still name other
     /// live blobs. It must stop garbage collection rather than become an empty
     /// child list that permits those blobs to be deleted.

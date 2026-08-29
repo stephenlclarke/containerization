@@ -68,10 +68,25 @@ extension ImageStore {
                 case digest
             }
 
+            /// Before digest validation, state lookup stripped any single-colon
+            /// prefix. Treat those legacy spellings as capable of naming their
+            /// validated suffix so migration fails closed instead of dropping a
+            /// live root from the garbage-collection keep set.
+            private static func canNameStoredContent(_ digest: String) -> Bool {
+                if (try? ParsedDigest(parsingPathComponent: digest)) != nil {
+                    return true
+                }
+                let components = digest.split(separator: ":")
+                guard components.count == 2 else {
+                    return false
+                }
+                return (try? ParsedDigest(parsingPathComponent: String(components[1]))) != nil
+            }
+
             init(from decoder: any Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 guard let digest = try? container.decode(String.self, forKey: .digest),
-                    (try? ParsedDigest(parsingPathComponent: digest)) != nil
+                    Self.canNameStoredContent(digest)
                 else {
                     self.descriptor = nil
                     return
