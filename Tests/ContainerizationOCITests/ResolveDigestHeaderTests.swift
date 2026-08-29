@@ -137,8 +137,7 @@ private final class HeaderStubServer: Sendable {
 /// traversing digest everywhere else — never runs on it. These tests drive the
 /// real client against a loopback server answering HEAD with a chosen
 /// `Docker-Content-Digest`.
-@Suite(.enabled(if: reachesLoopbackDirectly))
-struct ResolveDigestHeaderTests {
+extension RegistryNetworkTests {
     private static let valid = "sha256:\(String(repeating: "a", count: 64))"
 
     private func resolve(digestHeader: String?) async throws -> Descriptor {
@@ -156,7 +155,8 @@ struct ResolveDigestHeaderTests {
         }
     }
 
-    @Test func acceptsWellFormedDigestHeader() async throws {
+    @Test(.enabled(if: reachesLoopbackDirectly))
+    func acceptsWellFormedDigestHeader() async throws {
         let descriptor = try await resolve(digestHeader: Self.valid)
         #expect(descriptor.digest == Self.valid)
         #expect(descriptor.mediaType == MediaTypes.imageManifest)
@@ -167,26 +167,30 @@ struct ResolveDigestHeaderTests {
     /// a URL path segment on the follow-up GET and a content store path component
     /// once the blob lands. A registry — or anything answering as one — must not
     /// be able to put `../` in it.
-    @Test(arguments: [
-        "sha256:../../../../etc/hosts",
-        "sha256:" + String(repeating: "../", count: 64) + "etc/hosts",
-        "../../etc/hosts",
-        // Bare hex is a usable store path component but not a valid descriptor
-        // digest: `fetch` would GET /v2/<name>/manifests/<hex> with no algorithm.
-        String(repeating: "a", count: 64),
-        "sha256:",
-        "",
-        "sha256:\(String(repeating: "A", count: 64))",
-        "sha512:\(String(repeating: "a", count: 128))",
-        "sha256:\(String(repeating: "a", count: 63))",
-    ])
+    @Test(
+        .enabled(if: reachesLoopbackDirectly),
+        arguments: [
+            "sha256:../../../../etc/hosts",
+            "sha256:" + String(repeating: "../", count: 64) + "etc/hosts",
+            "../../etc/hosts",
+            // Bare hex is a usable store path component but not a valid descriptor
+            // digest: `fetch` would GET /v2/<name>/manifests/<hex> with no algorithm.
+            String(repeating: "a", count: 64),
+            "sha256:",
+            "",
+            "sha256:\(String(repeating: "A", count: 64))",
+            "sha512:\(String(repeating: "a", count: 128))",
+            "sha256:\(String(repeating: "a", count: 63))",
+        ]
+    )
     func rejectsMalformedDigestHeader(_ digest: String) async throws {
         await #expect(throws: ContainerizationError.self) {
             try await resolve(digestHeader: digest)
         }
     }
 
-    @Test func missingDigestHeaderFallsBackToManifestBody() async throws {
+    @Test(.enabled(if: reachesLoopbackDirectly))
+    func missingDigestHeaderFallsBackToManifestBody() async throws {
         let descriptor = try await resolve(digestHeader: nil)
         let body = Data("{}".utf8)
 
