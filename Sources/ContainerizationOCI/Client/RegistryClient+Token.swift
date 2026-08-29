@@ -36,6 +36,43 @@ private final class PublicSuffixExtractor: @unchecked Sendable {
 
 private let publicSuffixExtractor = PublicSuffixExtractor()
 
+private final class TokenRequestCompletion<Response: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+    private var watchdog: Task<Void, Never>?
+
+    func install(watchdog: Task<Void, Never>) {
+        lock.lock()
+        if completed {
+            lock.unlock()
+            watchdog.cancel()
+            return
+        }
+        self.watchdog = watchdog
+        lock.unlock()
+    }
+
+    @discardableResult
+    func resume(
+        _ continuation: CheckedContinuation<Response, any Swift.Error>,
+        with result: Result<Response, any Swift.Error>
+    ) -> Bool {
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return false
+        }
+        completed = true
+        let watchdog = self.watchdog
+        self.watchdog = nil
+        lock.unlock()
+
+        watchdog?.cancel()
+        continuation.resume(with: result)
+        return true
+    }
+}
+
 struct TokenRequest: Sendable {
     public static let authenticateHeaderName = "WWW-Authenticate"
 
@@ -168,16 +205,23 @@ extension RegistryClient {
             request: tokenHTTPRequest,
             delegate: responseAccumulator
         )
-        let watchdog = Task<Void, Never> {
-            do {
-                try await Task.sleep(for: .nanoseconds(tokenRequestTimeout.nanoseconds))
-            } catch {
-                return
+        let completion = TokenRequestCompletion<HTTPClient.Response>()
+        let httpResponse: HTTPClient.Response = try await withCheckedThrowingContinuation { continuation in
+            requestTask.futureResult.whenComplete { result in
+                completion.resume(continuation, with: result)
             }
-            requestTask.fail(reason: HTTPClientError.deadlineExceeded)
+            let watchdog = Task<Void, Never> {
+                do {
+                    try await Task.sleep(for: .nanoseconds(tokenRequestTimeout.nanoseconds))
+                } catch {
+                    return
+                }
+                if completion.resume(continuation, with: .failure(HTTPClientError.deadlineExceeded)) {
+                    requestTask.fail(reason: HTTPClientError.deadlineExceeded)
+                }
+            }
+            completion.install(watchdog: watchdog)
         }
-        defer { watchdog.cancel() }
-        let httpResponse = try await requestTask.futureResult.get()
 
         guard !(300..<400).contains(httpResponse.status.code) else {
             throw Error.insecureCredentialExchange(message: "authorization server \(request.realm) redirected the token request")
