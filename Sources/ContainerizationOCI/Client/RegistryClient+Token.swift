@@ -18,6 +18,7 @@ import AsyncHTTPClient
 import ContainerizationError
 import ContainerizationExtras
 import Foundation
+import NIOCore
 import NIOHTTP1
 import TLDExtractSwift
 
@@ -150,12 +151,24 @@ extension RegistryClient {
             throw ContainerizationError(.invalidArgument, message: "invalid url \(components.path)")
         }
 
-        var tokenHTTPRequest = HTTPClientRequest(url: url)
-        tokenHTTPRequest.headers.add(name: "User-Agent", value: clientID)
+        var tokenHeaders = HTTPHeaders()
+        tokenHeaders.add(name: "User-Agent", value: clientID)
         if let credentials = try await authentication?.token() {
-            tokenHTTPRequest.headers.add(name: "Authorization", value: credentials)
+            tokenHeaders.add(name: "Authorization", value: credentials)
         }
-        let httpResponse = try await tokenClient.execute(tokenHTTPRequest, deadline: .distantFuture)
+        let tokenHTTPRequest = try HTTPClient.Request(url: url, headers: tokenHeaders)
+        let responseAccumulator = ResponseAccumulator(
+            request: tokenHTTPRequest,
+            maxBodySize: self.bufferSize
+        )
+        // Authorization responses are small control-plane documents. Bound the complete
+        // exchange as well as socket inactivity so a server that sends headers (or trickles
+        // bytes) cannot hold the token path open indefinitely.
+        let httpResponse = try await tokenClient.execute(
+            request: tokenHTTPRequest,
+            delegate: responseAccumulator,
+            deadline: NIODeadline.now() + tokenRequestTimeout
+        ).futureResult.get()
 
         guard !(300..<400).contains(httpResponse.status.code) else {
             throw Error.insecureCredentialExchange(message: "authorization server \(request.realm) redirected the token request")
@@ -164,12 +177,14 @@ extension RegistryClient {
             throw Error.insecureCredentialExchange(message: "authorization server \(request.realm) issued its own authentication challenge")
         }
         guard httpResponse.status == .ok else {
-            let reason = await ErrorResponse.fromResponseBody(httpResponse.body)?.jsonString
+            let reason = ErrorResponse.fromResponseBody(httpResponse.body)?.jsonString
             throw Error.invalidStatus(url: url, httpResponse.status, reason: reason)
         }
 
-        let body = try await httpResponse.body.collect(upTo: self.bufferSize)
-        var response = try JSONDecoder().decode(TokenResponse.self, from: body)
+        guard let body = httpResponse.body else {
+            throw ContainerizationError(.internalError, message: "authorization server returned no token response body")
+        }
+        var response = try JSONDecoder().decode(TokenResponse.self, from: Data(body.readableBytesView))
         response.scope = scope
         return response
     }

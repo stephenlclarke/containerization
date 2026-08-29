@@ -16,6 +16,7 @@
 
 import AsyncHTTPClient
 import Foundation
+import NIOCore
 import NIOHTTP1
 
 extension RegistryClient {
@@ -61,6 +62,13 @@ extension RegistryClient {
                 return nil
             }
             return jsonError
+        }
+
+        internal static func fromResponseBody(_ body: ByteBuffer?) -> ErrorResponse? {
+            guard let body else {
+                return nil
+            }
+            return try? JSONDecoder().decode(ErrorResponse.self, from: Data(body.readableBytesView))
         }
 
         public var jsonString: String {

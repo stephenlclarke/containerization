@@ -16,6 +16,7 @@
 
 #if os(macOS)
 
+import AsyncHTTPClient
 import ContainerizationError
 import ContainerizationExtras
 import Crypto
@@ -111,7 +112,10 @@ private final class RecordingTLSServer: @unchecked Sendable {
         self.seenBox = seenBox
     }
 
-    static func start(respond: @escaping @Sendable (_ requestHead: String) -> String) throws -> RecordingTLSServer {
+    static func start(
+        closeAfterResponse: Bool = true,
+        respond: @escaping @Sendable (_ requestHead: String) -> String
+    ) throws -> RecordingTLSServer {
         let identity = try Self.makeEphemeralIdentity()
         var tls = TLSConfiguration.makeServerConfiguration(
             certificateChain: [.certificate(identity.certificate)], privateKey: .privateKey(identity.privateKey))
@@ -129,7 +133,13 @@ private final class RecordingTLSServer: @unchecked Sendable {
                 } catch {
                     return channel.eventLoop.makeFailedFuture(error)
                 }
-                return channel.pipeline.addHandler(RawResponder(seenBox: seenBox, respond: respond))
+                return channel.pipeline.addHandler(
+                    RawResponder(
+                        seenBox: seenBox,
+                        closeAfterResponse: closeAfterResponse,
+                        respond: respond
+                    )
+                )
             }
         let channel = try bootstrap.bind(host: "127.0.0.1", port: 0).wait()
         guard let port = channel.localAddress?.port else {
@@ -147,10 +157,16 @@ private final class RecordingTLSServer: @unchecked Sendable {
         typealias InboundIn = ByteBuffer
 
         private let seenBox: SeenBox
+        private let closeAfterResponse: Bool
         private let respond: @Sendable (String) -> String
 
-        init(seenBox: SeenBox, respond: @escaping @Sendable (String) -> String) {
+        init(
+            seenBox: SeenBox,
+            closeAfterResponse: Bool,
+            respond: @escaping @Sendable (String) -> String
+        ) {
             self.seenBox = seenBox
+            self.closeAfterResponse = closeAfterResponse
             self.respond = respond
         }
 
@@ -160,7 +176,9 @@ private final class RecordingTLSServer: @unchecked Sendable {
             seenBox.append(head)
             let channel = context.channel
             channel.writeAndFlush(channel.allocator.buffer(string: respond(head))).whenComplete { _ in
-                channel.close(promise: nil)
+                if self.closeAfterResponse {
+                    channel.close(promise: nil)
+                }
             }
         }
     }
@@ -242,6 +260,36 @@ struct RealmRequestTests {
         #expect(response.accessToken == token)
         #expect(server.seen.count == 1)
         #expect(server.seen[0].contains("User-Agent: realm-test/1.0"))
+    }
+
+    @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))
+    func tokenRequestHasAbsoluteDeadline() async throws {
+        let server = try RecordingTLSServer.start(closeAfterResponse: false) { _ in
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1\r\n\r\n"
+        }
+        defer { server.stop() }
+
+        var tls = TLSConfiguration.makeClientConfiguration()
+        tls.certificateVerification = .none
+        let client = RegistryClient(
+            host: "127.0.0.1",
+            scheme: "https",
+            port: server.port,
+            retryOptions: nil,
+            tlsConfiguration: tls,
+            tokenRequestTimeout: .milliseconds(50)
+        )
+        let request = TokenRequest(
+            realm: "https://127.0.0.1:\(server.port)/token",
+            service: "registry",
+            clientId: "realm-test/1.0",
+            scope: nil
+        )
+
+        let error = await #expect(throws: HTTPClientError.self) {
+            try await client.fetchToken(request: request)
+        }
+        #expect(error == .deadlineExceeded)
     }
 
     @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))

@@ -70,6 +70,7 @@ public final class RegistryClient: ContentClient {
     let authentication: Authentication?
     let retryOptions: RetryOptions?
     let bufferSize: Int
+    let tokenRequestTimeout: TimeAmount
     private let tokenCache = RegistryTokenCache()
 
     public convenience init(
@@ -82,6 +83,7 @@ public final class RegistryClient: ContentClient {
             read: .seconds(60),
             write: .seconds(60)
         ),
+        tokenRequestTimeout: TimeAmount = .seconds(60),
         logger: Logger? = nil,
     ) throws {
         let ref = try Reference.parse(reference)
@@ -105,6 +107,7 @@ public final class RegistryClient: ContentClient {
             retryOptions: Self.defaultRetryOptions,
             tlsConfiguration: tlsConfiguration,
             httpTimeout: httpTimeout,
+            tokenRequestTimeout: tokenRequestTimeout,
             logger: logger,
         )
     }
@@ -123,6 +126,7 @@ public final class RegistryClient: ContentClient {
             read: .seconds(60),
             write: .seconds(60)
         ),
+        tokenRequestTimeout: TimeAmount = .seconds(60),
         logger: Logger? = nil,
     ) {
         var components = URLComponents()
@@ -135,6 +139,7 @@ public final class RegistryClient: ContentClient {
         self.authentication = authentication
         self.retryOptions = retryOptions
         self.bufferSize = bufferSize
+        self.tokenRequestTimeout = tokenRequestTimeout
         var httpConfiguration = HTTPClient.Configuration()
         // A registry or authorization server must not be able to leave an OCI operation
         // suspended forever after a connection has been established. These are inactivity
