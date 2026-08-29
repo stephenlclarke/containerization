@@ -23,6 +23,7 @@ import ContainerizationNetlink
 import ContainerizationOCI
 import ContainerizationOS
 import Foundation
+import LCShim
 import Logging
 import Synchronization
 
@@ -47,6 +48,7 @@ final class ManagedProcess: ContainerProcess, Sendable {
         var waiters: [CheckedContinuation<ContainerExitStatus, Never>] = []
         var exitStatus: ContainerExitStatus? = nil
         var pid: Int32?
+        var signalDescriptor: Int32?
         var mountNamespace: ProcessMountNamespace?
         var root: ProcessRoot?
         var hostNetworkConfigured = false
@@ -225,7 +227,12 @@ extension ManagedProcess {
                         "pid": "\(pid)"
                     ])
                 let mountNamespace = try ProcessMountNamespace(pid: pid)
+                let signalDescriptor = CZ_pidfd_open(pid, 0)
+                guard signalDescriptor >= 0 else {
+                    throw POSIXError.fromErrno()
+                }
                 $0.pid = pid
+                $0.signalDescriptor = signalDescriptor
                 $0.mountNamespace = mountNamespace
 
                 // This should probably happen in vmexec, but we don't need to set any cgroup
@@ -319,6 +326,10 @@ extension ManagedProcess {
                 $0.mountNamespace = nil
                 $0.root = nil
                 $0.pid = nil
+                if let signalDescriptor = $0.signalDescriptor {
+                    _ = Foundation.close(signalDescriptor)
+                    $0.signalDescriptor = nil
+                }
             }
             if let errorData = try? self.errorPipe.fileHandleForReading.readToEnd(),
                 let errorString = String(data: errorData, encoding: .utf8),
@@ -347,6 +358,10 @@ extension ManagedProcess {
             state.mountNamespace = nil
             state.root = nil
             state.pid = nil
+            if let signalDescriptor = state.signalDescriptor {
+                _ = Foundation.close(signalDescriptor)
+                state.signalDescriptor = nil
+            }
 
             do {
                 try state.io.close()
@@ -378,19 +393,31 @@ extension ManagedProcess {
 
     func kill(_ signal: Int32) async throws {
         try self.state.withLock {
-            guard let pid = $0.pid else {
-                throw ContainerizationError(.invalidState, message: "process PID is required")
-            }
-
-            guard $0.exitStatus == nil else {
+            guard
+                let signalDescriptor = try Self.signalDescriptor(
+                    descriptor: $0.signalDescriptor,
+                    hasExited: $0.exitStatus != nil
+                )
+            else {
                 return
             }
 
-            self.log.info("sending signal \(signal) to process \(pid)")
-            guard Foundation.kill(pid, signal) == 0 else {
+            self.log.info("sending signal \(signal) to process \($0.pid ?? -1)")
+            guard CZ_pidfd_send_signal(signalDescriptor, signal, 0) == 0 else {
+                if errno == ESRCH {
+                    return
+                }
                 throw POSIXError.fromErrno()
             }
         }
+    }
+
+    static func signalDescriptor(descriptor: Int32?, hasExited: Bool) throws -> Int32? {
+        guard !hasExited else { return nil }
+        guard let descriptor else {
+            throw ContainerizationError(.invalidState, message: "process signal descriptor is required")
+        }
+        return descriptor
     }
 
     func resize(size: Terminal.Size) throws {

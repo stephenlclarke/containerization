@@ -38,6 +38,11 @@ int CZ_pidfd_getfd(int pidfd, int targetfd, unsigned int flags) {
   return syscall(SYS_pidfd_getfd, pidfd, targetfd, flags);
 }
 
+int CZ_pidfd_send_signal(int pidfd, int signal, unsigned int flags) {
+  // Musl doesn't have pidfd_send_signal.
+  return syscall(SYS_pidfd_send_signal, pidfd, signal, NULL, flags);
+}
+
 int CZ_prctl_set_no_new_privs() {
   return prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
 }
