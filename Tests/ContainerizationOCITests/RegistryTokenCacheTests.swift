@@ -37,6 +37,39 @@ private actor TokenFetcher {
     }
 }
 
+private actor ControlledTokenFetcher {
+    nonisolated let started: AsyncStream<Void>
+
+    private let startedContinuation: AsyncStream<Void>.Continuation
+    private var continuation: CheckedContinuation<TokenResponse, any Swift.Error>?
+    private(set) var count = 0
+
+    init() {
+        let started = AsyncStream<Void>.makeStream()
+        self.started = started.stream
+        self.startedContinuation = started.continuation
+    }
+
+    func fetch() async throws -> TokenResponse {
+        count += 1
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            startedContinuation.yield()
+        }
+    }
+
+    func succeed() {
+        continuation?.resume(
+            returning: TokenResponse(
+                token: "token",
+                accessToken: nil,
+                expiresIn: 60,
+                issuedAt: nil,
+                refreshToken: nil))
+        continuation = nil
+    }
+}
+
 private enum TokenFetchError: Error {
     case failed
 }
@@ -94,6 +127,39 @@ struct RegistryTokenCacheTests {
 
         #expect(results.count == 8)
         #expect(fetchCount == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func cancellationStopsOnlyTheWaitingCaller() async throws {
+        let fetcher = ControlledTokenFetcher()
+        let cache = RegistryTokenCache()
+        let request = Self.tokenRequest(scope: "repository:apple/container:pull")
+        let first = Task {
+            try await cache.token(for: request) {
+                try await fetcher.fetch()
+            }
+        }
+
+        var starts = fetcher.started.makeAsyncIterator()
+        _ = await starts.next()
+
+        let clock = ContinuousClock()
+        let cancellationStarted = clock.now
+        first.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await first.value
+        }
+        #expect(clock.now - cancellationStarted < .seconds(1))
+
+        let second = Task {
+            try await cache.token(for: request) {
+                try await fetcher.fetch()
+            }
+        }
+        await fetcher.succeed()
+
+        #expect(try await second.value.getToken() == "Bearer token")
+        #expect(await fetcher.count == 1)
     }
 
     @Test func refreshesExpiredTokens() async throws {
