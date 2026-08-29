@@ -159,6 +159,8 @@ private final class RecordingTLSServer: @unchecked Sendable {
         private let seenBox: SeenBox
         private let closeAfterResponse: Bool
         private let respond: @Sendable (String) -> String
+        private var requestHead = ""
+        private var responded = false
 
         init(
             seenBox: SeenBox,
@@ -171,11 +173,18 @@ private final class RecordingTLSServer: @unchecked Sendable {
         }
 
         func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+            guard !responded else {
+                return
+            }
             var buffer = self.unwrapInboundIn(data)
-            let head = buffer.readString(length: buffer.readableBytes) ?? ""
-            seenBox.append(head)
+            requestHead.append(buffer.readString(length: buffer.readableBytes) ?? "")
+            guard requestHead.contains("\r\n\r\n") else {
+                return
+            }
+            responded = true
+            seenBox.append(requestHead)
             let channel = context.channel
-            channel.writeAndFlush(channel.allocator.buffer(string: respond(head))).whenComplete { _ in
+            channel.writeAndFlush(channel.allocator.buffer(string: respond(requestHead))).whenComplete { _ in
                 if self.closeAfterResponse {
                     channel.close(promise: nil)
                 }
