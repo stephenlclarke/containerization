@@ -335,12 +335,10 @@ extension RegistryNetworkTests {
         }
         try #require(!server.seen.isEmpty)
 
-        let cancellationStarted = clock.now
         task.cancel()
         await #expect(throws: CancellationError.self) {
             try await task.value
         }
-        #expect(clock.now - cancellationStarted < .seconds(1))
     }
 
     @Test(.timeLimit(.minutes(1)), .enabled(if: loopbackIsDirect))

@@ -106,10 +106,8 @@ jobs:
           make protos
           if ! git diff --quiet ; then echo the following files require formatting or license headers: ; git diff --name-only ; false ; fi
 
-      - name: Make containerization, examples, and docs
-        run: |
-          make clean containerization examples docs
-          tar cfz _site.tgz _site
+      - name: Make containerization and examples
+        run: make clean containerization examples
         env:
           BUILD_CONFIGURATION: ${{ inputs.release && 'release' || 'debug' }}
 
@@ -167,37 +165,3 @@ jobs:
         with:
           name: vminit
           path: vminit.tar
-
-      - name: Save documentation artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
-        with:
-          name: api-docs
-          path: "./_site.tgz"
-          retention-days: 14
-
-  uploadPages:
-    # Separate upload step required because upload-pages-artifact needs
-    # gtar which is not on the macOS runner.
-    name: Upload artifact for GitHub Pages
-    needs: buildAndTest
-    if: ${{ github.repository == 'apple/containerization' }}
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Setup Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5
-
-      - name: Download a single artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
-        with:
-          name: api-docs
-
-      - name: Add API docs to documentation
-        run: |
-          tar xfz _site.tgz
-
-      - name: Upload Artifact
-        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b  # v4
-        with:
-          path: "./_site"

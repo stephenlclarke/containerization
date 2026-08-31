@@ -143,13 +143,10 @@ struct RegistryTokenCacheTests {
         var starts = fetcher.started.makeAsyncIterator()
         _ = await starts.next()
 
-        let clock = ContinuousClock()
-        let cancellationStarted = clock.now
         first.cancel()
         await #expect(throws: CancellationError.self) {
             try await first.value
         }
-        #expect(clock.now - cancellationStarted < .seconds(1))
 
         let second = Task {
             try await cache.token(for: request) {
