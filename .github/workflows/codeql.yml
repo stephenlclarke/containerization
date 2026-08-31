@@ -1,19 +1,18 @@
 name: CodeQL
+run-name: CodeQL release ${{ github.event.client_payload.release_ref || inputs.release_ref }}
 
+# CodeQL performs a full Swift rebuild. The release pipeline dispatches it
+# from main for a tag; operators can recover a published release manually.
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  repository_dispatch:
     types:
-      - opened
-      - synchronize
-      - reopened
-  schedule:
-    - cron: "31 3 * * 1"
+      - release-codeql
   workflow_dispatch:
+    inputs:
+      release_ref:
+        description: "Published semantic release tag to recover"
+        required: true
+        type: string
 
 permissions:
   actions: read
@@ -21,7 +20,7 @@ permissions:
   security-events: write
 
 concurrency:
-  group: codeql-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: codeql-${{ github.workflow }}-${{ github.event.client_payload.release_ref || inputs.release_ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,10 +29,60 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     steps:
+      - name: Require an eligible semantic release candidate on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF: ${{ github.event.client_payload.release_ref || inputs.release_ref }}
+          RELEASE_SHA: ${{ github.event.client_payload.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            printf 'Release CodeQL must be dispatched from main, got %s\n' "$GITHUB_REF" >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_REF" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            printf 'Release CodeQL requires a bare semantic release tag: %s\n' "$RELEASE_REF" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            release_json="$(gh release view "$RELEASE_REF" --repo "$GITHUB_REPOSITORY" --json isDraft,publishedAt)"
+            if ! jq -e '.isDraft == false and .publishedAt != null' <<<"$release_json" >/dev/null; then
+              printf 'CodeQL recovery requires a published, non-draft release: %s\n' "$RELEASE_REF" >&2
+              exit 1
+            fi
+          else
+            if [[ ! "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              printf 'Automatic release CodeQL requires a full release commit: %s\n' "$RELEASE_SHA" >&2
+              exit 1
+            fi
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_REF}" >/dev/null
+          fi
+
       - name: Checkout containerization
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: refs/tags/${{ github.event.client_payload.release_ref || inputs.release_ref }}
+
+      - name: Verify release checkout
+        id: release-checkout
+        env:
+          RELEASE_SHA: ${{ github.event.client_payload.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          if [[ "$GITHUB_EVENT_NAME" == "repository_dispatch" && "$actual" != "$RELEASE_SHA" ]]; then
+            printf 'CodeQL checkout mismatch: expected %s, got %s\n' "$RELEASE_SHA" "$actual" >&2
+            exit 1
+          fi
+          git fetch --force origin refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$actual" refs/remotes/origin/main; then
+            printf 'Release commit is not reachable from origin/main: %s\n' "$actual" >&2
+            exit 1
+          fi
+          printf 'sha=%s\n' "$actual" >> "$GITHUB_OUTPUT"
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
@@ -48,3 +97,5 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:swift"
+          ref: refs/heads/main
+          sha: ${{ steps.release-checkout.outputs.sha }}

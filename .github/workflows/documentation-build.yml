@@ -1,0 +1,58 @@
+name: Build containerization documentation
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+
+jobs:
+  buildDocumentation:
+    name: Build DocC documentation
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+        with:
+          fetch-depth: 0
+
+      - name: Build documentation
+        run: |
+          make docs
+          tar cfz _site.tgz _site
+
+      - name: Save documentation artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: api-docs
+          path: "./_site.tgz"
+          retention-days: 14
+
+  uploadPages:
+    # upload-pages-artifact requires GNU tar, which is unavailable on the
+    # macOS documentation runner.
+    name: Upload artifact for GitHub Pages
+    needs: buildDocumentation
+    if: github.repository == 'apple/containerization'
+    permissions:
+      contents: read
+      pages: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b  # v5
+
+      - name: Download documentation artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
+        with:
+          name: api-docs
+
+      - name: Extract documentation
+        run: tar xfz _site.tgz
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b  # v4
+        with:
+          path: "./_site"
