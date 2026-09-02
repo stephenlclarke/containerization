@@ -170,6 +170,33 @@ struct LinuxProcessStdioTests {
         #expect(allocator.allocate() == Self.stdoutPort)
     }
 
+    /// A failed guest deletion may leave a process able to dial its original
+    /// stdio ports. Those numbers must stay reserved until deletion is
+    /// confirmed or the VM is torn down.
+    @Test func retainsPortsWhenGuestDeletionFails() async throws {
+        let allocator = VsockPortAllocator(base: Self.stdoutPort)
+        let agent = StubVirtualMachineAgent(onDeleteProcess: {
+            throw ContainerizationError(.internalError, message: "guest deletion failed")
+        })
+        let stdio = IOUtil.setup(portAllocator: allocator, stdin: nil, stdout: DiscardWriter(), stderr: nil)
+        let process = LinuxProcess(
+            "undeleted",
+            containerID: "c",
+            spec: Self.spec(),
+            io: stdio,
+            portAllocator: allocator,
+            ociRuntimePath: nil,
+            agent: agent,
+            vm: StubVirtualMachineInstance(),
+            logger: nil
+        )
+
+        await #expect(throws: ContainerizationError.self) {
+            try await process.delete()
+        }
+        #expect(allocator.allocate() == Self.stdoutPort + 1)
+    }
+
     private static func spec() -> ContainerizationOCI.Spec {
         var spec = ContainerizationOCI.Spec()
         spec.process = LinuxProcessConfiguration(arguments: ["/bin/true"]).toOCI()
@@ -220,10 +247,16 @@ private final class StubVirtualMachineInstance: VirtualMachineInstance {
 private final class StubVirtualMachineAgent: VirtualMachineAgent {
     private let pid: Int32
     private let onCreateProcess: (@Sendable () async throws -> Void)?
+    private let onDeleteProcess: (@Sendable () async throws -> Void)?
 
-    init(pid: Int32 = 1, onCreateProcess: (@Sendable () async throws -> Void)? = nil) {
+    init(
+        pid: Int32 = 1,
+        onCreateProcess: (@Sendable () async throws -> Void)? = nil,
+        onDeleteProcess: (@Sendable () async throws -> Void)? = nil
+    ) {
         self.pid = pid
         self.onCreateProcess = onCreateProcess
+        self.onDeleteProcess = onDeleteProcess
     }
 
     func createProcess(
@@ -240,7 +273,9 @@ private final class StubVirtualMachineAgent: VirtualMachineAgent {
     }
 
     func startProcess(id: String, containerID: String?) async throws -> Int32 { pid }
-    func deleteProcess(id: String, containerID: String?) async throws {}
+    func deleteProcess(id: String, containerID: String?) async throws {
+        try await onDeleteProcess?()
+    }
     func close() async throws {}
 
     func standardSetup() async throws {}

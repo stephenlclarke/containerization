@@ -529,13 +529,6 @@ extension LinuxProcess {
     }
 
     private func performDeletion() async throws {
-        // Runs after the paths below have closed the host stdio handles, and
-        // only once (performDeletion is guarded by state.deletionTask). Ports
-        // deliberately come back at delete rather than at process exit: a
-        // straggling guest dial for a finished stream must not be handed to
-        // whichever process reuses the number next.
-        defer { self.releaseStdioPorts() }
-
         do {
             try await self.agent.deleteProcess(
                 id: self.id,
@@ -553,6 +546,12 @@ extension LinuxProcess {
                 cause: error,
             )
         }
+
+        // The guest has confirmed deletion, so no late dial from this process
+        // can be delivered to a future owner of the same port. Run after the
+        // remaining host cleanup paths and only once (performDeletion is
+        // guarded by state.deletionTask).
+        defer { self.releaseStdioPorts() }
 
         do {
             try self.state.withLock {

@@ -131,6 +131,27 @@ struct CHStdioPortSlotTests {
         try harness.slot.claim(by: harness.makeListener())
     }
 
+    /// An accept loop may capture the old owner just before that listener
+    /// finishes and a new owner claims the slot. Its terminated yield must not
+    /// clear the newer owner.
+    @Test func staleOwnerCannotRelinquishCurrentTenant() throws {
+        let harness = try SlotHarness()
+        defer { harness.cleanup() }
+
+        let old = harness.makeListener()
+        try harness.slot.claim(by: old)
+        try old.finish()
+
+        let current = harness.makeListener()
+        try harness.slot.claim(by: current)
+        harness.slot.relinquish(ifOwnedBy: old)
+
+        #expect(throws: ContainerizationError.self) {
+            try harness.slot.claim(by: harness.makeListener())
+        }
+        try current.finish()
+    }
+
     @Test func shutdownRefusesFurtherClaims() throws {
         let harness = try SlotHarness()
         defer { harness.cleanup() }

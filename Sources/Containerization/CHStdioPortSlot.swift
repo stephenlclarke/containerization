@@ -105,6 +105,17 @@ final class CHStdioPortSlot: Sendable {
         state.withLock { $0.owner = nil }
     }
 
+    /// Give up ownership only when `listener` still owns the slot. The accept
+    /// loop can observe an owner immediately before that listener finishes;
+    /// by the time `yield` reports termination, a new listener may already
+    /// have claimed the slot. Clearing that newer owner would drop its dial.
+    func relinquish(ifOwnedBy listener: VsockListener) {
+        state.withLock { state in
+            guard state.owner === listener else { return }
+            state.owner = nil
+        }
+    }
+
     /// Start the accept loop, if this is the slot's first tenant. The loop then
     /// runs until `shutdown()`, so ownership handoff never has to stop and
     /// restart it — which is what makes `relinquish()`/`claim(by:)` safe
@@ -217,7 +228,7 @@ final class CHStdioPortSlot: Sendable {
                 try? handle.close()
                 // That listener can never take another connection, so free the
                 // slot rather than wedging it, and keep accepting.
-                relinquish()
+                relinquish(ifOwnedBy: owner)
             }
         }
     }
