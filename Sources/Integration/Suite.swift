@@ -647,7 +647,15 @@ struct IntegrationSuite: AsyncParsableCommand {
                 // cctl --block CLI wiring (spawns bin/cctl; skips if unbuilt)
                 Test("cctl block NBD mount", testCctlBlockNBDMount),
                 Test("cctl block NBD raw", testCctlBlockNBDRaw),
-                Test("cctl block NBD format and persist", testCctlBlockNBDFormatAndPersist),
+                // This write-heavy case boots two VZ-backed cctl VMs against
+                // one NBD export. Keep it out of the concurrent lane so other
+                // cctl VMs cannot make Virtualization.framework stop it while
+                // the formatted device is being flushed and disconnected.
+                Test(
+                    "cctl block NBD format and persist",
+                    requiresExclusiveExecution: true,
+                    testCctlBlockNBDFormatAndPersist
+                ),
                 Test("cctl block rejects invalid spec", testCctlBlockRejectsInvalidSpec),
             ] + macOS26Tests()
         let tests: [Test] = crossPlatformTests + macOSOnlyTests
