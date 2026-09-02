@@ -320,8 +320,9 @@ public final class LinuxPod: Sendable {
 
     // Ports to be allocated from for stdio and for
     // unix socket relays that are sharing a guest
-    // uds to the host.
-    private let hostVsockPorts: Atomic<UInt32>
+    // uds to the host. Released ports are reused — see
+    // `VsockPortAllocator` for why that matters.
+    private let hostVsockPorts: VsockPortAllocator
     // Ports we request the guest to allocate for unix socket relays from
     // the host.
     private let guestVsockPorts: Atomic<UInt32>
@@ -406,7 +407,7 @@ public final class LinuxPod: Sendable {
         }
         self.id = id
         self.vmm = vmm
-        self.hostVsockPorts = Atomic<UInt32>(0x1000_0000)
+        self.hostVsockPorts = VsockPortAllocator(base: 0x1000_0000)
         self.guestVsockPorts = Atomic<UInt32>(0x1000_0000)
         self.logger = logger
 
@@ -1202,6 +1203,7 @@ extension LinuxPod {
                             containerID: pauseID,
                             spec: pauseSpec,
                             io: LinuxProcess.Stdio(stdin: nil, stdout: nil, stderr: nil),
+                            portAllocator: self.hostVsockPorts,
                             ociRuntimePath: nil,
                             agent: agent,
                             vm: vm,
@@ -1520,6 +1522,7 @@ extension LinuxPod {
                     containerID: containerID,
                     spec: spec,
                     io: stdio,
+                    portAllocator: self.hostVsockPorts,
                     ociRuntimePath: container.config.ociRuntimePath,
                     agent: agent,
                     vm: createdState.vm,
@@ -1963,18 +1966,19 @@ extension LinuxPod {
             try configuration(&config)
             spec.process = config.toOCI()
 
+            let agent = try await createdState.vm.dialAgent()
             let stdio = IOUtil.setup(
                 portAllocator: self.hostVsockPorts,
                 stdin: config.stdin,
                 stdout: config.stdout,
                 stderr: config.stderr
             )
-            let agent = try await createdState.vm.dialAgent()
             let process = LinuxProcess(
                 processID,
                 containerID: containerID,
                 spec: spec,
                 io: stdio,
+                portAllocator: self.hostVsockPorts,
                 ociRuntimePath: container.config.ociRuntimePath,
                 agent: agent,
                 vm: createdState.vm,
@@ -2148,7 +2152,9 @@ extension LinuxPod {
 
         let port: UInt32
         if socket.direction == .into {
-            port = self.hostVsockPorts.wrappingAdd(1, ordering: .relaxed).oldValue
+            // Held for the lifetime of the relay, so it is deliberately never
+            // released — the relay manager outlives this call.
+            port = self.hostVsockPorts.allocate()
             socket.destination = URL(filePath: Self.guestSocketStagingPath(socket.id))
         } else {
             port = self.guestVsockPorts.wrappingAdd(1, ordering: .relaxed).oldValue
