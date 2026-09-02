@@ -1966,13 +1966,13 @@ extension LinuxPod {
             try configuration(&config)
             spec.process = config.toOCI()
 
+            let agent = try await createdState.vm.dialAgent()
             let stdio = IOUtil.setup(
                 portAllocator: self.hostVsockPorts,
                 stdin: config.stdin,
                 stdout: config.stdout,
                 stderr: config.stderr
             )
-            let agent = try await createdState.vm.dialAgent()
             let process = LinuxProcess(
                 processID,
                 containerID: containerID,

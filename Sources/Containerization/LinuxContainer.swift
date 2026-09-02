@@ -1583,13 +1583,13 @@ extension LinuxContainer {
             try configuration(&config)
             spec.process = config.toOCI()
 
+            let agent = try await startedState.vm.dialAgent()
             let stdio = IOUtil.setup(
                 portAllocator: self.hostVsockPorts,
                 stdin: config.stdin,
                 stdout: config.stdout,
                 stderr: config.stderr
             )
-            let agent = try await startedState.vm.dialAgent()
             let process = LinuxProcess(
                 id,
                 containerID: self.id,
@@ -1621,13 +1621,13 @@ extension LinuxContainer {
             var spec = self.generateRuntimeSpec()
             spec.process = configuration.toOCI()
 
+            let agent = try await state.vm.dialAgent()
             let stdio = IOUtil.setup(
                 portAllocator: self.hostVsockPorts,
                 stdin: configuration.stdin,
                 stdout: configuration.stdout,
                 stderr: configuration.stderr
             )
-            let agent = try await state.vm.dialAgent()
             let process = LinuxProcess(
                 id,
                 containerID: self.id,
