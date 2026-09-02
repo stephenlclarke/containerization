@@ -99,6 +99,14 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "cctlTests",
+            dependencies: [
+                "cctl",
+                "Containerization",
+            ],
+            path: "Tests/cctlTests"
+        ),
+        .testTarget(
             name: "ContainerizationUnitTests",
             dependencies: ["Containerization", "CloudHypervisor"],
             path: "Tests/ContainerizationTests",
