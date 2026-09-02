@@ -2136,7 +2136,10 @@ extension LinuxContainer {
         try await self.state.withLock {
             let state = try $0.startedState("copyIn")
             let guestPath = URL(filePath: self.root).appending(path: destination.path)
-            let port = self.hostVsockPorts.wrappingAdd(1, ordering: .relaxed).oldValue
+            let port = self.hostVsockPorts.allocate()
+            // Deferred LIFO: hand the listener back before the port number, so
+            // a caller that reuses the number immediately finds the slot free.
+            defer { self.hostVsockPorts.release(port) }
             let listener = try state.vm.listen(port)
             let producerError = CopyOutProducerError()
             defer { try? listener.finish() }
@@ -2219,7 +2222,10 @@ extension LinuxContainer {
         try await self.state.withLock {
             let state = try $0.startedState("copyOut")
             let guestPath = URL(filePath: self.root).appending(path: source.path)
-            let port = self.hostVsockPorts.wrappingAdd(1, ordering: .relaxed).oldValue
+            let port = self.hostVsockPorts.allocate()
+            // Deferred LIFO: hand the listener back before the port number, so
+            // a caller that reuses the number immediately finds the slot free.
+            defer { self.hostVsockPorts.release(port) }
             let listener = try state.vm.listen(port)
             let (metadataStream, metadataCont) = AsyncStream.makeStream(of: Vminitd.CopyMetadata.self)
             let producerError = CopyOutProducerError()
