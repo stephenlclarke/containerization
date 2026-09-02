@@ -645,13 +645,21 @@ struct IntegrationSuite: AsyncParsableCommand {
                 Test("pod shared disk image volume", testPodSharedDiskImageVolume),
                 Test("pod shared tmpfs volume", testPodSharedTmpfsVolume),
 
-                // cctl --block CLI wiring (spawns bin/cctl; skips if unbuilt)
-                Test("cctl block NBD mount", testCctlBlockNBDMount),
-                Test("cctl block NBD raw", testCctlBlockNBDRaw),
-                // This write-heavy case boots two VZ-backed cctl VMs against
-                // one NBD export. Keep it out of the concurrent lane so other
-                // cctl VMs cannot make Virtualization.framework stop it while
-                // the formatted device is being flushed and disconnected.
+                // cctl --block CLI wiring (spawns bin/cctl; skips if unbuilt).
+                // Keep every VM-backed case out of the concurrent lane so an
+                // overlapping cctl VM cannot make Virtualization.framework
+                // stop it during teardown. The malformed-spec check remains
+                // concurrent because validation fails before a VM is booted.
+                Test(
+                    "cctl block NBD mount",
+                    requiresExclusiveExecution: true,
+                    testCctlBlockNBDMount
+                ),
+                Test(
+                    "cctl block NBD raw",
+                    requiresExclusiveExecution: true,
+                    testCctlBlockNBDRaw
+                ),
                 Test(
                     "cctl block NBD format and persist",
                     requiresExclusiveExecution: true,
