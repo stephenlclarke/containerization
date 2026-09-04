@@ -667,12 +667,33 @@ struct IntegrationSuite: AsyncParsableCommand {
                 ),
                 Test("cctl block rejects invalid spec", testCctlBlockRejectsInvalidSpec),
 
-                // cctl run command entrypoint resolution
-                Test("cctl run uses image default command", testCctlRunUsesImageDefaultCommand),
-                Test("cctl run explicit command overrides default", testCctlRunExplicitCommandOverridesDefault),
-                Test("cctl run without entrypoint or cmd fails", testCctlRunWithoutEntrypointOrCmdFails),
-                Test("cctl run entrypoint override keeps image cmd", testCctlRunEntrypointOverrideKeepsImageCmd),
-                Test("cctl run entrypoint override with command", testCctlRunEntrypointOverrideWithCommand),
+                // cctl subprocesses share the application image store and
+                // host-global vmnet resources, so their VMs must not overlap.
+                Test(
+                    "cctl run uses image default command",
+                    requiresExclusiveExecution: true,
+                    testCctlRunUsesImageDefaultCommand
+                ),
+                Test(
+                    "cctl run explicit command overrides default",
+                    requiresExclusiveExecution: true,
+                    testCctlRunExplicitCommandOverridesDefault
+                ),
+                Test(
+                    "cctl run without entrypoint or cmd fails",
+                    requiresExclusiveExecution: true,
+                    testCctlRunWithoutEntrypointOrCmdFails
+                ),
+                Test(
+                    "cctl run entrypoint override keeps image cmd",
+                    requiresExclusiveExecution: true,
+                    testCctlRunEntrypointOverrideKeepsImageCmd
+                ),
+                Test(
+                    "cctl run entrypoint override with command",
+                    requiresExclusiveExecution: true,
+                    testCctlRunEntrypointOverrideWithCommand
+                ),
             ] + macOS26Tests()
         let tests: [Test] = crossPlatformTests + macOSOnlyTests
         #else
