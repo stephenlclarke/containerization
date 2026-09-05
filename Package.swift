@@ -49,7 +49,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),
         .package(
             url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
-            revision: "09c5c9adcdd2a459187e45fe0143eb01063f244a",
+            revision: "3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285",
         ),
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.0.0"),
         .package(url: "https://github.com/swift-server/async-http-client.git", from: "1.20.1"),
