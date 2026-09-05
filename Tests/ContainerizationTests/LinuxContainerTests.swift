@@ -686,6 +686,25 @@ struct LinuxContainerTests {
         #expect(vm.startCalls == 1)
     }
 
+    @Test func podCreateStopsVirtualMachineAfterStartFailure() async throws {
+        let startError = ContainerizationError(.internalError, message: "start failed")
+        let manager = RecordingVirtualMachineManager(startError: startError)
+        let pod = try LinuxPod("pod-start-failure-test", vmm: manager) { _ in }
+
+        do {
+            try await pod.create()
+            Issue.record("expected create to fail")
+        } catch let error as ContainerizationError {
+            #expect(error.code == .internalError)
+            #expect(error.description.contains("start failed"))
+        }
+
+        let vm = try #require(manager.vm)
+        #expect(vm.startCalls == 1)
+        #expect(vm.stopCalls == 1)
+        #expect(vm.state == .stopped)
+    }
+
     @Test func graphicsConfigurationIsForwardedToVM() async throws {
         let manager = RecordingVirtualMachineManager()
         let container = try LinuxContainer(
