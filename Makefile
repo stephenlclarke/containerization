@@ -53,6 +53,7 @@ SWIFT ?= /usr/bin/swift
 else
 SWIFT ?= swift
 endif
+HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
 
 ROOT_DIR := $(shell git rev-parse --show-toplevel)
 BUILD_BIN_DIR = $(shell $(SWIFT) build -c $(BUILD_CONFIGURATION) $(SWIFT_SCRATCH_FLAGS) --show-bin-path)
@@ -460,14 +461,14 @@ swift-fmt-check:
 .PHONY: update-licenses
 update-licenses:
 	@echo Updating license headers...
-	@./scripts/ensure-hawkeye-exists.sh
-	@.local/bin/hawkeye format --fail-if-unknown --fail-if-updated false
+	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
+	@"$(HAWKEYE)" format --fail-if-unknown --fail-if-updated false
 
 .PHONY: check-licenses
 check-licenses:
 	@echo Checking license headers existence in source files...
-	@./scripts/ensure-hawkeye-exists.sh
-	@.local/bin/hawkeye check --fail-if-unknown
+	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
+	@"$(HAWKEYE)" check --fail-if-unknown
 
 .PHONY: pre-commit
 pre-commit:
