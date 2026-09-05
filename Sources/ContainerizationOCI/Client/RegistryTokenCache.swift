@@ -60,7 +60,7 @@ private final class TokenTaskWaiter<Response: Sendable>: @unchecked Sendable {
 actor RegistryTokenCache {
     private struct Key: Hashable {
         let realm: String
-        let service: String
+        let service: String?
         let scope: String?
 
         init(_ request: TokenRequest) {
