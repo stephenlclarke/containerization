@@ -15,7 +15,9 @@
 //===----------------------------------------------------------------------===//
 
 #if os(macOS)
+import Darwin
 import Foundation
+import NIO
 import Testing
 
 @testable import Containerization
@@ -34,6 +36,37 @@ struct VsockListenerTests {
 
         try handle?.close()
         handle = nil
+
+        #expect(weakOwner == nil)
+    }
+
+    @Test func vminitdRetainsConnectionOwnerWhileUsingDescriptor() async throws {
+        var descriptors = [Int32](repeating: -1, count: 2)
+        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0 else {
+            throw POSIXError(.init(rawValue: errno) ?? .EIO)
+        }
+
+        let peer = FileHandle(fileDescriptor: descriptors[1], closeOnDealloc: true)
+        let group = MultiThreadedEventLoopGroup.singleton
+        defer { try? peer.close() }
+
+        weak var weakOwner: ConnectionOwner?
+        var client: Vminitd?
+        do {
+            let handle = FileHandle(fileDescriptor: descriptors[0], closeOnDealloc: false)
+            var owner: ConnectionOwner? = ConnectionOwner()
+            weakOwner = owner
+            retainConnectionOwner(owner!, for: handle)
+
+            client = try await Vminitd(connection: handle, group: group)
+            owner = nil
+        }
+
+        #expect(weakOwner != nil)
+
+        try peer.close()
+        try? await client?.close()
+        client = nil
 
         #expect(weakOwner == nil)
     }
