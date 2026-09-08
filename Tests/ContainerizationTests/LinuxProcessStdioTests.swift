@@ -18,6 +18,7 @@ import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOCI
 import Foundation
+import GRPCCore
 import Synchronization
 import Testing
 
@@ -178,6 +179,7 @@ struct LinuxProcessStdioTests {
         let agent = StubVirtualMachineAgent(onDeleteProcess: {
             throw ContainerizationError(.internalError, message: "guest deletion failed")
         })
+        let vm = StubVirtualMachineInstance(recoveryAgent: StubVirtualMachineAgent())
         let stdio = IOUtil.setup(portAllocator: allocator, stdin: nil, stdout: DiscardWriter(), stderr: nil)
         let process = LinuxProcess(
             "undeleted",
@@ -187,14 +189,55 @@ struct LinuxProcessStdioTests {
             portAllocator: allocator,
             ociRuntimePath: nil,
             agent: agent,
-            vm: StubVirtualMachineInstance(),
+            vm: vm,
             logger: nil
         )
 
         await #expect(throws: ContainerizationError.self) {
             try await process.delete()
         }
+        #expect(vm.dialAgentCallCount == 0)
         #expect(allocator.allocate() == Self.stdoutPort + 1)
+    }
+
+    /// A process connection can finish while the VM and guest agent remain
+    /// available. Deletion must redial the VM, confirm guest cleanup, and only
+    /// then release the process's host-side resources.
+    @Test func redialsGuestAgentWhenProcessDeletionConnectionStops() async throws {
+        let allocator = VsockPortAllocator(base: Self.stdoutPort)
+        let primaryAgent = StubVirtualMachineAgent(onDeleteProcess: {
+            throw RuntimeError(
+                code: .clientIsStopped,
+                message: "Client has been stopped. Can't make any more RPCs."
+            )
+        })
+        let recoveryAgent = StubVirtualMachineAgent()
+        let vm = StubVirtualMachineInstance(recoveryAgent: recoveryAgent)
+        let stdio = IOUtil.setup(
+            portAllocator: allocator,
+            stdin: nil,
+            stdout: DiscardWriter(),
+            stderr: nil
+        )
+        let process = LinuxProcess(
+            "redial-delete",
+            containerID: "c",
+            spec: Self.spec(),
+            io: stdio,
+            portAllocator: allocator,
+            ociRuntimePath: nil,
+            agent: primaryAgent,
+            vm: vm,
+            logger: nil
+        )
+
+        try await process.delete()
+
+        #expect(primaryAgent.deleteProcessCallCount == 1)
+        #expect(primaryAgent.closeCallCount == 1)
+        #expect(recoveryAgent.deleteProcessCallCount == 1)
+        #expect(recoveryAgent.closeCallCount == 1)
+        #expect(allocator.allocate() == Self.stdoutPort)
     }
 
     private static func spec() -> ContainerizationOCI.Spec {
@@ -217,9 +260,19 @@ private final class StubVirtualMachineInstance: VirtualMachineInstance {
     typealias Agent = StubVirtualMachineAgent
 
     private let listeners = Mutex<[UInt32: VsockListener]>([:])
+    private let recoveryAgent: StubVirtualMachineAgent?
+    private let dialAgentCalls = Mutex<Int>(0)
+
+    init(recoveryAgent: StubVirtualMachineAgent? = nil) {
+        self.recoveryAgent = recoveryAgent
+    }
 
     var state: VirtualMachineInstanceState { .running }
     var mounts: [String: [AttachedFilesystem]] { [:] }
+
+    var dialAgentCallCount: Int {
+        dialAgentCalls.withLock { $0 }
+    }
 
     func listener(forPort port: UInt32) -> VsockListener? {
         listeners.withLock { $0[port] }
@@ -232,7 +285,11 @@ private final class StubVirtualMachineInstance: VirtualMachineInstance {
     }
 
     func dialAgent() async throws -> StubVirtualMachineAgent {
-        throw ContainerizationError(.unsupported, message: "dialAgent")
+        dialAgentCalls.withLock { $0 += 1 }
+        guard let recoveryAgent else {
+            throw ContainerizationError(.unsupported, message: "dialAgent")
+        }
+        return recoveryAgent
     }
     func dial(_ port: UInt32) async throws -> FileHandle {
         throw ContainerizationError(.unsupported, message: "dial")
@@ -248,6 +305,15 @@ private final class StubVirtualMachineAgent: VirtualMachineAgent {
     private let pid: Int32
     private let onCreateProcess: (@Sendable () async throws -> Void)?
     private let onDeleteProcess: (@Sendable () async throws -> Void)?
+    private let callCounts = Mutex<(deleteProcess: Int, close: Int)>((0, 0))
+
+    var deleteProcessCallCount: Int {
+        callCounts.withLock { $0.deleteProcess }
+    }
+
+    var closeCallCount: Int {
+        callCounts.withLock { $0.close }
+    }
 
     init(
         pid: Int32 = 1,
@@ -274,9 +340,12 @@ private final class StubVirtualMachineAgent: VirtualMachineAgent {
 
     func startProcess(id: String, containerID: String?) async throws -> Int32 { pid }
     func deleteProcess(id: String, containerID: String?) async throws {
+        callCounts.withLock { $0.deleteProcess += 1 }
         try await onDeleteProcess?()
     }
-    func close() async throws {}
+    func close() async throws {
+        callCounts.withLock { $0.close += 1 }
+    }
 
     func standardSetup() async throws {}
     func filesystemOperation(operation: FilesystemOperation, path: String, containerID: String?) async throws {}

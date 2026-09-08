@@ -19,6 +19,7 @@ import ContainerizationExtras
 import ContainerizationOCI
 import ContainerizationOS
 import Foundation
+import GRPCCore
 import Logging
 import Synchronization
 
@@ -534,6 +535,38 @@ extension LinuxProcess {
                 id: self.id,
                 containerID: self.owningContainer
             )
+        } catch let primaryError as RuntimeError where primaryError.code == .clientIsStopped {
+            // A process-owned connection can finish before container teardown
+            // reaches deletion. The VM is still live at this point, so recover
+            // through a fresh scoped agent rather than turning a completed
+            // process exit into a failed container stop.
+            do {
+                try await self.vm.withAgent { agent in
+                    try await agent.deleteProcess(
+                        id: self.id,
+                        containerID: self.owningContainer
+                    )
+                }
+            } catch {
+                self.logger?.error(
+                    "failed to delete process after redialing guest agent",
+                    metadata: [
+                        "error": "\(error)",
+                        "primaryError": "\(primaryError)",
+                        "process": "\(self.id)",
+                    ]
+                )
+                self.state.withLock {
+                    $0.stdinRelay?.cancel()
+                    try? $0.stdio.close()
+                }
+                try? await self.agent.close()
+                throw ContainerizationError(
+                    .internalError,
+                    message: "failed to delete process",
+                    cause: error,
+                )
+            }
         } catch {
             self.state.withLock {
                 $0.stdinRelay?.cancel()
