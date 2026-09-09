@@ -484,6 +484,8 @@ struct IntegrationSuite: AsyncParsableCommand {
             Test("container copy in directory over existing file fails", testCopyInDirectoryOverExistingFileFails),
             Test("container copy out", testCopyOut),
             Test("container copy out missing source does not block lifecycle", testCopyOutMissingSourceDoesNotBlockLifecycle),
+            Test("container copy in does not escape rootfs via symlink", testCopyInDoesNotEscapeRootfsViaSymlink),
+            Test("container copy out does not escape rootfs via symlink", testCopyOutDoesNotEscapeRootfsViaSymlink),
             Test("container copy large file", testCopyLargeFile),
             Test("container copy in directory", testCopyInDirectory),
             Test("container copy out directory", testCopyOutDirectory),

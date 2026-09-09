@@ -53,7 +53,7 @@ SWIFT ?= /usr/bin/swift
 else
 SWIFT ?= swift
 endif
-HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
+HAWKEYE ?= .local/bin/hawkeye
 
 ROOT_DIR := $(shell git rev-parse --show-toplevel)
 BUILD_BIN_DIR = $(shell $(SWIFT) build -c $(BUILD_CONFIGURATION) $(SWIFT_SCRATCH_FLAGS) --show-bin-path)
@@ -458,17 +458,29 @@ swift-fmt-check:
 	@echo Checking code formatting compliance...
 	@$(SWIFT) format lint --recursive --strict --configuration .swift-format-nolint $(SWIFT_SRC)
 
+.PHONY: hawkeye
+hawkeye:
+	@if [ ! -x "$(HAWKEYE)" ]; then ./scripts/install-hawkeye.sh; fi
+
 .PHONY: update-licenses
-update-licenses:
+update-licenses: hawkeye
 	@echo Updating license headers...
 	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
-	@"$(HAWKEYE)" format --fail-if-unknown --fail-if-updated false
+	@if "$(HAWKEYE)" format --help 2>&1 | grep -q -- '--fail-on-unknown'; then \
+		"$(HAWKEYE)" format --fail-on-unknown; \
+	else \
+		"$(HAWKEYE)" format --fail-if-unknown --fail-if-updated false; \
+	fi
 
 .PHONY: check-licenses
-check-licenses:
+check-licenses: hawkeye
 	@echo Checking license headers existence in source files...
 	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
-	@"$(HAWKEYE)" check --fail-if-unknown
+	@if "$(HAWKEYE)" check --help 2>&1 | grep -q -- '--fail-on-unknown'; then \
+		"$(HAWKEYE)" check --fail-on-unknown; \
+	else \
+		"$(HAWKEYE)" check --fail-if-unknown; \
+	fi
 
 .PHONY: pre-commit
 pre-commit:

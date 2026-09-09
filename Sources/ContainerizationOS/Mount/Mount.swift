@@ -14,8 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import CShim
-
 #if canImport(FoundationEssentials)
 import FoundationEssentials
 #else
@@ -150,21 +148,6 @@ extension Mount {
         }
     }
 
-    /// Open a path relative to `dirFd` using `openat2(2)` with `RESOLVE_IN_ROOT`.
-    ///
-    /// All symlink resolution is confined to the directory tree beneath `dirFd`.
-    /// Returns the file descriptor on success, or -1 on failure (with errno set).
-    private func openInRoot(dirFd: Int32, path: String, flags: Int32, mode: UInt64 = 0) -> Int32 {
-        path.withCString { cPath in
-            var how = cz_open_how(
-                flags: UInt64(flags),
-                mode: mode,
-                resolve: UInt64(RESOLVE_IN_ROOT)
-            )
-            return CZ_openat2(dirFd, cPath, &how, MemoryLayout<cz_open_how>.size)
-        }
-    }
-
     private func withResolvedSource<T>(_ operation: (String) throws -> T) throws -> T {
         guard let sourceRoot else {
             return try operation(source)
@@ -189,7 +172,7 @@ extension Mount {
         }
         defer { close(rootFd) }
 
-        let sourceFd = openInRoot(
+        let sourceFd = RootfsResolver.openInRoot(
             dirFd: rootFd,
             path: components.joined(separator: "/"),
             flags: O_RDONLY | O_DIRECTORY | O_CLOEXEC
@@ -233,7 +216,7 @@ extension Mount {
             leafIsFile
             ? (O_RDONLY | O_CLOEXEC)
             : (O_RDONLY | O_DIRECTORY | O_CLOEXEC)
-        let fd = openInRoot(dirFd: rootFd, path: relativePath, flags: openFlags)
+        let fd = RootfsResolver.openInRoot(dirFd: rootFd, path: relativePath, flags: openFlags)
         if fd >= 0 {
             close(rootFd)
             return fd
@@ -277,7 +260,7 @@ extension Mount {
         var firstMissing = 0
         for i in 0..<components.count {
             let subpath = components[0...i].joined(separator: "/")
-            let nextFd = openInRoot(dirFd: rootFd, path: subpath, flags: O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            let nextFd = RootfsResolver.openInRoot(dirFd: rootFd, path: subpath, flags: O_RDONLY | O_DIRECTORY | O_CLOEXEC)
             if nextFd < 0 {
                 firstMissing = i
                 break
