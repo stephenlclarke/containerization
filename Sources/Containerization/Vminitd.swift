@@ -497,6 +497,11 @@ extension Vminitd: VirtualMachineAgent {
                 $0.value = value
             })
     }
+
+    /// Stat an absolute path in the guest's root filesystem.
+    public func stat(path: URL) async throws -> ContainerizationOS.Stat {
+        try await stat(root: "/", path: path.path)
+    }
 }
 
 /// Vminitd specific rpcs.
