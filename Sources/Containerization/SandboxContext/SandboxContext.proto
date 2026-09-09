@@ -276,7 +276,8 @@ message CopyRequest {
   }
   // Direction of the copy operation.
   Direction direction = 1;
-  // Path in the guest (destination for COPY_IN, source for COPY_OUT).
+  // Path within the guest (destination for COPY_IN, source for COPY_OUT),
+  // resolved as if `root` were the filesystem root.
   string path = 2;
   // File mode for single-file COPY_IN (defaults to 0644 if not set).
   uint32 mode = 3;
@@ -286,16 +287,18 @@ message CopyRequest {
   uint32 vsock_port = 5;
   // Indicates that the data on vsock is a tar archive; compression is auto-detected for COPY_IN.
   bool is_archive = 6;
+  // Absolute path of the target root filesystem in the guest.
+  string root = 7;
   // For COPY_OUT: follow the source path if it is a symbolic link.
-  bool follow_symlink = 7;
+  bool follow_symlink = 8;
   // Preserve source UID/GID metadata for single-file copies.
-  bool preserve_ownership = 8;
+  bool preserve_ownership = 9;
   // Source UID for single-file COPY_IN when preserve_ownership is set.
-  uint32 uid = 9;
+  uint32 uid = 10;
   // Source GID for single-file COPY_IN when preserve_ownership is set.
-  uint32 gid = 10;
+  uint32 gid = 11;
   // For archived COPY_OUT directories, emit the directory contents rather than its basename.
-  bool copy_contents = 11;
+  bool copy_contents = 12;
 }
 
 message CopyResponse {
@@ -321,7 +324,12 @@ message CopyResponse {
   uint32 gid = 7;
 }
 
-message StatRequest { string path = 1; }
+message StatRequest {
+  // Path within the guest, resolved as if `root` were the filesystem root.
+  string path = 1;
+  // Absolute path of the target root filesystem in the guest.
+  string root = 2;
+}
 
 message Stat {
   uint64 dev = 1;   // st_dev:     ID of device containing file
