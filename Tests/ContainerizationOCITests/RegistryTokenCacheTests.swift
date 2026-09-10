@@ -23,7 +23,7 @@ import Testing
 private actor TokenFetcher {
     private(set) var count = 0
 
-    func fetch(expiresIn: UInt, issuedAt: String? = nil, delay: Duration? = nil) async throws -> TokenResponse {
+    func fetch(expiresIn: UInt, issuedAt: Date = Date(), delay: Duration? = nil) async throws -> TokenResponse {
         count += 1
         if let delay {
             try await Task.sleep(for: delay)
@@ -64,7 +64,7 @@ private actor ControlledTokenFetcher {
                 token: "token",
                 accessToken: nil,
                 expiresIn: 60,
-                issuedAt: nil,
+                issuedAt: Date(),
                 refreshToken: nil))
         continuation = nil
     }
@@ -166,32 +166,47 @@ struct RegistryTokenCacheTests {
         let request = Self.tokenRequest(scope: "repository:apple/container:pull")
 
         _ = try await cache.token(for: request) {
-            try await fetcher.fetch(expiresIn: 10)
+            try await fetcher.fetch(expiresIn: 10, issuedAt: currentDate.withLock { $0 })
         }
         currentDate.withLock { $0.addTimeInterval(11) }
         _ = try await cache.token(for: request) {
-            try await fetcher.fetch(expiresIn: 10)
+            try await fetcher.fetch(expiresIn: 10, issuedAt: currentDate.withLock { $0 })
         }
         let fetchCount = await fetcher.count
 
         #expect(fetchCount == 2)
     }
 
-    @Test func respectsIssuedAtWithoutFractionalSeconds() async throws {
-        let currentDate = Date(timeIntervalSince1970: 1_000)
-        let fetcher = TokenFetcher()
-        let cache = RegistryTokenCache(now: { currentDate })
-        let request = Self.tokenRequest(scope: "repository:apple/container:pull")
+    @Test func decodesIssuedAtWithoutFractionalSeconds() throws {
+        let response = try JSONDecoder().decode(
+            TokenResponse.self,
+            from: Data(#"{"token":"token","expires_in":10,"issued_at":"1970-01-01T00:16:00Z"}"#.utf8))
 
-        _ = try await cache.token(for: request) {
-            try await fetcher.fetch(expiresIn: 10, issuedAt: "1970-01-01T00:16:00Z")
-        }
-        _ = try await cache.token(for: request) {
-            try await fetcher.fetch(expiresIn: 60)
-        }
-        let fetchCount = await fetcher.count
+        #expect(response.issuedAt == Date(timeIntervalSince1970: 960))
+    }
 
-        #expect(fetchCount == 2)
+    @Test func decodesTokenResponseDefaults() throws {
+        let beforeDecode = Date()
+        let response = try JSONDecoder().decode(TokenResponse.self, from: Data(#"{"token":"token"}"#.utf8))
+        let afterDecode = Date()
+
+        #expect(response.expiresIn == 60)
+        #expect(response.issuedAt >= beforeDecode)
+        #expect(response.issuedAt <= afterDecode)
+        #expect(response.isValid(scope: nil))
+    }
+
+    @Test func roundTripsTokenResponseDate() throws {
+        let original = TokenResponse(
+            token: "token",
+            accessToken: nil,
+            expiresIn: 60,
+            issuedAt: Date(timeIntervalSince1970: 1_000),
+            refreshToken: nil)
+
+        let decoded = try JSONDecoder().decode(TokenResponse.self, from: JSONEncoder().encode(original))
+
+        #expect(decoded == original)
     }
 
     @Test func retriesAfterAFailedFetch() async throws {

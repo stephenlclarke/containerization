@@ -142,16 +142,19 @@ struct TokenResponse: Codable, Hashable, Sendable {
     /// When both are specified, they should be equivalent; if they differ the client's choice is undefined.
     let accessToken: String?
     ///  The duration in seconds since the token was issued that it will remain valid.
-    ///  When omitted, this defaults to 60 seconds.
-    let expiresIn: UInt?
-    /// The RFC3339-serialized UTC standard time at which a given token was issued.
-    /// If issued_at is omitted, the expiration is from when the token exchange completed.
-    let issuedAt: String?
+    ///  When omitted by the server, this defaults to 60 seconds.
+    let expiresIn: UInt
+    /// The UTC standard time at which a given token was issued.
+    /// If issued_at is omitted by the server, the expiration is measured from when the token
+    /// exchange completed, i.e. now.
+    let issuedAt: Date
     /// Token which can be used to get additional access tokens for the same subject with different scopes.
     /// This token should be kept secure by the client and only sent to the authorization server which issues bearer tokens.
     /// This field will only be set when `offline_token=true` is provided in the request.
     let refreshToken: String?
 
+    /// The scope this token was requested for, populated by `fetchToken` after decoding since it
+    /// is not part of the server's response body.
     var scope: String?
 
     private enum CodingKeys: String, CodingKey {
@@ -162,6 +165,55 @@ struct TokenResponse: Codable, Hashable, Sendable {
         case refreshToken = "refresh_token"
     }
 
+    private static var isoFormatter: ISO8601DateFormatter {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }
+
+    init(
+        token: String?,
+        accessToken: String?,
+        expiresIn: UInt,
+        issuedAt: Date,
+        refreshToken: String?,
+        scope: String? = nil
+    ) {
+        self.token = token
+        self.accessToken = accessToken
+        self.expiresIn = expiresIn
+        self.issuedAt = issuedAt
+        self.refreshToken = refreshToken
+        self.scope = scope
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        token = try container.decodeIfPresent(String.self, forKey: .token)
+        accessToken = try container.decodeIfPresent(String.self, forKey: .accessToken)
+        refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
+        // Per spec, an omitted expires_in defaults to 60 seconds.
+        expiresIn = try container.decodeIfPresent(UInt.self, forKey: .expiresIn) ?? 60
+        // Per spec, an omitted issued_at means the expiration is measured from when the token
+        // exchange completed, i.e. now.
+        if let issuedAtString = try container.decodeIfPresent(String.self, forKey: .issuedAt),
+            let issuedAt = Self.parseIssuedAt(issuedAtString)
+        {
+            self.issuedAt = issuedAt
+        } else {
+            self.issuedAt = Date()
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(token, forKey: .token)
+        try container.encodeIfPresent(accessToken, forKey: .accessToken)
+        try container.encodeIfPresent(refreshToken, forKey: .refreshToken)
+        try container.encode(expiresIn, forKey: .expiresIn)
+        try container.encode(Self.isoFormatter.string(from: issuedAt), forKey: .issuedAt)
+    }
+
     func getToken() -> String? {
         if let t = token ?? accessToken {
             return "Bearer \(t)"
@@ -169,6 +221,25 @@ struct TokenResponse: Codable, Hashable, Sendable {
         return nil
     }
 
+    func isValid(scope: String?) -> Bool {
+        let elapsed = Date().timeIntervalSince(issuedAt)
+        guard elapsed < Double(expiresIn) else {
+            return false
+        }
+        if let requiredScope = scope {
+            return requiredScope == self.scope
+        }
+        return true
+    }
+
+    private static func parseIssuedAt(_ value: String) -> Date? {
+        if let date = isoFormatter.date(from: value) {
+            return date
+        }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
 }
 
 struct AuthenticateChallenge: Equatable {

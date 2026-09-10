@@ -117,7 +117,7 @@ actor RegistryTokenCache {
             }
             entries[key] = Entry(
                 response: response,
-                expiresAt: expirationDate(for: response, receivedAt: now()))
+                expiresAt: expirationDate(for: response))
         }
         return try await Self.value(of: task)
     }
@@ -141,23 +141,7 @@ actor RegistryTokenCache {
         }
     }
 
-    private func expirationDate(for response: TokenResponse, receivedAt: Date) -> Date {
-        let issuedAt: Date
-        if let value = response.issuedAt, let parsed = parseIssuedAt(value) {
-            issuedAt = parsed
-        } else {
-            issuedAt = receivedAt
-        }
-        return issuedAt.addingTimeInterval(TimeInterval(response.expiresIn ?? 60))
-    }
-
-    private func parseIssuedAt(_ value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
-            return date
-        }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
+    private func expirationDate(for response: TokenResponse) -> Date {
+        response.issuedAt.addingTimeInterval(TimeInterval(response.expiresIn))
     }
 }
