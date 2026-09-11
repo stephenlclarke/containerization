@@ -51,8 +51,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check SwiftPM package identities
+        run: |
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+          ./scripts/check-swiftpm-package-identities.sh
+
       - name: Install system dependencies
-        run: apt-get update && apt-get install -y curl make e2fsprogs libarchive-dev libbz2-dev liblzma-dev libssl-dev
+        run: apt-get update && apt-get install -y curl make xz-utils e2fsprogs libarchive-dev libbz2-dev liblzma-dev libssl-dev
+
+      - name: Check formatting
+        run: |
+          ./scripts/install-hawkeye.sh
+          make fmt
+          git diff
+          if ! git diff --quiet ; then echo the following files require formatting or license headers: ; git diff --name-only ; false ; fi
 
       - name: Install Static Linux SDK
         run: make -C vminitd linux-sdk
@@ -93,13 +105,6 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
         with:
           fetch-depth: 0
-
-      - name: Check formatting
-        run: |
-          ./scripts/install-hawkeye.sh
-          make fmt
-          git diff
-          if ! git diff --quiet ; then echo the following files require formatting or license headers: ; git diff --name-only ; false ; fi
 
       - name: Check protobufs
         run: |

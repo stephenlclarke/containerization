@@ -133,6 +133,10 @@ endef
 include Protobuf.Makefile
 .DEFAULT_GOAL := all
 
+.PHONY: check-package-identities
+check-package-identities:
+	@./scripts/check-swiftpm-package-identities.sh
+
 .PHONY: deps
 deps:
 ifeq ($(UNAME_S),Linux)
