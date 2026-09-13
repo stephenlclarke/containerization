@@ -158,9 +158,7 @@ jobs:
         if: >-
           ${{ (inputs.release && github.repository == 'apple/containerization')
           || (github.repository == 'stephenlclarke/containerization'
-          && github.event_name == 'push'
-          && (github.ref == 'refs/heads/main'
-          || github.ref == 'refs/heads/fix/95-publish-fork-vminit')) }}
+          && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           bin/cctl images save vminit:latest -o publication-vminit.tar
 
@@ -168,9 +166,7 @@ jobs:
         if: >-
           ${{ (inputs.release && github.repository == 'apple/containerization')
           || (github.repository == 'stephenlclarke/containerization'
-          && github.event_name == 'push'
-          && (github.ref == 'refs/heads/main'
-          || github.ref == 'refs/heads/fix/95-publish-fork-vminit')) }}
+          && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: publication-vminit-${{ github.sha }}
@@ -197,9 +193,7 @@ jobs:
     if: >-
       ${{ (inputs.release && github.repository == 'apple/containerization')
       || (github.repository == 'stephenlclarke/containerization'
-      && github.event_name == 'push'
-      && (github.ref == 'refs/heads/main'
-      || github.ref == 'refs/heads/fix/95-publish-fork-vminit')) }}
+      && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     timeout-minutes: 30
     runs-on: >-
       ${{ github.repository == 'apple/containerization'
@@ -251,7 +245,7 @@ jobs:
           set -euo pipefail
           repository="${GITHUB_REPOSITORY}/vminit"
           image="ghcr.io/${repository}:${SOURCE_SHA}"
-          public_bootstrap_tag="a72855928c80986c732218b53325ad238f6d0efa"
+          public_bootstrap_tag="66a0bf9e88ecc7ad181ce9ab2232952265051a9d"
           if [[ "$GITHUB_REF" == 'refs/heads/main' ]]; then
             public_bootstrap_ready=false
             for attempt in {1..12}; do
@@ -288,22 +282,39 @@ jobs:
             exit 1
           fi
 
-          authenticated_token="$(
-            curl --connect-timeout 10 --max-time 30 \
-              --fail --silent --show-error \
-              --user "${REGISTRY_USERNAME}:${REGISTRY_TOKEN}" \
-              "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
-              | jq -er '.token'
-          )"
           headers="${RUNNER_TEMP}/vminit-manifest.headers"
-          status="$(
-            curl --connect-timeout 10 --max-time 30 \
-              --silent --show-error --head --output /dev/null \
-              --dump-header "$headers" --write-out '%{http_code}' \
-              --header "Authorization: Bearer ${authenticated_token}" \
-              --header 'Accept: application/vnd.oci.image.index.v1+json' \
-              "https://ghcr.io/v2/${repository}/manifests/${SOURCE_SHA}"
-          )"
+          authenticated_state_ready=false
+          status=''
+          for attempt in {1..12}; do
+            authenticated_token=''
+            if authenticated_token="$(
+                curl --connect-timeout 10 --max-time 30 \
+                  --fail --silent --show-error \
+                  --user "${REGISTRY_USERNAME}:${REGISTRY_TOKEN}" \
+                  "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+                  | jq -er '.token'
+              )"; then
+              status="$(
+                curl --connect-timeout 10 --max-time 30 \
+                  --silent --show-error --head --output /dev/null \
+                  --dump-header "$headers" --write-out '%{http_code}' \
+                  --header "Authorization: Bearer ${authenticated_token}" \
+                  --header 'Accept: application/vnd.oci.image.index.v1+json' \
+                  "https://ghcr.io/v2/${repository}/manifests/${SOURCE_SHA}"
+              )"
+              if [[ "$status" == 200 || "$status" == 404 ]]; then
+                authenticated_state_ready=true
+                break
+              fi
+            fi
+            (( attempt < 12 )) || break
+            sleep 5
+          done
+          if [[ "$authenticated_state_ready" != true ]]; then
+            printf 'could not establish immutable image state: HTTP %s\n' \
+              "${status:-unavailable}" >&2
+            exit 1
+          fi
           case "$status" in
             200)
               remote_digest="$(
@@ -318,7 +329,19 @@ jobs:
               fi
               ;;
             404)
-              bin/cctl images push "$image"
+              push_complete=false
+              for attempt in 1 2 3; do
+                if bin/cctl images push "$image"; then
+                  push_complete=true
+                  break
+                fi
+                (( attempt < 3 )) || break
+                sleep 5
+              done
+              if [[ "$push_complete" != true ]]; then
+                echo 'exact vminit image push failed after 3 attempts' >&2
+                exit 1
+              fi
               ;;
             *)
               printf 'could not establish immutable image state: HTTP %s\n' \
