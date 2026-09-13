@@ -76,6 +76,7 @@ SWIFT_SDK_URL := $(shell grep '^SWIFT_SDK_URL' vminitd/Makefile | head -1 | sed 
 SWIFT_SDK_CHECKSUM := $(shell grep '^SWIFT_SDK_CHECKSUM' vminitd/Makefile | head -1 | sed 's/.*:= *//')
 LINUX_DEV_IMAGE := containerization-dev:$(SWIFT_VERSION)
 VMINIT_IMAGE ?= vminit:latest
+VMINIT_IMAGE_SOURCE ?= https://github.com/apple/containerization
 
 # Use an alternative path (backed by a named volume) for the build cache
 # when building products inside of a container
@@ -357,7 +358,7 @@ init-image:
 	@rm -f bin/init.block
 	@./bin/cctl rootfs create \
 		--image $(VMINIT_IMAGE) \
-		--label org.opencontainers.image.source=https://github.com/apple/containerization \
+		--label org.opencontainers.image.source=$(VMINIT_IMAGE_SOURCE) \
 		bin/init.rootfs.tar.gz
 
 .PHONY: vminitd
