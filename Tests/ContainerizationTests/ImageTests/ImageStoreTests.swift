@@ -41,6 +41,34 @@ public class ImageStoreTests: ContainsAuth {
         try! FileManager.default.removeItem(at: self.dir)
     }
 
+    @Test func emptyRegistryCredentialsAreIgnored() {
+        #expect(Self.authentication(environment: [:]) == nil)
+        #expect(
+            Self.authentication(
+                environment: [
+                    "REGISTRY_USERNAME": "",
+                    "REGISTRY_TOKEN": "token",
+                ]
+            ) == nil
+        )
+        #expect(
+            Self.authentication(
+                environment: [
+                    "REGISTRY_USERNAME": "user",
+                    "REGISTRY_TOKEN": "",
+                ]
+            ) == nil
+        )
+        #expect(
+            Self.authentication(
+                environment: [
+                    "REGISTRY_USERNAME": "user",
+                    "REGISTRY_TOKEN": "token",
+                ]
+            ) != nil
+        )
+    }
+
     @Test func testImageStoreOperation() async throws {
         let fileManager = FileManager.default
         let tempDir = fileManager.uniqueTemporaryDirectory()

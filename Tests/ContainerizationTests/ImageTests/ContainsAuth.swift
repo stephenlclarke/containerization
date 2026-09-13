@@ -27,9 +27,14 @@ extension ContainsAuth {
     }
 
     static var authentication: Authentication? {
-        let env = ProcessInfo.processInfo.environment
-        guard let password = env["REGISTRY_TOKEN"],
-            let username = env["REGISTRY_USERNAME"]
+        authentication(environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func authentication(environment: [String: String]) -> Authentication? {
+        guard let password = environment["REGISTRY_TOKEN"],
+            !password.isEmpty,
+            let username = environment["REGISTRY_USERNAME"],
+            !username.isEmpty
         else {
             return nil
         }
