@@ -158,7 +158,9 @@ jobs:
         if: >-
           ${{ (inputs.release && github.repository == 'apple/containerization')
           || (github.repository == 'stephenlclarke/containerization'
-          && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+          && github.event_name == 'push'
+          && (github.ref == 'refs/heads/main'
+          || github.ref == 'refs/heads/fix/95-publish-fork-vminit')) }}
         run: |
           bin/cctl images save vminit:latest -o publication-vminit.tar
 
@@ -166,7 +168,9 @@ jobs:
         if: >-
           ${{ (inputs.release && github.repository == 'apple/containerization')
           || (github.repository == 'stephenlclarke/containerization'
-          && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+          && github.event_name == 'push'
+          && (github.ref == 'refs/heads/main'
+          || github.ref == 'refs/heads/fix/95-publish-fork-vminit')) }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: publication-vminit-${{ github.sha }}
@@ -193,7 +197,9 @@ jobs:
     if: >-
       ${{ (inputs.release && github.repository == 'apple/containerization')
       || (github.repository == 'stephenlclarke/containerization'
-      && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      && github.event_name == 'push'
+      && (github.ref == 'refs/heads/main'
+      || github.ref == 'refs/heads/fix/95-publish-fork-vminit')) }}
     timeout-minutes: 30
     runs-on: >-
       ${{ github.repository == 'apple/containerization'
@@ -246,29 +252,31 @@ jobs:
           repository="${GITHUB_REPOSITORY}/vminit"
           image="ghcr.io/${repository}:${SOURCE_SHA}"
           public_bootstrap_tag="a72855928c80986c732218b53325ad238f6d0efa"
-          public_bootstrap_ready=false
-          for attempt in {1..12}; do
-            bootstrap_token=''
-            if bootstrap_token="$(
-                curl --connect-timeout 10 --max-time 30 \
-                  --fail --silent --show-error \
-                  "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
-                  | jq -er '.token'
-              )" \
-              && curl --connect-timeout 10 --max-time 30 \
-                --fail --silent --show-error --head --output /dev/null \
-                --header "Authorization: Bearer ${bootstrap_token}" \
-                --header 'Accept: application/vnd.oci.image.index.v1+json' \
-                "https://ghcr.io/v2/${repository}/manifests/${public_bootstrap_tag}"; then
-              public_bootstrap_ready=true
-              break
+          if [[ "$GITHUB_REF" == 'refs/heads/main' ]]; then
+            public_bootstrap_ready=false
+            for attempt in {1..12}; do
+              bootstrap_token=''
+              if bootstrap_token="$(
+                  curl --connect-timeout 10 --max-time 30 \
+                    --fail --silent --show-error \
+                    "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+                    | jq -er '.token'
+                )" \
+                && curl --connect-timeout 10 --max-time 30 \
+                  --fail --silent --show-error --head --output /dev/null \
+                  --header "Authorization: Bearer ${bootstrap_token}" \
+                  --header 'Accept: application/vnd.oci.image.index.v1+json' \
+                  "https://ghcr.io/v2/${repository}/manifests/${public_bootstrap_tag}"; then
+                public_bootstrap_ready=true
+                break
+              fi
+              (( attempt < 12 )) || break
+              sleep 5
+            done
+            if [[ "$public_bootstrap_ready" != true ]]; then
+              echo 'fork vminit package is not anonymously pullable' >&2
+              exit 1
             fi
-            (( attempt < 12 )) || break
-            sleep 5
-          done
-          if [[ "$public_bootstrap_ready" != true ]]; then
-            echo 'fork vminit package is not anonymously pullable' >&2
-            exit 1
           fi
           bin/cctl images tag vminit:latest "$image"
           local_digest="$(
