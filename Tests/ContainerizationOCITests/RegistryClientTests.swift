@@ -108,6 +108,35 @@ struct RegistryNetworkTests: ~Copyable {
         try await client.ping()
     }
 
+    @Test
+    func emptyRegistryCredentialsAreIgnored() {
+        #expect(Self.authentication(environment: [:]) == nil)
+        #expect(
+            Self.authentication(
+                environment: [
+                    "REGISTRY_USERNAME": "",
+                    "REGISTRY_TOKEN": "token",
+                ]
+            ) == nil
+        )
+        #expect(
+            Self.authentication(
+                environment: [
+                    "REGISTRY_USERNAME": "user",
+                    "REGISTRY_TOKEN": "",
+                ]
+            ) == nil
+        )
+        #expect(
+            Self.authentication(
+                environment: [
+                    "REGISTRY_USERNAME": "user",
+                    "REGISTRY_TOKEN": "token",
+                ]
+            ) != nil
+        )
+    }
+
     @Test func resolve() async throws {
         let client = RegistryClient(host: "ghcr.io")
         let descriptor = try await client.resolve(name: "apple/containerization/dockermanifestimage", tag: "0.0.2")
@@ -633,9 +662,14 @@ struct RegistryNetworkTests: ~Copyable {
     }
 
     static var authentication: Authentication? {
-        let env = ProcessInfo.processInfo.environment
-        guard let password = env["REGISTRY_TOKEN"],
-            let username = env["REGISTRY_USERNAME"]
+        authentication(environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func authentication(environment: [String: String]) -> Authentication? {
+        guard let password = environment["REGISTRY_TOKEN"],
+            !password.isEmpty,
+            let username = environment["REGISTRY_USERNAME"],
+            !username.isEmpty
         else {
             return nil
         }

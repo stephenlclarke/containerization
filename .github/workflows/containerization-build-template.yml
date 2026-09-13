@@ -98,7 +98,7 @@ jobs:
       && fromJSON('["self-hosted", "macos", "tahoe", "ARM64"]') || 'macos-26' }}
     permissions:
       contents: read
-      packages: write
+      packages: read
 
     steps:
       - name: Checkout repository
@@ -127,14 +127,19 @@ jobs:
           make init-image
         env:
           BUILD_CONFIGURATION: ${{ inputs.release && 'release' || 'debug' }}
+          VMINIT_IMAGE_SOURCE: https://github.com/${{ github.repository }}
 
       - name: Test containerization
         timeout-minutes: 15
         run: |
           make test
         env:
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_TOKEN: >-
+            ${{ (inputs.release || (github.event_name == 'push'
+            && github.ref == 'refs/heads/main')) && github.token || '' }}
+          REGISTRY_USERNAME: >-
+            ${{ (inputs.release || (github.event_name == 'push'
+            && github.ref == 'refs/heads/main')) && github.actor || '' }}
 
       - name: Test containerization integration
         if: ${{ github.repository == 'apple/containerization' }}
@@ -142,20 +147,31 @@ jobs:
           make fetch-default-kernel
           make integration
         env:
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_TOKEN: >-
+            ${{ (inputs.release || (github.event_name == 'push'
+            && github.ref == 'refs/heads/main')) && github.token || '' }}
+          REGISTRY_USERNAME: >-
+            ${{ (inputs.release || (github.event_name == 'push'
+            && github.ref == 'refs/heads/main')) && github.actor || '' }}
 
-      - name: Push vminitd image
+      - name: Create publication image tar
         if: >-
-          ${{ inputs.release && github.repository == 'apple/containerization' }}
-        env:
-          REGISTRY_TOKEN: ${{ github.token }}
-          REGISTRY_USERNAME: ${{ github.actor }}
-          REGISTRY_HOST: ghcr.io
-          VERSION: ${{ inputs.version }}
+          ${{ (inputs.release && github.repository == 'apple/containerization')
+          || (github.repository == 'stephenlclarke/containerization'
+          && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
-          bin/cctl images tag vminit:latest "ghcr.io/apple/containerization/vminit:${VERSION}"
-          bin/cctl images push "ghcr.io/apple/containerization/vminit:${VERSION}"
+          bin/cctl images save vminit:latest -o publication-vminit.tar
+
+      - name: Upload publication image
+        if: >-
+          ${{ (inputs.release && github.repository == 'apple/containerization')
+          || (github.repository == 'stephenlclarke/containerization'
+          && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
+        with:
+          name: publication-vminit-${{ github.sha }}
+          path: publication-vminit.tar
+          if-no-files-found: error
 
       - name: Create image tar
         if: >-
@@ -170,3 +186,198 @@ jobs:
         with:
           name: vminit
           path: vminit.tar
+
+  publishVminit:
+    name: Publish vminit image
+    needs: [buildGuest, buildAndTest]
+    if: >-
+      ${{ (inputs.release && github.repository == 'apple/containerization')
+      || (github.repository == 'stephenlclarke/containerization'
+      && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    timeout-minutes: 30
+    runs-on: >-
+      ${{ github.repository == 'apple/containerization'
+      && fromJSON('["self-hosted", "macos", "tahoe", "ARM64"]') || 'macos-26' }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8  # v6
+        with:
+          fetch-depth: 0
+
+      - name: Build publication client
+        run: make clean containerization
+        env:
+          BUILD_CONFIGURATION: ${{ inputs.release && 'release' || 'debug' }}
+
+      - name: Download publication image
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7
+        with:
+          name: publication-vminit-${{ github.sha }}
+
+      - name: Load publication image
+        run: bin/cctl images load -i publication-vminit.tar
+
+      - name: Push Apple release image
+        if: >-
+          ${{ inputs.release && github.repository == 'apple/containerization' }}
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_HOST: ghcr.io
+          VERSION: ${{ inputs.version }}
+        run: |
+          bin/cctl images tag vminit:latest "ghcr.io/apple/containerization/vminit:${VERSION}"
+          bin/cctl images push "ghcr.io/apple/containerization/vminit:${VERSION}"
+
+      - name: Publish immutable exact fork image
+        if: ${{ github.repository == 'stephenlclarke/containerization' }}
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_HOST: ghcr.io
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="${GITHUB_REPOSITORY}/vminit"
+          image="ghcr.io/${repository}:${SOURCE_SHA}"
+          public_bootstrap_tag="66a0bf9e88ecc7ad181ce9ab2232952265051a9d"
+          if [[ "$GITHUB_REF" == 'refs/heads/main' ]]; then
+            public_bootstrap_ready=false
+            for attempt in {1..12}; do
+              bootstrap_token=''
+              if bootstrap_token="$(
+                  curl --connect-timeout 10 --max-time 30 \
+                    --fail --silent --show-error \
+                    "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+                    | jq -er '.token'
+                )" \
+                && curl --connect-timeout 10 --max-time 30 \
+                  --fail --silent --show-error --head --output /dev/null \
+                  --header "Authorization: Bearer ${bootstrap_token}" \
+                  --header 'Accept: application/vnd.oci.image.index.v1+json' \
+                  "https://ghcr.io/v2/${repository}/manifests/${public_bootstrap_tag}"; then
+                public_bootstrap_ready=true
+                break
+              fi
+              (( attempt < 12 )) || break
+              sleep 5
+            done
+            if [[ "$public_bootstrap_ready" != true ]]; then
+              echo 'fork vminit package is not anonymously pullable' >&2
+              exit 1
+            fi
+          fi
+          bin/cctl images tag vminit:latest "$image"
+          local_digest="$(
+            bin/cctl images | awk -v reference="$image" \
+              '$1 == reference { print $3 }'
+          )"
+          if [[ ! "$local_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo 'could not resolve the local exact-image digest' >&2
+            exit 1
+          fi
+
+          headers="${RUNNER_TEMP}/vminit-manifest.headers"
+          authenticated_state_ready=false
+          status=''
+          for attempt in {1..12}; do
+            authenticated_token=''
+            if authenticated_token="$(
+                curl --connect-timeout 10 --max-time 30 \
+                  --fail --silent --show-error \
+                  --user "${REGISTRY_USERNAME}:${REGISTRY_TOKEN}" \
+                  "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+                  | jq -er '.token'
+              )"; then
+              status="$(
+                curl --connect-timeout 10 --max-time 30 \
+                  --silent --show-error --head --output /dev/null \
+                  --dump-header "$headers" --write-out '%{http_code}' \
+                  --header "Authorization: Bearer ${authenticated_token}" \
+                  --header 'Accept: application/vnd.oci.image.index.v1+json' \
+                  "https://ghcr.io/v2/${repository}/manifests/${SOURCE_SHA}"
+              )"
+              if [[ "$status" == 200 || "$status" == 404 ]]; then
+                authenticated_state_ready=true
+                break
+              fi
+            fi
+            (( attempt < 12 )) || break
+            sleep 5
+          done
+          if [[ "$authenticated_state_ready" != true ]]; then
+            printf 'could not establish immutable image state: HTTP %s\n' \
+              "${status:-unavailable}" >&2
+            exit 1
+          fi
+          case "$status" in
+            200)
+              remote_digest="$(
+                awk 'tolower($1) == "docker-content-digest:" {
+                  gsub("\\r", "", $2); print $2
+                }' "$headers"
+              )"
+              if [[ "$remote_digest" != "$local_digest" ]]; then
+                printf 'refusing to replace immutable image %s: %s != %s\n' \
+                  "$image" "$remote_digest" "$local_digest" >&2
+                exit 1
+              fi
+              ;;
+            404)
+              push_complete=false
+              for attempt in 1 2 3; do
+                if bin/cctl images push "$image"; then
+                  push_complete=true
+                  break
+                fi
+                (( attempt < 3 )) || break
+                sleep 5
+              done
+              if [[ "$push_complete" != true ]]; then
+                echo 'exact vminit image push failed after 3 attempts' >&2
+                exit 1
+              fi
+              ;;
+            *)
+              printf 'could not establish immutable image state: HTTP %s\n' \
+                "$status" >&2
+              exit 1
+              ;;
+          esac
+
+          for attempt in {1..12}; do
+            anonymous_token=''
+            if anonymous_token="$(
+                curl --connect-timeout 10 --max-time 30 \
+                  --fail --silent --show-error \
+                  "https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull" \
+                  | jq -er '.token'
+              )" \
+              && curl --connect-timeout 10 --max-time 30 \
+                --fail --silent --show-error --head \
+                --output /dev/null --dump-header "$headers" \
+                --header "Authorization: Bearer ${anonymous_token}" \
+                --header 'Accept: application/vnd.oci.image.index.v1+json' \
+                "https://ghcr.io/v2/${repository}/manifests/${SOURCE_SHA}"; then
+              published_digest="$(
+                awk 'tolower($1) == "docker-content-digest:" {
+                  gsub("\\r", "", $2); print $2
+                }' "$headers"
+              )"
+              if [[ "$published_digest" != "$local_digest" ]]; then
+                printf 'published image digest changed: %s != %s\n' \
+                  "$published_digest" "$local_digest" >&2
+                exit 1
+              fi
+              exit 0
+            fi
+            (( attempt < 12 )) || break
+            sleep 5
+          done
+          echo 'exact vminit image did not become anonymously resolvable' >&2
+          exit 1

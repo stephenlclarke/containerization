@@ -10,11 +10,19 @@ on:
   push:
     branches:
       - main
-      - release/*
 
 concurrency:
-  group: containerization-build-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: >-
+    ${{ github.repository == 'stephenlclarke/containerization'
+    && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    && format('containerization-build-{0}-{1}', github.workflow, github.sha)
+    || format('containerization-build-{0}-{1}-{2}', github.workflow,
+    github.event_name, github.head_ref || github.ref_name) }}
+  # Every accepted fork-main SHA is an immutable runtime authority. Do not let
+  # a newer push cancel its publication before the exact image tag exists.
+  cancel-in-progress: >-
+    ${{ !(github.repository == 'stephenlclarke/containerization'
+    && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
 jobs:
   changes:
