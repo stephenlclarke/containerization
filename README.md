@@ -216,6 +216,8 @@ open http://localhost:8000/containerization/documentation/
 
 Contributions to Containerization are welcomed and encouraged. Please see [CONTRIBUTING.md](/CONTRIBUTING.md) for more information.
 
+`make coverage-sonar` runs the instrumented Swift package suite and emits project-confined LCOV plus SonarQube generic XML. `make sonar-scan` submits that evidence with the exact current commit as the previous-version baseline; the hosted workflow performs both steps for pull requests and `main`.
+
 ## Project Status
 
 Containerization is under active development. Source stability is guaranteed
