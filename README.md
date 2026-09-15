@@ -2,11 +2,12 @@
 
 <!-- markdownlint-disable MD013 MD033 -->
 <p>
-  <img align="left" hspace="20" src="assets/containerization-icon.png" width="147" alt="Containerization icon: the standard three-row container service panel" />
+  <img align="left" hspace="20" src="assets/containerization-icon.png" width="147" alt="Containerization icon: a frosted microchip overlapping the standard three-row container service panel" />
   <a href="https://github.com/stephenlclarke/containerization/actions/workflows/containerization-build.yml?query=branch%3Amain"><img alt="CI" src="https://github.com/stephenlclarke/containerization/actions/workflows/containerization-build.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/stephenlclarke/containerization/actions/workflows/codeql.yml?query=branch%3Amain"><img alt="CodeQL" src="https://github.com/stephenlclarke/containerization/actions/workflows/codeql.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/stephenlclarke/containerization/actions/workflows/docs-release.yaml?query=branch%3Amain"><img alt="Documentation" src="https://github.com/stephenlclarke/containerization/actions/workflows/docs-release.yaml/badge.svg?branch=main" /></a>
   <a href="https://github.com/stephenlclarke/containerization/actions/workflows/release.yml?query=branch%3Amain"><img alt="Releases" src="https://github.com/stephenlclarke/containerization/actions/workflows/release.yml/badge.svg?branch=main" /></a>
+  <a href="https://github.com/stephenlclarke/containerization/actions/workflows/sonar.yml?query=branch%3Amain"><img alt="SonarQube" src="https://github.com/stephenlclarke/containerization/actions/workflows/sonar.yml/badge.svg?branch=main" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Quality Gate Status" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=alert_status" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Coverage" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=coverage" /></a>
   <a href="https://sonarcloud.io/summary/new_code?id=stephenlclarke_containerization"><img alt="Bugs" src="https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_containerization&amp;metric=bugs" /></a>
