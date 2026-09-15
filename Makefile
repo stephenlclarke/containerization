@@ -406,6 +406,24 @@ coverage:
 		$(BUILD_BIN_DIR)/containerizationPackageTests.xctest/Contents/MacOS/containerizationPackageTests > $(COV_REPORT_FILE)
 	@echo Code coverage report generated: $(COV_REPORT_FILE)
 
+.PHONY: coverage-sonar
+coverage-sonar: coverage
+	@xcrun llvm-cov export --compilation-dir=`pwd` --format=lcov \
+		-instr-profile=$(COV_DATA_DIR)/default.profdata \
+		--ignore-filename-regex=".build/" \
+		--ignore-filename-regex=".pb.swift" \
+		--ignore-filename-regex=".proto" \
+		--ignore-filename-regex=".grpc.swift" \
+		$(BUILD_BIN_DIR)/containerizationPackageTests.xctest/Contents/MacOS/containerizationPackageTests > coverage.lcov
+	@python3 Tools/coverage/lcov-to-sonarqube-generic.py coverage.lcov coverage.xml
+
+.PHONY: sonar-scan
+sonar-scan:
+	@test -s coverage.xml || { echo 'coverage.xml is missing; run make coverage-sonar first' >&2; exit 2; }
+	@sonar_project_version="$${SONAR_PROJECT_VERSION:-$$(git rev-parse HEAD)}"; \
+	echo "$$sonar_project_version" | grep -Eq '^[0-9a-f]{40}$$' || { echo 'SONAR_PROJECT_VERSION must be an exact lowercase commit SHA' >&2; exit 2; }; \
+	sonar-scanner -Dsonar.projectVersion="$$sonar_project_version" -Dsonar.qualitygate.wait="$${SONAR_QUALITYGATE_WAIT:-true}"
+
 .PHONY: integration
 # The integration suite boots vmexec from the vminit image, not from the host
 # build tree.  Recreate that image first so a successful suite proves the
