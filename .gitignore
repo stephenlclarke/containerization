@@ -10,9 +10,12 @@ DerivedData/
 workdir/
 installer/
 .venv/
+__pycache__/
 .vscode/
 test_results/
 code-coverage-report
+coverage.lcov
+coverage.xml
 *.pid
 *.log
 *.zip
