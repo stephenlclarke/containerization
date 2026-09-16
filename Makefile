@@ -57,8 +57,9 @@ HAWKEYE ?= .local/bin/hawkeye
 
 ROOT_DIR := $(shell git rev-parse --show-toplevel)
 BUILD_BIN_DIR = $(shell $(SWIFT) build -c $(BUILD_CONFIGURATION) $(SWIFT_SCRATCH_FLAGS) --show-bin-path)
-COV_DATA_DIR = $(shell $(SWIFT) test --show-coverage-path | xargs dirname)
+COV_DATA_DIR = $(shell $(SWIFT) test $(SWIFT_SCRATCH_FLAGS) --show-coverage-path | xargs dirname)
 COV_REPORT_FILE = $(ROOT_DIR)/code-coverage-report
+COV_REPORT_TOOL = $(ROOT_DIR)/Tools/coverage/llvm_cov_report.py
 
 # Variables for libarchive integration
 LIBARCHIVE_UPSTREAM_REPO := https://github.com/libarchive/libarchive
@@ -392,29 +393,29 @@ test:
 	@echo Testing all test targets...
 	@$(SWIFT) test $(SWIFT_CONFIGURATION)
 
+.PHONY: coverage-tools-test
+coverage-tools-test:
+	@python3 -m unittest discover -s Tools/coverage -p 'test_*.py'
+
 .PHONY: coverage
-coverage:
+coverage: coverage-tools-test
 	@echo Testing all test targets with code coverage...
 	@$(SWIFT) test --enable-code-coverage $(SWIFT_CONFIGURATION)
 	@echo Generating code coverage report...
-	@xcrun llvm-cov show --compilation-dir=`pwd` \
-		-instr-profile=$(COV_DATA_DIR)/default.profdata \
-		--ignore-filename-regex=".build/" \
-		--ignore-filename-regex=".pb.swift" \
-		--ignore-filename-regex=".proto" \
-		--ignore-filename-regex=".grpc.swift" \
-		$(BUILD_BIN_DIR)/containerizationPackageTests.xctest/Contents/MacOS/containerizationPackageTests > $(COV_REPORT_FILE)
+	@python3 "$(COV_REPORT_TOOL)" show \
+		--build-bin-dir "$(BUILD_BIN_DIR)" \
+		--profile "$(COV_DATA_DIR)/default.profdata" \
+		--compilation-dir "$(ROOT_DIR)" \
+		--output "$(COV_REPORT_FILE)"
 	@echo Code coverage report generated: $(COV_REPORT_FILE)
 
 .PHONY: coverage-sonar
 coverage-sonar: coverage
-	@xcrun llvm-cov export --compilation-dir=`pwd` --format=lcov \
-		-instr-profile=$(COV_DATA_DIR)/default.profdata \
-		--ignore-filename-regex=".build/" \
-		--ignore-filename-regex=".pb.swift" \
-		--ignore-filename-regex=".proto" \
-		--ignore-filename-regex=".grpc.swift" \
-		$(BUILD_BIN_DIR)/containerizationPackageTests.xctest/Contents/MacOS/containerizationPackageTests > coverage.lcov
+	@python3 "$(COV_REPORT_TOOL)" lcov \
+		--build-bin-dir "$(BUILD_BIN_DIR)" \
+		--profile "$(COV_DATA_DIR)/default.profdata" \
+		--compilation-dir "$(ROOT_DIR)" \
+		--output "$(ROOT_DIR)/coverage.lcov"
 	@python3 Tools/coverage/lcov-to-sonarqube-generic.py coverage.lcov coverage.xml
 
 .PHONY: sonar-scan
