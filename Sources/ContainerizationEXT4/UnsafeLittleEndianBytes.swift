@@ -50,15 +50,15 @@ public func withUnsafeLittleEndianBuffer<T>(
 }
 
 extension UnsafeRawBufferPointer {
-    // loads littleEndian raw data, converts it native endian format and calls UnsafeRawBufferPointer.load
+    // Image bytes and Data slices need not satisfy the loaded type's alignment.
     public func loadLittleEndian<T>(as type: T.Type) -> T {
         switch Endian {
         case .little:
-            return self.load(as: T.self)
+            return self.loadUnaligned(as: T.self)
         case .big:
             let buffer = Array(self.reversed())
             return buffer.withUnsafeBytes { ptr in
-                ptr.load(as: T.self)
+                ptr.loadUnaligned(as: T.self)
             }
         }
     }
