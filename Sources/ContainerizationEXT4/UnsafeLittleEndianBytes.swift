@@ -52,7 +52,12 @@ public func withUnsafeLittleEndianBuffer<T>(
 extension UnsafeRawBufferPointer {
     // Image bytes and Data slices need not satisfy the loaded type's alignment.
     public func loadLittleEndian<T>(as type: T.Type) -> T {
-        switch Endian {
+        loadLittleEndian(as: type, byteOrder: Endian)
+    }
+
+    // Keep both host-byte-order paths testable without changing global state.
+    func loadLittleEndian<T>(as type: T.Type, byteOrder: Endianness) -> T {
+        switch byteOrder {
         case .little:
             return self.loadUnaligned(as: T.self)
         case .big:
