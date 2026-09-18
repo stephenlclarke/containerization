@@ -56,7 +56,7 @@ extension UnsafeRawBufferPointer {
     }
 
     // Keep both host-byte-order paths testable without changing global state.
-    func loadLittleEndian<T>(as type: T.Type, byteOrder: Endianness) -> T {
+    func loadLittleEndian<T>(as _: T.Type, byteOrder: Endianness) -> T {
         switch byteOrder {
         case .little:
             return self.loadUnaligned(as: T.self)
