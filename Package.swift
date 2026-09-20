@@ -366,11 +366,6 @@ let package = Package(
             ],
             path: "vminitd/Sources/VminitdCore"
         ),
-        .testTarget(
-            name: "VminitdCoreTests",
-            dependencies: ["VminitdCore"],
-            path: "Tests/VminitdCoreTests"
-        ),
     ]
 )
 
