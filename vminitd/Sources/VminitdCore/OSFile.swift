@@ -93,7 +93,10 @@ struct OSFile: Sendable {
                 buffer.count - bytesWrote
             )
             if n == -1 {
-                if errno == EAGAIN || errno == EIO {
+                if errno == EINTR {
+                    continue
+                }
+                if errno == EAGAIN {
                     return (bytesWrote, .again)
                 }
                 return (bytesWrote, .error(errno))

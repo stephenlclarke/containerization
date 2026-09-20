@@ -366,8 +366,25 @@ let package = Package(
             ],
             path: "vminitd/Sources/VminitdCore"
         ),
+        .testTarget(
+            name: "VminitdCoreTests",
+            dependencies: ["VminitdCore"],
+            path: "Tests/VminitdCoreTests"
+        ),
     ]
 )
+
+// Static Linux SDKs do not ship Swift Testing. This debug-only component
+// executable exercises the real relay without adding a release product.
+if ProcessInfo.processInfo.environment["CONTAINERIZATION_STDIO_REGRESSION"] == "1" {
+    package.targets.append(
+        .executableTarget(
+            name: "stdio-relay-regression",
+            dependencies: ["VminitdCore"],
+            path: "Tests/IOPairRegression"
+        )
+    )
+}
 
 package.targets.append(
     .executableTarget(
