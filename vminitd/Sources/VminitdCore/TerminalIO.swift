@@ -104,8 +104,9 @@ final class TerminalIO: ManagedProcess.IO & Sendable {
                     reason: "TerminalIO stdin",
                     logger: log
                 )
-                try pair.relay(ignoreHup: true)
+                try Self.startRelay(pair, parent: term)
                 $0.stdin = pair
+                $0.stdinSocket = nil
             }
 
             if let stdoutSocket = $0.stdoutSocket {
@@ -115,19 +116,30 @@ final class TerminalIO: ManagedProcess.IO & Sendable {
                     reason: "TerminalIO stdout",
                     logger: log
                 )
-                try pair.relay(ignoreHup: true)
+                try Self.startRelay(pair, parent: term)
                 $0.stdout = pair
+                $0.stdoutSocket = nil
             }
+        }
+    }
+
+    static func startRelay(_ pair: IOPair, parent: Terminal) throws {
+        do {
+            try pair.relay(ignoreHup: true)
+        } catch {
+            // Failed stdin setup only owns an unowned terminal wrapper. No
+            // stdout relay has accepted the original master yet.
+            try? parent.close()
+            throw error
         }
     }
 
     func close() throws {
         self.state.withLock {
-            // stdout must close before stdin because both IOPairs share the
-            // Terminal fd. stdout registered that fd with epoll (as its read
-            // source) and needs to unregister it while the fd is still valid.
-            // stdin closes the Terminal as its write destination, which would
-            // invalidate the fd before stdout can unregister.
+            let stdoutOwnsParent = $0.stdout != nil
+            // The relays own their sockets after successful attachment. Their
+            // nonblocking final drain may outlive this method; only sockets
+            // that were never handed off can be closed directly below.
             if let stdout = $0.stdout {
                 stdout.close()
                 $0.stdout = nil
@@ -149,6 +161,11 @@ final class TerminalIO: ManagedProcess.IO & Sendable {
                 $0.stdoutSocket = nil
             }
 
+            if !stdoutOwnsParent {
+                // No stdout handoff occurred (including failed attachment).
+                // Terminal disables automatic descriptor closure.
+                try? $0.parent?.close()
+            }
             $0.parent = nil
         }
     }

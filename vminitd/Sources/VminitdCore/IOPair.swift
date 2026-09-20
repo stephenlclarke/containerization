@@ -16,7 +16,6 @@
 
 #if os(Linux)
 
-import ContainerizationError
 import ContainerizationOS
 import Foundation
 import Logging
@@ -31,67 +30,95 @@ final class IOPair: Sendable {
         let from: IOCloser
         let to: IOCloser
         let buffer: UnsafeMutableBufferPointer<UInt8>
-        var closed: Bool
-        var registeredFd: Int32?
+        var pending: Range<Int> = 0..<0
+        var closed = false
+        var closing = false
+        var inputEnded = false
+        var readerRegistered = false
+        var writerRegistered = false
+        var writerFD: Int32?
 
-        func drain() {
-            let readFrom = OSFile(fd: from.fileDescriptor)
-            let writeTo = OSFile(fd: to.fileDescriptor)
-
-            while true {
-                let r = readFrom.read(buffer)
-                if r.read > 0 {
-                    let view = UnsafeMutableBufferPointer(
-                        start: buffer.baseAddress,
-                        count: r.read
-                    )
-
-                    let w = writeTo.write(view)
-                    if w.wrote != r.read {
-                        return
-                    }
+        mutating func finish(logger: Logger?) {
+            guard !closed else { return }
+            closed = true
+            if readerRegistered {
+                do {
+                    try ProcessSupervisor.default.unregisterFd(from.fileDescriptor)
+                } catch {
+                    logger?.error("failed to unregister stdio reader: \(error)")
                 }
-
-                switch r.action {
-                case .eof, .again, .error(_):
-                    return
-                default:
-                    break
-                }
+                readerRegistered = false
             }
+            if let writerFD {
+                if writerRegistered {
+                    do {
+                        try ProcessSupervisor.default.unregisterFd(writerFD)
+                    } catch {
+                        logger?.error("failed to unregister stdio writer: \(error)")
+                    }
+                    writerRegistered = false
+                }
+                _ = Foundation.close(writerFD)
+                self.writerFD = nil
+            }
+            do {
+                try from.close()
+            } catch {
+                logger?.error("failed to close stdio reader: \(error)")
+            }
+            do {
+                try to.close()
+            } catch {
+                logger?.error("failed to close stdio writer: \(error)")
+            }
+            buffer.deallocate()
         }
 
-        mutating func close(logger: Logger?) {
-            if self.closed {
-                return
-            }
-
-            // Try and drain IO first.
-            self.drain()
-
-            // Remove the fd from our global epoll instance first.
-            if let fd = self.registeredFd {
-                do {
-                    try ProcessSupervisor.default.unregisterFd(fd)
-                } catch {
-                    logger?.error("failed to delete fd from epoll \(fd): \(error)")
+        mutating func pump(logger: Logger?) {
+            guard !closed, let writerFD else { return }
+            let source = OSFile(fd: from.fileDescriptor)
+            let destination = OSFile(fd: writerFD)
+            while true {
+                if !pending.isEmpty {
+                    let view = UnsafeMutableBufferPointer(
+                        start: buffer.baseAddress?.advanced(by: pending.lowerBound),
+                        count: pending.count
+                    )
+                    let result = destination.write(view)
+                    pending = (pending.lowerBound + result.wrote)..<pending.upperBound
+                    switch result.action {
+                    case .error, .brokenPipe, .eof:
+                        finish(logger: logger)
+                        return
+                    case .again:
+                        // Keep the unwritten suffix until EPOLLOUT. Do not
+                        // consume further input while these bytes are pending.
+                        return
+                    case .success:
+                        break
+                    }
                 }
-                self.registeredFd = nil
+                if inputEnded {
+                    finish(logger: logger)
+                    return
+                }
+                let result = source.read(buffer)
+                pending = 0..<result.read
+                switch result.action {
+                case .eof, .error, .brokenPipe:
+                    inputEnded = true
+                case .again:
+                    inputEnded = closing
+                case .success:
+                    break
+                }
+                if pending.isEmpty {
+                    if inputEnded {
+                        finish(logger: logger)
+                    }
+                    return
+                }
             }
-
-            do {
-                try self.from.close()
-            } catch {
-                logger?.error("failed to close reader fd for IOPair: \(error)")
-            }
-
-            do {
-                try self.to.close()
-            } catch {
-                logger?.error("failed to close writer fd for IOPair: \(error)")
-            }
-            self.buffer.deallocate()
-            self.closed = true
         }
     }
 
@@ -101,14 +128,11 @@ final class IOPair: Sendable {
         reason: String,
         logger: Logger? = nil
     ) {
-        let buffer = UnsafeMutableBufferPointer<UInt8>.allocate(capacity: Int(getpagesize()))
         self.io = Mutex(
             IO(
                 from: readFrom,
                 to: writeTo,
-                buffer: buffer,
-                closed: false,
-                registeredFd: nil
+                buffer: .allocate(capacity: Int(getpagesize()))
             ))
         self.reason = reason
         self.logger = logger
@@ -116,72 +140,60 @@ final class IOPair: Sendable {
 
     func relay(ignoreHup: Bool = false) throws {
         self.logger?.info("setting up relay for \(reason)")
-
-        let (readFromFd, writeToFd) = self.io.withLock { io in
-            io.registeredFd = io.from.fileDescriptor
-            return (io.from.fileDescriptor, io.to.fileDescriptor)
-        }
-
-        let readFrom = OSFile(fd: readFromFd)
-        let writeTo = OSFile(fd: writeToFd)
-
-        try ProcessSupervisor.default.registerFd(readFromFd, mask: .input) { mask in
-            self.io.withLock { io in
-                if io.closed {
-                    return
+        try self.io.withLock { io in
+            guard !io.closed, io.writerFD == nil else {
+                throw POSIXError(.EINVAL)
+            }
+            // A terminal's master is another IOPair's source too. A duplicate
+            // keeps write readiness from replacing that pair's read handler.
+            do {
+                let writerFD = fcntl(io.to.fileDescriptor, F_DUPFD_CLOEXEC, 0)
+                guard writerFD >= 0 else {
+                    throw POSIXError.fromErrno()
                 }
-
-                if mask.isHangup && !mask.readyToRead {
-                    self.logger?.debug("received EPOLLHUP with no EPOLLIN")
-                    if !ignoreHup {
-                        io.close(logger: self.logger)
-                    }
-                    return
-                }
-
-                // Loop so we drain fully.
-                while true {
-                    let r = readFrom.read(io.buffer)
-                    if r.read > 0 {
-                        let view = UnsafeMutableBufferPointer(
-                            start: io.buffer.baseAddress,
-                            count: r.read
-                        )
-
-                        let w = writeTo.write(view)
-                        if w.wrote != r.read {
-                            self.logger?.error("stopping relay: short write for stdio")
-                            io.close(logger: self.logger)
+                io.writerFD = writerFD
+                try ProcessSupervisor.default.registerFd(writerFD, mask: .output) { mask in
+                    self.io.withLock { io in
+                        guard !io.closed else { return }
+                        // A lost destination cannot accept the pending suffix,
+                        // even when source-side PTY hangups are ignored.
+                        if mask.isHangup {
+                            io.finish(logger: self.logger)
                             return
                         }
-                    }
-
-                    switch r.action {
-                    case .error(let errno):
-                        self.logger?.error("failed with errno \(errno) while reading for fd \(readFromFd)")
-                        fallthrough
-                    case .eof:
-                        self.logger?.debug("closing relay for \(readFromFd)")
-                        io.close(logger: self.logger)
-                        return
-                    case .again:
-                        if mask.isHangup && !ignoreHup {
-                            self.logger?.error("received EPOLLHUP and EAGAIN exiting")
-                            self.close()
-                        }
-                        return
-                    default:
-                        break
+                        io.pump(logger: self.logger)
                     }
                 }
+                io.writerRegistered = true
+                try ProcessSupervisor.default.registerFd(io.from.fileDescriptor, mask: .input) { mask in
+                    self.io.withLock { io in
+                        guard !io.closed else { return }
+                        if mask.isHangup && !ignoreHup {
+                            io.closing = true
+                        }
+                        io.pump(logger: self.logger)
+                    }
+                }
+                io.readerRegistered = true
+            } catch {
+                io.finish(logger: self.logger)
+                throw error
             }
         }
     }
 
     func close() {
         self.io.withLock { io in
+            guard !io.closed else { return }
             self.logger?.info("closing relay for \(reason)")
-            io.close(logger: self.logger)
+            io.closing = true
+            if io.readerRegistered {
+                // Exit can precede the last readable edge. Drain without
+                // blocking the reaper or discarding a buffered suffix.
+                io.pump(logger: self.logger)
+            } else {
+                io.finish(logger: self.logger)
+            }
         }
     }
 }
