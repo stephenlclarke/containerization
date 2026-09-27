@@ -460,7 +460,7 @@ final class VZHotplugProvider: HotplugProvider {
                         message: "runtime virtiofs device \(deviceTag) is unavailable"
                     )
                 }
-                device.share = nil
+                device.share = VZMultipleDirectoryShare(directories: [:])
             }
         }
     }
