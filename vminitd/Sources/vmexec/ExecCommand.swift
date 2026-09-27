@@ -21,7 +21,6 @@ import FoundationEssentials
 import LCShim
 import Logging
 import SystemPackage
-import VminitdCore
 
 #if canImport(Musl)
 import Musl

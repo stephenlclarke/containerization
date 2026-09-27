@@ -207,19 +207,19 @@ struct LinuxContainerTests {
             weight: 500,
             leafWeight: 300,
             weightDevice: [
-                LinuxWeightDevice(major: 8, minor: 0, weight: 700, leafWeight: 400)
+                Containerization.LinuxWeightDevice(major: 8, minor: 0, weight: 700, leafWeight: 400)
             ],
             throttleReadBpsDevice: [
-                LinuxThrottleDevice(major: 8, minor: 16, rate: 1_048_576)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 16, rate: 1_048_576)
             ],
             throttleWriteBpsDevice: [
-                LinuxThrottleDevice(major: 8, minor: 32, rate: 2_097_152)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 32, rate: 2_097_152)
             ],
             throttleReadIOPSDevice: [
-                LinuxThrottleDevice(major: 8, minor: 48, rate: 1_000)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 48, rate: 1_000)
             ],
             throttleWriteIOPSDevice: [
-                LinuxThrottleDevice(major: 8, minor: 64, rate: 2_000)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 64, rate: 2_000)
             ]
         )
 
@@ -1607,7 +1607,7 @@ struct UpstreamLinuxContainerTests {
         }
     }
 
-    private static let testRootfs = Mount.block(format: "ext4", source: "/tmp/does-not-need-to-exist.ext4", destination: "/")
+    private static let testRootfs = Containerization.Mount.block(format: "ext4", source: "/tmp/does-not-need-to-exist.ext4", destination: "/")
 
     @Test func seccompProfileIsValidatedAtInit() throws {
         var config = LinuxContainer.Configuration()
