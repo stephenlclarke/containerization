@@ -305,7 +305,7 @@ extension ArchiveReader {
         // Iterate and extract archive entries, collecting rejected paths.
         var foundEntry = false
         var rejectedPaths = [String]()
-        var deferredDirAttrs: [(path: FilePath, entry: WriteEntry)] = []
+        var deferredDirAttrs: [(path: FilePath, entry: WriteEntry, depth: Int)] = []
         var deferredHardlinks: [(path: FilePath, target: FilePath, sequence: Int)] = []
         var lastMemberSequence: [String: Int] = [:]
         var sequence = 0
@@ -338,7 +338,7 @@ extension ArchiveReader {
             )
 
             if extracted, entry.fileType == .directory {
-                deferredDirAttrs.append((memberPath, entry))
+                deferredDirAttrs.append((memberPath, entry, memberPath.components.count))
             }
 
             if !extracted {
@@ -373,7 +373,7 @@ extension ArchiveReader {
 
         // Apply directory permissions after all children are extracted, deepest first,
         // so a restrictive parent cannot block access to its children.
-        for deferred in deferredDirAttrs.sorted(by: { $0.path.components.count > $1.path.components.count }) {
+        for deferred in deferredDirAttrs.sorted(by: { $0.depth > $1.depth }) {
             do {
                 try FileDescriptorOps.withOpenDirectory(rootFileDescriptor, deferred.path) { fd in
                     setFileAttributes(
