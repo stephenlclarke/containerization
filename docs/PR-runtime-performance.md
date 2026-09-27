@@ -27,3 +27,12 @@ but did not materially close the startup gap (approximately 710 ms versus the
 prior 730 ms, within run-to-run variation). Restore the existing share behavior
 rather than retain a new live-attachment configuration without a demonstrated
 benefit. The final production implementation is identical to `47ded59ac35d4a71d712cd41cb3382f3a3e9c4f6`; later changes record this experiment.
+
+## Published guest configuration
+
+Main-branch CI previously built the guest in debug mode and then published it
+under the exact source SHA. Main pushes now build that guest in release mode,
+matching the optimized local benchmark. Pull-request guests retain debug mode;
+host unit-test configuration is unchanged. Local release cross-compilation and
+VM workloads validate the release configuration; publication itself remains a
+separate CI result. Production Swift sources remain identical to `47ded59`.

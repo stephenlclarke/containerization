@@ -75,7 +75,9 @@ jobs:
         # the guest fails to exec and the integration boot hangs. The Static Linux
         # SDK cross-targets both arches from any host (same mechanism dist-x86_64
         # uses in reverse).
-        run: make -C vminitd MUSL_ARCH=aarch64 BUILD_CONFIGURATION=${{ inputs.release && 'release' || 'debug' }}
+        # Main publishes the exact-SHA guest image; qualify the optimized guest
+        # that users will run. Pull requests retain debug guest diagnostics.
+        run: make -C vminitd MUSL_ARCH=aarch64 BUILD_CONFIGURATION=${{ (inputs.release || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'release' || 'debug' }}
 
       - name: Build initfs.ext4
         run: ./scripts/build-initfs.sh --vminitd vminitd/bin/vminitd --vmexec vminitd/bin/vmexec --ext4 bin/initfs.ext4 --tar bin/init.rootfs.tar.gz
