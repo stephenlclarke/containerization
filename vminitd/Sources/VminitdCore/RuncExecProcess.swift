@@ -123,6 +123,12 @@ final class RuncExecProcess: ContainerProcess, Sendable {
         self.state = Mutex(State())
     }
 
+    func duplicateFilesystemContext() throws -> ProcessFilesystemDescriptors {
+        // Filesystem RPCs are anchored to ManagedContainer's init process.
+        // An exec has no independently retained mount/root descriptors.
+        throw ContainerizationError(.unsupported, message: "filesystem context is available through the container init process")
+    }
+
     func start() async throws -> Int32 {
         try self.state.withLock {
             guard case .initial = $0.state else {

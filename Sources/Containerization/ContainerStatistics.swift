@@ -347,13 +347,6 @@ public struct ContainerStatistics: Sendable {
     }
 }
 
-extension UInt64 {
-    fileprivate func subtractingWithoutUnderflow(_ previous: UInt64) -> UInt64 {
-        self >= previous ? self - previous : self
-    }
-
-}
-
 extension ContainerStatistics {
     /// Filesystem occupancy for a single mount, from statfs(2).
     public struct FilesystemStatistics: Sendable {
@@ -406,4 +399,10 @@ public struct StatCategory: OptionSet, Sendable {
 
     /// All available statistics categories.
     public static let all: StatCategory = [.process, .memory, .cpu, .blockIO, .network, .memoryEvents, .filesystem]
+}
+
+extension UInt64 {
+    fileprivate func subtractingWithoutUnderflow(_ previous: UInt64) -> UInt64 {
+        self >= previous ? self - previous : self
+    }
 }
