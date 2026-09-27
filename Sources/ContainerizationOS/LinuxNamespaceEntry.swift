@@ -14,7 +14,22 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ContainerizationOS
-
 /// Chooses the namespace flags needed to enter a container process.
-public typealias LinuxNamespaceEntry = ContainerizationOS.LinuxNamespaceEntry
+public enum LinuxNamespaceEntry {
+    /// Returns `requestedFlags` without the user namespace flag when the
+    /// target process already uses the caller's user namespace.
+    ///
+    /// Linux rejects an attempt to reenter the current user namespace. Other
+    /// namespaces must still be entered so an exec process retains the target
+    /// container's isolation.
+    public static func flags(
+        requestedFlags: Int32,
+        userNamespaceFlag: Int32,
+        targetUserNamespaceMatchesCurrent: Bool
+    ) -> Int32 {
+        guard targetUserNamespaceMatchesCurrent else {
+            return requestedFlags
+        }
+        return requestedFlags & ~userNamespaceFlag
+    }
+}

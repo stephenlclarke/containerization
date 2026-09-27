@@ -62,10 +62,9 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "SystemPackage", package: "swift-system"),
-                .product(name: "Containerization", package: "containerization"),
+                .product(name: "ContainerizationCgroup", package: "containerization"),
                 .product(name: "ContainerizationNetlink", package: "containerization"),
                 .product(name: "ContainerizationOS", package: "containerization"),
-                .product(name: "VminitdCore", package: "containerization"),
             ]
         ),
         .testTarget(

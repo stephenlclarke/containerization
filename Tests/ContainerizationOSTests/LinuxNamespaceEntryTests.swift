@@ -16,7 +16,7 @@
 
 import Testing
 
-@testable import VminitdCore
+@testable import ContainerizationOS
 
 struct LinuxNamespaceEntryTests {
     private let userNamespaceFlag: Int32 = 1 << 28
