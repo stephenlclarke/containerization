@@ -1034,11 +1034,24 @@ extension IntegrationSuite {
                 throw IntegrationError.assert(msg: "CPU usage should be > 0, got \(stats.cpu?.usageUsec ?? 0)")
             }
 
+            guard let filesystem = stats.filesystem?.first, filesystem.blocks > filesystem.freeBlocks else {
+                throw IntegrationError.assert(
+                    msg: "filesystem used blocks should be > 0, got blocks=\(stats.filesystem?.first?.blocks ?? 0) freeBlocks=\(stats.filesystem?.first?.freeBlocks ?? 0)")
+            }
+
+            guard filesystem.inodes > filesystem.freeInodes else {
+                throw IntegrationError.assert(msg: "filesystem used inodes should be > 0, got inodes=\(filesystem.inodes) freeInodes=\(filesystem.freeInodes)")
+            }
+
+            let usedBytes = (filesystem.blocks - filesystem.freeBlocks) * filesystem.blockSize
+            let inodesUsed = filesystem.inodes - filesystem.freeInodes
+
             print("Container statistics:")
             print("  Processes: \(process.current)")
             print("  Memory: \(memory.usageBytes) bytes")
             print("  CPU: \(cpu.usageUsec) usec")
             print("  Networks: \(stats.networks?.count ?? 0) interfaces")
+            print("  Filesystem: \(usedBytes) bytes, \(inodesUsed) inodes")
 
             try await container.stop()
         } catch {
@@ -1051,7 +1064,7 @@ extension IntegrationSuite {
         let id = "test-cgroup-limits"
 
         let bs = try await bootstrap(id)
-        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm, vm: VMResources(cpus: 3, memoryInBytes: 640.mib())) { config in
             config.process.arguments = ["sleep", "infinity"]
             config.cpus = 2
             config.memoryInBytes = 512.mib()
@@ -1508,6 +1521,121 @@ extension IntegrationSuite {
             try await container.wait()
             try await container.stop()
         } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
+    func testUnixSocketIntoGuestParallelTraffic() async throws {
+        let id = "test-unixsocket-parallel-traffic"
+        let bs = try await bootstrap(id)
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["sleep", "infinity"]
+            config.bootLog = bs.bootLog
+        }
+        var connections: [FileHandle] = []
+        var listener: VsockListener?
+
+        func closeConnections() {
+            for connection in connections {
+                try? connection.close()
+            }
+            connections.removeAll()
+        }
+
+        func read(from connection: FileHandle, context: String) throws -> Data {
+            var event = pollfd(fd: connection.fileDescriptor, events: Int16(POLLIN), revents: 0)
+            let ready = Syscall.retrying { poll(&event, 1, 2_000) }
+            guard ready > 0 else {
+                throw IntegrationError.assert(msg: "forwarded socket timed out waiting for \(context)")
+            }
+            return try connection.read(upToCount: 1) ?? Data()
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+            let vm = try await container.withVirtualMachineInstance { $0 }
+            let hostPort: UInt32 = 2000
+            let guestPort: UInt32 = 2001
+            let hostListener = try vm.listen(hostPort)
+            listener = hostListener
+            defer { try? hostListener.finish() }
+            let vminitd = try await Vminitd(connection: container.dialVsock(port: Vminitd.port), group: Self.eventLoop)
+            let path = URL(filePath: "/run/test-relay.sock")
+            // Route host clients through both guest relays and back to the host listener.
+            try await vminitd.relaySocket(port: hostPort, configuration: .init(source: path, destination: path, direction: .into))
+            try await vminitd.relaySocket(port: guestPort, configuration: .init(source: path, destination: path, direction: .outOf))
+            var accepted = hostListener.makeAsyncIterator()
+
+            for round in 0..<100 {
+                let silentServer = round.isMultiple(of: 10)
+                let acceptDeadline = Task {
+                    try await Task.sleep(for: .seconds(20))
+                    try hostListener.finish()
+                }
+                defer { acceptDeadline.cancel() }
+                var clients: [FileHandle] = []
+                for _ in 0..<16 {
+                    let client = try await vm.dial(guestPort)
+                    connections.append(client)
+                    clients.append(client)
+                }
+                var peers: [FileHandle] = []
+                for _ in clients {
+                    guard let peer = await accepted.next() else {
+                        throw IntegrationError.assert(msg: "guest did not connect to the host listener")
+                    }
+                    connections.append(peer)
+                    peers.append(peer)
+                }
+                acceptDeadline.cancel()
+                // Allow initial writable events to fire while both peers are idle.
+                try await Task.sleep(for: .milliseconds(10))
+                for (index, client) in clients.enumerated() {
+                    try client.write(contentsOf: Data([UInt8(index)]))
+                    if !round.isMultiple(of: 2) {
+                        guard shutdown(client.fileDescriptor, Int32(SHUT_WR)) == 0 else { throw POSIXError.fromErrno() }
+                    }
+                }
+                for peer in peers {
+                    let request = try read(from: peer, context: "request in round \(round)")
+                    if !round.isMultiple(of: 2) {
+                        guard try read(from: peer, context: "request EOF in round \(round)").isEmpty else { throw IntegrationError.assert(msg: "expected request EOF") }
+                    }
+                    if silentServer {
+                        try peer.close()
+                    } else {
+                        try peer.write(contentsOf: request)
+                        if round.isMultiple(of: 2) { try peer.close() }
+                    }
+                }
+                for (index, client) in clients.enumerated() {
+                    let expected = silentServer ? Data() : Data([UInt8(index)])
+                    guard try read(from: client, context: "reply in round \(round)") == expected else {
+                        throw IntegrationError.assert(msg: "forwarded socket reply did not match its request")
+                    }
+                }
+                if !round.isMultiple(of: 2) {
+                    for peer in peers {
+                        guard shutdown(peer.fileDescriptor, Int32(SHUT_WR)) == 0 else { throw POSIXError.fromErrno() }
+                    }
+                }
+                for client in clients {
+                    guard try read(from: client, context: "reply EOF in round \(round)").isEmpty else { throw IntegrationError.assert(msg: "expected reply EOF") }
+                }
+                closeConnections()
+            }
+
+            try await vminitd.close()
+            try await container.stop()
+        } catch {
+            // Release any guest relay blocked on a host peer before stopping the VM.
+            if let listener {
+                try? listener.finish()
+                for await peer in listener { try? peer.close() }
+            }
+            closeConnections()
             try? await container.stop()
             throw error
         }
@@ -6302,16 +6430,17 @@ extension IntegrationSuite {
         }
     }
 
-    func testVMResourceOverhead() async throws {
-        let id = "test-vm-resource-overhead"
+    // Verify the VM and the container are sized independently: the sandbox is
+    // exactly the size requested (nothing added on top) while the container's
+    // cgroup limits come solely from the container configuration.
+    func testIndependentVMAndContainerSizing() async throws {
+        let id = "test-independent-sizing"
 
         let bs = try await bootstrap(id)
-        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm, vm: VMResources(cpus: 4, memoryInBytes: 1024.mib())) { config in
             config.process.arguments = ["sleep", "infinity"]
             config.cpus = 2
-            config.memoryInBytes = 256.mib()
-            config.cpuOverhead = 2
-            config.memoryOverhead = 1024.mib()
+            config.memoryInBytes = 512.mib()
             config.bootLog = bs.bootLog
         }
 
@@ -6319,6 +6448,9 @@ extension IntegrationSuite {
             try await container.create()
             try await container.start()
 
+            // The guest sees exactly the vCPUs asked for. `nproc` reflects the
+            // VM size, not the cgroup quota, so this catches any overhead
+            // silently added to the sandbox.
             let cpuBuffer = BufferWriter()
             let cpuExec = try await container.exec("check-nproc") { config in
                 config.arguments = ["nproc"]
@@ -6336,33 +6468,51 @@ extension IntegrationSuite {
             else {
                 throw IntegrationError.assert(msg: "failed to parse nproc output")
             }
-            let expectedCpus = 4
-            guard cpuCount == expectedCpus else {
-                throw IntegrationError.assert(msg: "nproc \(cpuCount) != expected \(expectedCpus)")
+            let expectedVMCpus = 4
+            guard cpuCount == expectedVMCpus else {
+                throw IntegrationError.assert(msg: "nproc \(cpuCount) != expected \(expectedVMCpus)")
             }
 
+            // The container is capped at 2 CPUs even though the VM has 4.
+            let cgroupCPUBuffer = BufferWriter()
+            let cgroupCPUExec = try await container.exec("check-cgroup-cpu") { config in
+                config.arguments = ["cat", "/sys/fs/cgroup/cpu.max"]
+                config.stdout = cgroupCPUBuffer
+            }
+            try await cgroupCPUExec.start()
+            status = try await cgroupCPUExec.wait()
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "check-cgroup-cpu status \(status) != 0")
+            }
+            try await cgroupCPUExec.delete()
+
+            guard let cpuLimit = String(data: cgroupCPUBuffer.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                throw IntegrationError.assert(msg: "failed to parse cpu.max")
+            }
+            let expectedCPULimit = "200000 100000"  // 2 CPUs: quota=200000, period=100000
+            guard cpuLimit == expectedCPULimit else {
+                throw IntegrationError.assert(msg: "cpu.max '\(cpuLimit)' != expected '\(expectedCPULimit)'")
+            }
+
+            // The container's memory limit is its own, distinct from the VM's.
             let memBuffer = BufferWriter()
-            let memExec = try await container.exec("check-meminfo") { config in
-                config.arguments = ["sh", "-c", "grep MemTotal /proc/meminfo | awk '{print $2}'"]
+            let memExec = try await container.exec("check-cgroup-memory") { config in
+                config.arguments = ["cat", "/sys/fs/cgroup/memory.max"]
                 config.stdout = memBuffer
             }
             try await memExec.start()
             status = try await memExec.wait()
             guard status.exitCode == 0 else {
-                throw IntegrationError.assert(msg: "meminfo status \(status) != 0")
+                throw IntegrationError.assert(msg: "check-cgroup-memory status \(status) != 0")
             }
             try await memExec.delete()
 
-            guard let memStr = String(data: memBuffer.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                let memTotalKiB = UInt64(memStr)
-            else {
-                throw IntegrationError.assert(msg: "failed to parse MemTotal")
+            guard let memoryLimit = String(data: memBuffer.data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                throw IntegrationError.assert(msg: "failed to parse memory.max")
             }
-            let memTotalBytes = memTotalKiB * 1024
-            let expectedMin: UInt64 = 1024.mib()
-            guard memTotalBytes > expectedMin else {
-                throw IntegrationError.assert(
-                    msg: "MemTotal \(memTotalBytes) should exceed \(expectedMin)")
+            let expectedMemoryLimit = "\(512.mib())"
+            guard memoryLimit == expectedMemoryLimit else {
+                throw IntegrationError.assert(msg: "memory.max \(memoryLimit) != expected \(expectedMemoryLimit)")
             }
 
             try await container.kill(.kill)

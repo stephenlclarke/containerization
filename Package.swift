@@ -161,6 +161,7 @@ let package = Package(
             name: "ContainerizationArchive",
             dependencies: [
                 .product(name: "SystemPackage", package: "swift-system"),
+                .product(name: "libzstd", package: "zstd"),
                 "CArchive",
                 "ContainerizationExtras",
                 "ContainerizationOS",
@@ -180,9 +181,6 @@ let package = Package(
         ),
         .target(
             name: "CArchive",
-            dependencies: [
-                .product(name: "libzstd", package: "zstd")
-            ],
             path: "Sources/ContainerizationArchive/CArchive",
             sources: [
                 "archive_swift_bridge.c"

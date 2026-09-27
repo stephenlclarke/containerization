@@ -47,18 +47,25 @@ public struct EXT4Unpacker: Unpacker {
         at path: URL
     ) async throws {
         let cleanedPath = try prepareUnpackPath(path: path)
+        var unpacked = false
+        defer {
+            if !unpacked {
+                try? FileManager.default.removeItem(atPath: cleanedPath)
+            }
+        }
         let filesystem = try EXT4.Formatter(
             FilePath(cleanedPath),
             minDiskSize: capacityInBytes,
             journal: journal
         )
-        defer { try? filesystem.close() }
 
         try await filesystem.unpack(
             source: archive,
             format: .paxRestricted,
             compression: compression
         )
+        try filesystem.close()
+        unpacked = true
     }
 
     /// Returns a `Mount` point after unpacking the image into a filesystem.
@@ -74,6 +81,12 @@ public struct EXT4Unpacker: Unpacker {
         progress: ProgressHandler? = nil
     ) async throws -> Mount {
         let cleanedPath = try prepareUnpackPath(path: path)
+        var unpacked = false
+        defer {
+            if !unpacked {
+                try? FileManager.default.removeItem(atPath: cleanedPath)
+            }
+        }
         let manifest = try await image.manifest(for: platform)
         let filesystem = try EXT4.Formatter(
             FilePath(
@@ -82,29 +95,14 @@ public struct EXT4Unpacker: Unpacker {
             minDiskSize: capacityInBytes,
             journal: journal
         )
-        defer { try? filesystem.close() }
 
-        // Resolve layer paths upfront. When progress reporting is enabled and a layer
-        // uses zstd, decompress once so both the size-scanning pass and the unpack
-        // pass share the same decompressed file.
+        // Resolve layer paths upfront.
         var resolvedLayers: [(file: URL, filter: ContainerizationArchive.Filter)] = []
-        var decompressedFiles: [URL] = []
         for layer in manifest.layers {
             try Task.checkCancellation()
             let content = try await image.getContent(digest: layer.digest)
             let compression = try compressionFilter(for: layer.mediaType)
-            if progress != nil && compression == .zstd {
-                let decompressed = try ArchiveReader.decompressZstd(content.path)
-                decompressedFiles.append(decompressed)
-                resolvedLayers.append((file: decompressed, filter: .none))
-            } else {
-                resolvedLayers.append((file: content.path, filter: compression))
-            }
-        }
-        defer {
-            for file in decompressedFiles {
-                ArchiveReader.cleanUpDecompressedZstd(file)
-            }
+            resolvedLayers.append((file: content.path, filter: compression))
         }
 
         if let progress {
@@ -139,6 +137,8 @@ public struct EXT4Unpacker: Unpacker {
             try await filesystem.unpack(reader: reader, progress: progress)
         }
 
+        try filesystem.close()
+        unpacked = true
         return .block(
             format: "ext4",
             source: cleanedPath,

@@ -25,6 +25,8 @@ import struct ContainerizationOCI.ImageConfig
 import struct ContainerizationOCI.LinuxDevice
 import struct ContainerizationOCI.LinuxDeviceCgroup
 import enum ContainerizationOCI.LinuxNamespaceType
+import struct ContainerizationOCI.LinuxSeccomp
+import struct ContainerizationOCI.LinuxSyscall
 import struct ContainerizationOCI.Mount
 import struct ContainerizationOCI.Spec
 
@@ -132,7 +134,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(arguments: ["/bin/sh"], oomScoreAdj: -250))
         )
 
-        let process = try #require(container.generateRuntimeSpec().process)
+        let process = try #require(try container.generateRuntimeSpec(for: .containerInit).process)
         #expect(process.oomScoreAdj == -250)
     }
 
@@ -148,7 +150,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), annotations: annotations)
         )
 
-        #expect(container.generateRuntimeSpec().annotations == annotations)
+        #expect(try container.generateRuntimeSpec(for: .containerInit).annotations == annotations)
     }
 
     @Test func defaultCapabilitiesAreRestrictedOCISet() {
@@ -229,7 +231,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), blockIO: blockIO)
         )
 
-        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
         let specBlockIO = try #require(resources.blockIO)
 
         #expect(specBlockIO.weight == 500)
@@ -252,7 +254,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), memoryReservationInBytes: Int64(512.mib()))
         )
 
-        let memory = try #require(container.generateRuntimeSpec().linux?.resources?.memory)
+        let memory = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory)
         let limit = try #require(memory.limit)
         let reservation = try #require(memory.reservation)
 
@@ -268,7 +270,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), memoryReservationInBytes: .max)
         )
 
-        let reservation = try #require(container.generateRuntimeSpec().linux?.resources?.memory?.reservation)
+        let reservation = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory?.reservation)
 
         #expect(reservation == .max)
     }
@@ -284,7 +286,7 @@ struct LinuxContainerTests {
             )
         )
 
-        let memory = try #require(container.generateRuntimeSpec().linux?.resources?.memory)
+        let memory = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory)
         let limit = try #require(memory.limit)
         let swap = try #require(memory.swap)
 
@@ -300,7 +302,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), memorySwapLimitInBytes: -1)
         )
 
-        let swap = try #require(container.generateRuntimeSpec().linux?.resources?.memory?.swap)
+        let swap = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory?.swap)
 
         #expect(swap == -1)
     }
@@ -313,7 +315,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), pidsLimit: 128)
         )
 
-        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.pids?.limit == 128)
     }
@@ -326,7 +328,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpuShares: 512)
         )
 
-        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.cpu?.shares == 512)
     }
@@ -339,7 +341,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpuSet: "0-1")
         )
 
-        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.cpu?.cpus == "0-1")
     }
@@ -352,7 +354,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpus: 1, cpuQuotaInMicroseconds: 25_000)
         )
 
-        let cpu = try #require(container.generateRuntimeSpec().linux?.resources?.cpu)
+        let cpu = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
 
         #expect(cpu.quota == 25_000)
         #expect(cpu.period == 100_000)
@@ -371,7 +373,7 @@ struct LinuxContainerTests {
             )
         )
 
-        let cpu = try #require(container.generateRuntimeSpec().linux?.resources?.cpu)
+        let cpu = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
 
         #expect(cpu.quota == 50_000)
         #expect(cpu.period == 200_000)
@@ -385,7 +387,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpus: 1, cpuPeriodInMicroseconds: 200_000)
         )
 
-        let cpu = try #require(container.generateRuntimeSpec().linux?.resources?.cpu)
+        let cpu = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
 
         #expect(cpu.quota == nil)
         #expect(cpu.period == 200_000)
@@ -404,7 +406,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), deviceCgroupRules: deviceRules)
         )
 
-        let resources = try #require(container.generateRuntimeSpec().linux?.resources)
+        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.devices.count == 2)
         #expect(resources.devices[0].allow)
@@ -439,7 +441,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), devices: devices)
         )
 
-        let specDevices = try #require(container.generateRuntimeSpec().linux?.devices)
+        let specDevices = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.devices)
 
         #expect(specDevices.count == 1)
         #expect(specDevices[0].path == "/dev/xnull")
@@ -465,8 +467,8 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), hostPIDNamespace: true)
         )
 
-        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec().linux?.namespaces)
-        let hostPIDNamespaces = try #require(hostPIDContainer.generateRuntimeSpec().linux?.namespaces)
+        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec(for: .containerInit).linux?.namespaces)
+        let hostPIDNamespaces = try #require(hostPIDContainer.generateRuntimeSpec(for: .containerInit).linux?.namespaces)
 
         #expect(isolatedNamespaces.contains { $0.type == .pid })
         #expect(!hostPIDNamespaces.contains { $0.type == .pid })
@@ -493,8 +495,8 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), hostCgroupNamespace: true)
         )
 
-        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec().linux?.namespaces)
-        let hostCgroupNamespaces = try #require(hostCgroupContainer.generateRuntimeSpec().linux?.namespaces)
+        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec(for: .containerInit).linux?.namespaces)
+        let hostCgroupNamespaces = try #require(hostCgroupContainer.generateRuntimeSpec(for: .containerInit).linux?.namespaces)
 
         #expect(isolatedNamespaces.contains { $0.type == .cgroup })
         #expect(!hostCgroupNamespaces.contains { $0.type == .cgroup })
@@ -515,7 +517,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cgroupParent: "build/interactive")
         )
 
-        let linux = try #require(container.generateRuntimeSpec().linux)
+        let linux = try #require(try container.generateRuntimeSpec(for: .containerInit).linux)
         #expect(linux.cgroupsPath == "/container/build/interactive/cgroup-parent-test")
     }
 
@@ -549,8 +551,8 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), hostIPCNamespace: true, hostUTSNamespace: true)
         )
 
-        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec().linux?.namespaces)
-        let hostNamespaces = try #require(hostNamespaceContainer.generateRuntimeSpec().linux?.namespaces)
+        let isolatedNamespaces = try #require(isolatedContainer.generateRuntimeSpec(for: .containerInit).linux?.namespaces)
+        let hostNamespaces = try #require(hostNamespaceContainer.generateRuntimeSpec(for: .containerInit).linux?.namespaces)
 
         #expect(isolatedNamespaces.contains { $0.type == .ipc })
         #expect(isolatedNamespaces.contains { $0.type == .uts })
@@ -572,7 +574,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), privateUserNamespace: true)
         )
 
-        let linux = try #require(container.generateRuntimeSpec().linux)
+        let linux = try #require(try container.generateRuntimeSpec(for: .containerInit).linux)
         #expect(linux.namespaces.contains { $0.type == .user && $0.path.isEmpty })
         let uidMapping = try #require(linux.uidMappings.first)
         let gidMapping = try #require(linux.gidMappings.first)
@@ -617,10 +619,10 @@ struct LinuxContainerTests {
             "memory-target-test",
             rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
             vmm: manager,
+            vm: VMResources(cpus: 1, memoryInBytes: 576.mib()),
             configuration: .init(
                 process: .init(),
-                memoryInBytes: 512.mib(),
-                memoryOverhead: 64.mib()
+                memoryInBytes: 512.mib()
             )
         )
 
@@ -629,6 +631,21 @@ struct LinuxContainerTests {
 
         let vm = try #require(manager.vm)
         #expect(vm.memoryTargets == [320.mib()])
+    }
+
+    @Test func liveMemoryTargetWithOversubscribedWorkloadDoesNotUnderflow() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "oversubscribed-memory-target-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            vm: VMResources(cpus: 1, memoryInBytes: 256.mib()),
+            configuration: .init(process: .init(), memoryInBytes: 512.mib())
+        )
+        try await container.create()
+        try await container.setMemoryTarget(128.mib())
+        let vm = try #require(manager.vm)
+        #expect(vm.memoryTargets == [128.mib()])
     }
 
     @Test func liveMemoryTargetRequiresCreatedContainer() async throws {
@@ -1593,5 +1610,246 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
             $0.processInfoContainerID = containerID
             return $0.processInfo
         }
+    }
+}
+
+extension LinuxContainerTests {
+    /// A `VirtualMachineManager` that cannot create anything. `LinuxContainer.init`
+    /// only stores the manager, so nothing below should reach `create`.
+    private struct UnusableVMM: VirtualMachineManager {
+        func create(config: some VMCreationConfig) async throws -> any VirtualMachineInstance {
+            throw ContainerizationError(.unsupported, message: "test stub: no VM should be created here")
+        }
+    }
+
+    private static let testRootfs = Containerization.Mount.block(format: "ext4", source: "/tmp/does-not-need-to-exist.ext4", destination: "/")
+
+    @Test func seccompProfileIsValidatedAtInit() throws {
+        var config = LinuxContainer.Configuration()
+        config.process.arguments = ["/bin/true"]
+        config.seccompProfile = .default
+
+        // vmexec ignores spec.linux.seccomp, so a profile without an OCI
+        // runtime is a sandbox that does not exist. Rejected at init, before
+        // the caller has booted a VM.
+        #expect(throws: ContainerizationError.self) {
+            _ = try LinuxContainer("seccomp-without-runtime", rootfs: Self.testRootfs, vmm: UnusableVMM(), configuration: config)
+        }
+
+        config.ociRuntimePath = "/sbin/runc"
+        #expect(throws: Never.self) {
+            _ = try LinuxContainer("seccomp-with-runtime", rootfs: Self.testRootfs, vmm: UnusableVMM(), configuration: config)
+        }
+
+        // The default is unfiltered, and needs no runtime.
+        var unconfined = LinuxContainer.Configuration()
+        unconfined.process.arguments = ["/bin/true"]
+        #expect(throws: Never.self) {
+            _ = try LinuxContainer("no-seccomp", rootfs: Self.testRootfs, vmm: UnusableVMM(), configuration: unconfined)
+        }
+    }
+
+    /// A custom profile is subject to the same rule as `.default`: `vmexec`
+    /// ignores both identically, so neither may be accepted without an OCI
+    /// runtime.
+    @Test func customSeccompProfileIsValidatedAtInit() throws {
+        let profile = LinuxSeccomp(
+            defaultAction: .actAllow,
+            defaultErrnoRet: nil,
+            architectures: [],
+            flags: [],
+            listenerPath: "",
+            listenerMetadata: "",
+            syscalls: [
+                LinuxSyscall(names: ["mkdir", "mkdirat"], action: .actErrno, errnoRet: 13, args: [])
+            ]
+        )
+
+        var config = LinuxContainer.Configuration()
+        config.process.arguments = ["/bin/true"]
+        config.seccompProfile = .profile(profile)
+
+        #expect(throws: ContainerizationError.self) {
+            _ = try LinuxContainer("custom-seccomp-without-runtime", rootfs: Self.testRootfs, vmm: UnusableVMM(), configuration: config)
+        }
+
+        config.ociRuntimePath = "/sbin/runc"
+        #expect(throws: Never.self) {
+            _ = try LinuxContainer("custom-seccomp-with-runtime", rootfs: Self.testRootfs, vmm: UnusableVMM(), configuration: config)
+        }
+    }
+
+    @Test func vmResourcesDefaults() {
+        for resources in [VMResources(), VMResources.default] {
+            #expect(resources.cpus == 4)
+            #expect(resources.memoryInBytes == 1024.mib())
+        }
+
+        let explicit = VMResources(cpus: 2, memoryInBytes: 512.mib())
+        #expect(explicit.cpus == 2)
+        #expect(explicit.memoryInBytes == 512.mib())
+    }
+
+    /// A `VirtualMachineManager` that records the configuration it is handed and
+    /// then refuses to boot. `LinuxContainer.create()` builds the `VMConfiguration`
+    /// and passes it straight to `vmm.create`, so this captures the VM sizing
+    /// without needing a real VM.
+    private final class StubVMM: VirtualMachineManager {
+        private let captured = Mutex<VMConfiguration?>(nil)
+
+        /// The configuration `LinuxContainer.create()` asked for, if it got that far.
+        var capturedConfiguration: VMConfiguration? {
+            captured.withLock { $0 }
+        }
+
+        func create(config: some VMCreationConfig) async throws -> any VirtualMachineInstance {
+            captured.withLock { $0 = config.configuration }
+            throw ContainerizationError(.unsupported, message: "stub")
+        }
+    }
+
+    @Test func runtimeSpecUsesContainerLimitsNotVMSize() async throws {
+        // The OCI cgroup limit comes from the container configuration, the VM size from `vm`.
+        let vmm = StubVMM()
+        let container = try LinuxContainer(
+            "sizing-test",
+            rootfs: .block(format: "ext4", source: "/dev/null", destination: "/", options: []),
+            vmm: vmm,
+            vm: VMResources(cpus: 8, memoryInBytes: 2048.mib())
+        ) { config in
+            config.process.arguments = ["/bin/true"]
+            config.cpus = 2
+            config.memoryInBytes = 512.mib()
+        }
+
+        let spec = try container.generateRuntimeSpec(for: .containerInit)
+        #expect(spec.linux?.resources?.cpu?.quota == 200_000)
+        #expect(spec.linux?.resources?.cpu?.period == 100_000)
+        #expect(spec.linux?.resources?.memory?.limit == Int64(512.mib()))
+
+        // The VM must be sized from `vm`, with nothing added. Drive `create()` far enough to build the
+        // `VMConfiguration` — the stub records it and then throws instead of
+        // booting, so the error is expected.
+        await #expect(throws: (any Error).self) {
+            try await container.create()
+        }
+
+        let vmConfig = try #require(vmm.capturedConfiguration)
+        #expect(vmConfig.cpus == 8)
+        #expect(vmConfig.memoryInBytes == 2048.mib())
+    }
+
+    @Test func containerConfigurationDefaultLimits() {
+        let viaProperty = LinuxContainer.Configuration()
+        let viaInit = LinuxContainer.Configuration(process: LinuxProcessConfiguration(arguments: ["/bin/sh"]))
+
+        for config in [viaProperty, viaInit] {
+            #expect(config.cpus == 4)
+            #expect(config.memoryInBytes == 1024.mib())
+        }
+    }
+
+    @Test func podContainerConfigurationDefaultLimits() {
+        // A pod container is always capped; a nil `cpus` previously meant no cgroup limit.
+        let config = LinuxPod.ContainerConfiguration()
+        #expect(config.cpus == 4)
+        #expect(config.memoryInBytes == 1024.mib())
+    }
+
+    @Test func guestMemoryOverheadIsOptInOnly() {
+        // `cctl` adds this at the call site; the library must never apply it itself.
+        #expect(VMResources.guestMemoryOverhead == 128.mib())
+
+        let vm = VMResources.default
+        let container = LinuxContainer.Configuration()
+        #expect(vm.memoryInBytes == container.memoryInBytes)
+        #expect(vm.cpus == container.cpus)
+
+        let podContainer = LinuxPod.ContainerConfiguration()
+        #expect(vm.memoryInBytes == podContainer.memoryInBytes)
+        #expect(vm.cpus == podContainer.cpus)
+    }
+
+    /// A pod carries the same rule as a container: `vmexec` ignores
+    /// `spec.linux.seccomp`, so a profile without an OCI runtime is rejected
+    /// before a VM is booted.
+    @Test func podSeccompProfileIsValidatedAtInit() throws {
+        #expect(throws: ContainerizationError.self) {
+            _ = try LinuxPod("pod-seccomp-without-runtime", vmm: UnusableVMM()) { config in
+                config.seccompProfile = .default
+            }
+        }
+
+        #expect(throws: Never.self) {
+            _ = try LinuxPod("pod-seccomp-with-runtime", vmm: UnusableVMM()) { config in
+                config.ociRuntimePath = "/sbin/runc"
+                config.seccompProfile = .default
+            }
+        }
+
+        // The default is unfiltered, and needs no runtime.
+        #expect(throws: Never.self) {
+            _ = try LinuxPod("pod-no-seccomp", vmm: UnusableVMM()) { _ in }
+        }
+    }
+
+    /// A container's own profile carries the same rule as the pod's, and is
+    /// checked when the container is added rather than when the VM boots.
+    @Test func podContainerSeccompOverrideIsValidatedAtAdd() async throws {
+        let unfilteredPod = try LinuxPod("pod-override-without-runtime", vmm: UnusableVMM()) { _ in }
+        await #expect(throws: ContainerizationError.self) {
+            try await unfilteredPod.addContainer("c", rootfs: Self.testRootfs) { config in
+                config.seccompProfile = .default
+            }
+        }
+
+        await #expect(throws: Never.self) {
+            try await unfilteredPod.addContainer("own-runtime", rootfs: Self.testRootfs) { config in
+                config.ociRuntimePath = "/sbin/runc"
+                config.seccompProfile = .default
+            }
+        }
+
+        let runcPod = try LinuxPod("pod-override-with-runtime", vmm: UnusableVMM()) { config in
+            config.ociRuntimePath = "/sbin/runc"
+            config.seccompProfile = .default
+        }
+        // A container may tighten...
+        await #expect(throws: Never.self) {
+            try await runcPod.addContainer("filtered", rootfs: Self.testRootfs) { config in
+                config.seccompProfile = .default
+            }
+        }
+        // ...or opt out of the pod's profile entirely.
+        await #expect(throws: Never.self) {
+            try await runcPod.addContainer("unfiltered", rootfs: Self.testRootfs) { config in
+                config.seccompProfile = .unconfined
+            }
+        }
+        // Setting nothing inherits the pod's, which needs no extra check.
+        await #expect(throws: Never.self) {
+            try await runcPod.addContainer("inherited", rootfs: Self.testRootfs) { _ in }
+        }
+    }
+
+    /// runc cannot create `/dev/console` on the kernel-wide devtmpfs instance,
+    /// so the stock `/dev` becomes a tmpfs whenever a runtime is set. Shared by
+    /// `LinuxContainer` and `LinuxPod`.
+    @Test func ociRuntimeRewritesStockDevMount() {
+        let defaults = LinuxContainer.defaultMounts()
+
+        let vmexec = LinuxContainer.mountsForRuntime(defaults, ociRuntimePath: nil, containerID: "c", logger: nil)
+        #expect(vmexec.first { $0.destination == "/dev" }?.type == "devtmpfs")
+
+        let runc = LinuxContainer.mountsForRuntime(defaults, ociRuntimePath: "/sbin/runc", containerID: "c", logger: nil)
+        let dev = runc.first { $0.destination == "/dev" }
+        #expect(dev?.type == "tmpfs")
+        #expect(runc.count == defaults.count)
+
+        // A hand-written devtmpfs is the caller's deliberate choice and is left
+        // alone.
+        let custom = [Containerization.Mount.any(type: "devtmpfs", source: "devtmpfs", destination: "/dev", options: ["mode=777"])]
+        let kept = LinuxContainer.mountsForRuntime(custom, ociRuntimePath: "/sbin/runc", containerID: "c", logger: nil)
+        #expect(kept.first?.type == "devtmpfs")
     }
 }
