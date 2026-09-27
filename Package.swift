@@ -115,16 +115,6 @@ let package = Package(
                 .copy("ImageTests/Resources/scratch_no_annotations.tar"),
             ]
         ),
-        .testTarget(
-            name: "VminitdCoreTests",
-            dependencies: [
-                "Cgroup",
-                "ContainerizationError",
-                .product(name: "GRPCCore", package: "grpc-swift-2"),
-                "VminitdCore",
-            ],
-            path: "Tests/VminitdCoreTests"
-        ),
         .target(
             name: "ContainerizationEXT4",
             dependencies: [
@@ -161,6 +151,7 @@ let package = Package(
             name: "ContainerizationArchive",
             dependencies: [
                 .product(name: "SystemPackage", package: "swift-system"),
+                .product(name: "libzstd", package: "zstd"),
                 "CArchive",
                 "ContainerizationExtras",
                 "ContainerizationOS",
@@ -172,7 +163,8 @@ let package = Package(
         .testTarget(
             name: "ContainerizationArchiveTests",
             dependencies: [
-                "ContainerizationArchive"
+                "ContainerizationArchive",
+                .product(name: "libzstd", package: "zstd"),
             ],
             resources: [
                 .copy("Resources/test.tar.zst")
@@ -180,9 +172,6 @@ let package = Package(
         ),
         .target(
             name: "CArchive",
-            dependencies: [
-                .product(name: "libzstd", package: "zstd")
-            ],
             path: "Sources/ContainerizationArchive/CArchive",
             sources: [
                 "archive_swift_bridge.c"
@@ -226,6 +215,8 @@ let package = Package(
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "X509", package: "swift-certificates"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "Crypto", package: "swift-crypto"),
             ]
@@ -341,7 +332,8 @@ let package = Package(
                 .product(name: "SystemPackage", package: "swift-system"),
                 "LCShim",
             ],
-            path: "vminitd/Sources/Cgroup"
+            path: "vminitd/Sources/Cgroup",
+            swiftSettings: [.strictMemorySafety()]
         ),
         .target(
             name: "VminitdCore",
@@ -364,7 +356,19 @@ let package = Package(
                 "LCShim",
                 "Cgroup",
             ],
-            path: "vminitd/Sources/VminitdCore"
+            path: "vminitd/Sources/VminitdCore",
+            swiftSettings: [.strictMemorySafety()]
+        ),
+        .testTarget(
+            name: "VminitdCoreTests",
+            dependencies: [
+                "Cgroup",
+                "ContainerizationError",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                "VminitdCore",
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            swiftSettings: [.strictMemorySafety()]
         ),
     ]
 )

@@ -95,7 +95,7 @@ jobs:
     timeout-minutes: 60
     runs-on: >-
       ${{ github.repository == 'apple/containerization'
-      && fromJSON('["self-hosted", "macos", "tahoe", "ARM64"]') || 'macos-26' }}
+      && fromJSON('["self-hosted", "macos", "goldengate", "ARM64"]') || 'macos-26' }}
     permissions:
       contents: read
       packages: read
@@ -111,8 +111,10 @@ jobs:
           make protos
           if ! git diff --quiet ; then echo the following files require formatting or license headers: ; git diff --name-only ; false ; fi
 
-      - name: Make containerization and examples
-        run: make clean containerization examples
+      - name: Make containerization and docs
+        run: |
+          make clean containerization docs
+          tar cfz _site.tgz _site
         env:
           BUILD_CONFIGURATION: ${{ inputs.release && 'release' || 'debug' }}
 

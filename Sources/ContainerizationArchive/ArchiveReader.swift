@@ -19,6 +19,7 @@ import ContainerizationError
 import ContainerizationOS
 import Foundation
 import SystemPackage
+import libzstd
 
 /// A protocol for reading data in chunks, compatible with both `InputStream` and zero-allocation archive readers.
 public protocol ReadableStream {
@@ -54,39 +55,50 @@ public final class ArchiveReader {
     var underlying: OpaquePointer?
     /// The file handle associated with the archive file being read.
     let fileHandle: FileHandle?
-    /// Temporary decompressed file URL if the input was zstd-compressed
-    private var tempDecompressedFile: URL?
+    private var tempFile: URL?
+    private var streamFailure: ArchiveError?
+
+    private func recordStreamFailure(_ code: some BinaryInteger) {
+        guard streamFailure == nil else {
+            return
+        }
+        let description = archive_error_string(underlying).map(String.init(cString:))
+        streamFailure = .failedToExtractArchive(description ?? "archive read failed with code \(code)")
+    }
+
+    private func readNextHeader(into entry: WriteEntry) -> Bool {
+        let result = archive_read_next_header2(underlying, entry.underlying)
+        if result == ARCHIVE_OK || result == ARCHIVE_WARN {
+            return true
+        }
+        if result != ARCHIVE_EOF {
+            recordStreamFailure(result)
+        }
+        return false
+    }
 
     /// Initializes an `ArchiveReader` to read from a specified file URL with an explicit `Format` and `Filter`.
     /// Note: This method must be used when it is known that the archive at the specified URL follows the specified
     /// `Format` and `Filter`.
     public convenience init(format: Format, filter: Filter, file: URL) throws {
-        // If filter is zstd, decompress it and use filter .none
-        let fileToRead: URL
-        let tempFile: URL?
-        let actualFilter: Filter
-
         if filter == .zstd {
-            let decompressed = try Self.decompressZstd(file)
-            tempFile = decompressed
-            fileToRead = decompressed
-            actualFilter = .none
+            try self.init(format: format, zstdFile: file)
         } else {
-            tempFile = nil
-            fileToRead = file
-            actualFilter = filter
+            let fileHandle = try FileHandle(forReadingFrom: file)
+            try self.init(format: format, filter: filter, fileHandle: fileHandle)
         }
+    }
 
-        do {
-            let fileHandle = try FileHandle(forReadingFrom: fileToRead)
-            try self.init(format: format, filter: actualFilter, fileHandle: fileHandle)
-        } catch {
-            if let tempFile {
-                try? FileManager.default.removeItem(at: tempFile.deletingLastPathComponent())
-            }
-            throw error
-        }
-        self.tempDecompressedFile = tempFile
+    private init(format: Format, zstdFile: URL) throws {
+        self.underlying = archive_read_new()
+        self.fileHandle = nil
+
+        try archive_read_set_format(underlying, format.code)
+            .checkOk(elseThrow: .unableToSetFormat(format.code, format))
+
+        let source = try FileHandle(forReadingFrom: zstdFile)
+        try ZstdArchiveSource.open(archive: underlying, source: source)
+            .checkOk(elseThrow: { .unableToOpenArchive($0) })
     }
 
     /// Initializes an `ArchiveReader` to read from the provided file descriptor with an explicit `Format` and `Filter`.
@@ -124,70 +136,42 @@ public final class ArchiveReader {
     /// Initialize the `ArchiveReader` to read from a specified file URL
     /// by trying to auto determine the archives `Format` and `Filter`.
     public init(file: URL) throws {
+        let handle = try FileHandle(forReadingFrom: file)
+        let isZstd = try Self.isZstdFrame(handle)
+        try handle.seek(toOffset: 0)
+
         self.underlying = archive_read_new()
+        self.fileHandle = isZstd ? nil : handle
 
-        // Try to decompress as zstd first, fall back to original if it fails
-        let fileToRead: URL
-        if let decompressed = try? Self.decompressZstd(file) {
-            self.tempDecompressedFile = decompressed
-            fileToRead = decompressed
-        } else {
-            fileToRead = file
-        }
-
-        let fileHandle = try FileHandle(forReadingFrom: fileToRead)
-        self.fileHandle = fileHandle
         try archive_read_support_filter_all(underlying)
             .checkOk(elseThrow: .failedToDetectFilter)
         try archive_read_support_format_all(underlying)
             .checkOk(elseThrow: .failedToDetectFormat)
-        let fd = fileHandle.fileDescriptor
-        try archive_read_open_fd(underlying, fd, 4096)
-            .checkOk(elseThrow: { .unableToOpenArchive($0) })
+        if isZstd {
+            try ZstdArchiveSource.open(archive: underlying, source: handle)
+                .checkOk(elseThrow: { .unableToOpenArchive($0) })
+        } else {
+            try archive_read_open_fd(underlying, handle.fileDescriptor, 4096)
+                .checkOk(elseThrow: { .unableToOpenArchive($0) })
+        }
     }
 
-    /// Decompress a zstd file to a temporary location
-    public static func decompressZstd(_ source: URL) throws -> URL {
-        guard let tempDir = createTemporaryDirectory(baseName: "zstd-decompress") else {
-            throw ArchiveError.failedToDetectFormat
+    private static func isZstdFrame(_ handle: FileHandle) throws -> Bool {
+        let magicSize = MemoryLayout<UInt32>.size
+        guard let prefix = try handle.read(upToCount: magicSize), prefix.count == magicSize else {
+            return false
         }
-        let tempFile = tempDir.appendingPathComponent(
-            source.deletingPathExtension().lastPathComponent
-        )
-
-        do {
-            let srcPath = source.path
-            let srcFd = open(srcPath, O_RDONLY)
-            guard srcFd >= 0 else { throw ArchiveError.failedToDetectFormat }
-            defer { close(srcFd) }
-
-            let dstFd = open(tempFile.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-            guard dstFd >= 0 else { throw ArchiveError.failedToDetectFormat }
-            defer { close(dstFd) }
-
-            guard zstd_decompress_fd(srcFd, dstFd) == 0 else {
-                throw ArchiveError.failedToDetectFormat
-            }
-        } catch {
-            try? FileManager.default.removeItem(at: tempDir)
-            throw error
-        }
-        return tempFile
-    }
-
-    /// Clean up the temporary directory created by `decompressZstd`.
-    /// The decompressed file is placed inside a unique temporary directory,
-    /// so removing that directory cleans up everything.
-    public static func cleanUpDecompressedZstd(_ file: URL) {
-        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+        let magic = UInt32(littleEndian: prefix.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) })
+        return magic == UInt32(ZSTD_MAGICNUMBER)
+            || (magic & UInt32(ZSTD_MAGIC_SKIPPABLE_MASK)) == UInt32(ZSTD_MAGIC_SKIPPABLE_START)
     }
 
     deinit {
         archive_read_free(underlying)
         try? fileHandle?.close()
 
-        if let tempFile = tempDecompressedFile {
-            Self.cleanUpDecompressedZstd(tempFile)
+        if let tempFile {
+            try? FileManager.default.removeItem(at: tempFile.deletingLastPathComponent())
         }
     }
 }
@@ -212,8 +196,7 @@ extension ArchiveReader: Sequence {
 
         public mutating func next() -> (WriteEntry, Data)? {
             let entry = WriteEntry()
-            let result = archive_read_next_header2(reader.underlying, entry.underlying)
-            if result == ARCHIVE_EOF {
+            guard reader.readNextHeader(into: entry) else {
                 return nil
             }
             let data = reader.readDataForEntry(entry)
@@ -226,6 +209,12 @@ extension ArchiveReader: Sequence {
         StreamingIterator(reader: self)
     }
 
+    public func throwIfStreamFailed() throws {
+        if let streamFailure {
+            throw streamFailure
+        }
+    }
+
     public struct StreamingIterator: Sequence, IteratorProtocol {
         var reader: ArchiveReader
 
@@ -235,8 +224,7 @@ extension ArchiveReader: Sequence {
 
         public mutating func next() -> (WriteEntry, ArchiveEntryReader)? {
             let entry = WriteEntry()
-            let result = archive_read_next_header2(reader.underlying, entry.underlying)
-            if result == ARCHIVE_EOF {
+            guard reader.readNextHeader(into: entry) else {
                 return nil
             }
             let streamReader = ArchiveEntryReader(reader: reader)
@@ -255,7 +243,12 @@ extension ArchiveReader: Sequence {
                 }
                 return archive_read_data(self.underlying, baseAddress, buffer.count)
             }
-            guard c > 0 else { break }
+            guard c > 0 else {
+                if c < 0 {
+                    recordStreamFailure(c)
+                }
+                break
+            }
             part.count = c
             entry.append(part)
         }
@@ -277,16 +270,17 @@ extension ArchiveReader {
             try? FileManager.default.removeItem(at: tempDir)
             throw error
         }
-        // Register for cleanup in deinit (only needed when the zstd path didn't already set it)
-        if self.tempDecompressedFile == nil {
-            self.tempDecompressedFile = url
-        }
+        self.tempFile = url
     }
 
     /// Extracts the contents of an archive to the provided directory.
     /// Rejects member paths that escape the root directory or traverse
     /// symbolic links, and uses a "last entry wins" replacement policy
     /// for an existing file at a path to be extracted.
+    ///
+    /// Absolute member names are extracted beneath `directory` with the leading
+    /// slash removed, matching the default behavior of `bsdtar`. Member names
+    /// containing a `..` component are rejected and reported in the returned list.
     public func extractContents(to directory: URL, preserveOwnership: Bool = true) throws -> [String] {
         try extractContents(
             to: directory,
@@ -308,7 +302,7 @@ extension ArchiveReader {
         let fm = FileManager.default
         let rootFilePath = FilePath(directory.path)
         try fm.createDirectory(atPath: directory.path, withIntermediateDirectories: true)
-        let rootFileDescriptor = try FileDescriptor.open(rootFilePath, .readOnly)
+        let rootFileDescriptor = try FileDescriptor.open(rootFilePath, .readOnly, options: [.closeOnExec])
         defer { try? rootFileDescriptor.close() }
 
         // Iterate and extract archive entries, collecting rejected paths.
@@ -325,13 +319,14 @@ extension ArchiveReader {
                 )
                 continue
             }
-            let memberPath = FilePath(path)
+            let originalPath = FilePath(path)
+            let memberPath = Self.relativeMemberPath(path)
             foundEntry = true
             sequence += 1
             lastMemberSequence[memberPath.string] = sequence
 
             if let hardlink = entry.hardlink {
-                deferredHardlinks.append((memberPath, FilePath(hardlink), sequence))
+                deferredHardlinks.append((memberPath, Self.relativeMemberPath(hardlink), sequence))
                 try archive_read_data_skip(self.underlying).checkOk(
                     elseThrow: ArchiveError.failedToExtractArchive("failed to skip hard-link member data")
                 )
@@ -351,9 +346,11 @@ extension ArchiveReader {
             }
 
             if !extracted {
-                rejectedPaths.append(memberPath.string)
+                // Report the name as it appears in the archive.
+                rejectedPaths.append(originalPath.string)
             }
         }
+        try throwIfStreamFailed()
         guard foundEntry else {
             throw ArchiveError.failedToExtractArchive("no entries found in archive")
         }
@@ -392,10 +389,10 @@ extension ArchiveReader {
                 }
             } catch let error as FileDescriptorOps.Error {
                 switch error {
-                case .invalidPathComponent, .cannotFollowSymlink:
+                case .invalidPathComponent, .cannotFollowSymlink, .notFound, .conflict:
                     // A later archive entry replaced this directory. Last entry wins.
                     continue
-                case .invalidRelativePath, .systemError:
+                case .invalidRelativePath, .systemError, .alreadyExists:
                     throw error
                 }
             }
@@ -411,16 +408,32 @@ extension ArchiveReader {
     /// reopen the archive.
     public func extractFile(path: String) throws -> (WriteEntry, Data) {
         let entry = WriteEntry()
-        while archive_read_next_header2(self.underlying, entry.underlying) != ARCHIVE_EOF {
+        while readNextHeader(into: entry) {
             guard let entryPath = entry.path else { continue }
             let trimCharSet = CharacterSet(charactersIn: "./")
             let trimmedEntry = entryPath.trimmingCharacters(in: trimCharSet)
             let trimmedRequired = path.trimmingCharacters(in: trimCharSet)
             guard trimmedEntry == trimmedRequired else { continue }
             let data = readDataForEntry(entry)
+            try throwIfStreamFailed()
             return (entry, data)
         }
+        try throwIfStreamFailed()
         throw ArchiveError.failedToExtractArchive(" \(path) not found in archive")
+    }
+
+    /// Turns an archive member name into a path relative to the extraction root.
+    ///
+    /// Archive formats allow absolute member names. Like the default behavior of
+    /// `bsdtar`, this strips the leading slash so the member is extracted beneath
+    /// the root instead of being rejected. It does not remove `..` components:
+    /// `FileDescriptorOps` rejects those.
+    private static func relativeMemberPath(_ name: String) -> FilePath {
+        let path = FilePath(name)
+        guard path.isAbsolute else {
+            return path
+        }
+        return FilePath(root: nil, path.components)
     }
 
     /// Extracts a single archive entry.
@@ -447,7 +460,7 @@ extension ArchiveReader {
 
                     // Open file for writing using openat with O_NOFOLLOW to prevent TOC-TOU attacks
                     let fileMode = entry.permissions & 0o777  // Mask to permission bits only
-                    let fileFd = openat(fd.rawValue, lastComponent.string, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, fileMode)
+                    let fileFd = openat(fd.rawValue, lastComponent.string, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, fileMode)
                     guard fileFd >= 0 else {
                         throw ArchiveError.failedToExtractArchive("failed to create file: \(memberPath)")
                     }
@@ -485,10 +498,11 @@ extension ArchiveReader {
         } catch let error as FileDescriptorOps.Error {
             // Just reject path validation errors, don't fail the extraction
             switch error {
-            case .systemError:
-                // Fail for system errors
+            case .systemError, .notFound, .alreadyExists:
+                // Fail for system errors, and for entries that appeared or disappeared
+                // underneath us, which means something else is modifying the tree.
                 throw error
-            case .invalidRelativePath, .invalidPathComponent, .cannotFollowSymlink:
+            case .invalidRelativePath, .invalidPathComponent, .cannotFollowSymlink, .conflict:
                 return false
             }
         }
@@ -550,9 +564,9 @@ extension ArchiveReader {
             return linked
         } catch let error as FileDescriptorOps.Error {
             switch error {
-            case .systemError:
+            case .systemError, .alreadyExists:
                 throw error
-            case .invalidRelativePath, .invalidPathComponent, .cannotFollowSymlink:
+            case .invalidRelativePath, .invalidPathComponent, .cannotFollowSymlink, .notFound, .conflict:
                 return false
             }
         }

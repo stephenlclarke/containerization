@@ -80,6 +80,17 @@ extension RegistryClient {
                 throw ContainerizationError(.invalidArgument, message: "invalid Content-Length \(sizeStr)")
             }
 
+            // `tag` is sometimes actually a caller-pinned digest (see `ImageStore.pull`,
+            // which passes `ref.tag ?? ref.digest`). A registry is untrusted input: if the
+            // caller asked to resolve a specific digest, the registry doesn't get to answer
+            // with a different one. Mutable tags carry no such promise, so they're exempt.
+            if tag.isDigest, digest.lowercased() != tag.lowercased() {
+                throw ContainerizationError(
+                    .internalError,
+                    message: "registry returned digest \(digest) for pinned reference \(tag), refusing to accept substituted content"
+                )
+            }
+
             return Descriptor(mediaType: type, digest: digest, size: size)
         }
     }
@@ -141,7 +152,9 @@ extension RegistryClient {
             ("Accept", mediaType)
         ]
 
-        return try await requestJSON(components: components, headers: headers)
+        let data = try await requestData(components: components, headers: headers)
+        try Self.verifyContentDigest(data, matches: descriptor)
+        return try JSONDecoder().decode(T.self, from: data)
     }
 
     /// Fetch resource (either manifest or blob) to memory as raw `Data`.
@@ -169,7 +182,30 @@ extension RegistryClient {
             ("Accept", mediaType)
         ]
 
-        return try await requestData(components: components, headers: headers)
+        let data = try await requestData(components: components, headers: headers)
+        try Self.verifyContentDigest(data, matches: descriptor)
+        return data
+    }
+
+    /// Verifies that `data`'s SHA-256 hash matches the digest `descriptor` claims to be.
+    /// Every caller of `fetch`/`fetchData`/`fetchBlob` already supplies the digest it expects
+    /// (from a manifest it previously trusted, or from a caller-pinned reference resolved via
+    /// `resolve`), so this is the one place that has to hold for any of those callers to be
+    /// safe against a registry that serves different bytes than the digest it declared.
+    fileprivate static func verifyContentDigest(_ data: Data, matches descriptor: Descriptor) throws {
+        try verifyContentDigest(SHA256.hash(data: data), matches: descriptor)
+    }
+
+    /// Same check as above, for callers that already hashed the content while streaming it
+    /// rather than holding the whole thing in memory as `Data`.
+    fileprivate static func verifyContentDigest(_ digest: SHA256.Digest, matches descriptor: Descriptor) throws {
+        let computed = digest.digestString
+        guard computed.lowercased() == descriptor.digest.lowercased() else {
+            throw ContainerizationError(
+                .internalError,
+                message: "content digest mismatch: expected \(descriptor.digest)"
+            )
+        }
     }
 
     /// Fetch a blob from remote registry.
@@ -203,7 +239,23 @@ extension RegistryClient {
                 throw ContainerizationError(.invalidArgument, message: "missing required header Content-Length")
             }
 
+            guard expectedBytes <= descriptor.size else {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: "declared blob length \(expectedBytes) exceeds descriptor size \(descriptor.size) for \(descriptor.digest)"
+                )
+            }
+
             try await closure(expectedBytes, response.body)
+        }
+    }
+
+    private static func validateReceivedSize(_ received: Int64, _ descriptor: Descriptor) throws {
+        guard received <= descriptor.size else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "blob download exceeded expected size \(descriptor.size) for \(descriptor.digest)"
+            )
         }
     }
 
@@ -221,6 +273,7 @@ extension RegistryClient {
                 while let buf = try await itr.next() {
                     let readBytes = Int64(buf.readableBytes)
                     received += readBytes
+                    try Self.validateReceivedSize(received, descriptor)
                     let written = try await writer.write(contentsOf: buf)
                     await progress?([
                         .addSize(written)
@@ -246,6 +299,7 @@ extension RegistryClient {
             throw error
         }
         let computedDigest = hasher.finalize()
+        try Self.verifyContentDigest(computedDigest, matches: descriptor)
         return (received, computedDigest)
     }
     #else
@@ -265,6 +319,7 @@ extension RegistryClient {
             while let buf = try await itr.next() {
                 let readBytes = Int64(buf.readableBytes)
                 received += readBytes
+                try Self.validateReceivedSize(received, descriptor)
                 await progress?([
                     .addSize(readBytes)
                 ])
@@ -273,6 +328,7 @@ extension RegistryClient {
             }
         }
         let computedDigest = hasher.finalize()
+        try Self.verifyContentDigest(computedDigest, matches: descriptor)
         return (received, computedDigest)
     }
     #endif

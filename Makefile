@@ -22,7 +22,10 @@ WARNINGS_AS_ERRORS ?= true
 SCRATCH_ROOT ?=
 SCRATCH_PATH ?= $(if $(SCRATCH_ROOT),$(SCRATCH_ROOT)/build-containerization)
 SWIFT_SCRATCH_FLAGS := $(if $(SCRATCH_PATH),--scratch-path $(SCRATCH_PATH))
-SWIFT_CONFIGURATION := $(if $(filter-out false,$(WARNINGS_AS_ERRORS)),-Xswiftc -warnings-as-errors) --disable-automatic-resolution $(SWIFT_SCRATCH_FLAGS)
+# Extra swift build flags, appended last so callers can add to (rather than
+# replace) the configuration above.
+SWIFT_CONFIGURATION_EXTRA ?=
+SWIFT_CONFIGURATION := $(if $(filter-out false,$(WARNINGS_AS_ERRORS)),-Xswiftc -warnings-as-errors) --disable-automatic-resolution $(SWIFT_SCRATCH_FLAGS) $(SWIFT_CONFIGURATION_EXTRA)
 
 # Commonly used locations
 UNAME_S := $(shell uname -s)
@@ -48,6 +51,8 @@ endif
 # Comma-separated; a test is kept if its name contains ANY of the substrings.
 FILTER ?=
 linux_integration_filter = $(if $(strip $(FILTER)),--filter '$(strip $(FILTER))')
+# `make linux-test FILTER=VolumeSubpathTests` passes FILTER to `swift test --filter`.
+linux_test_filter = $(if $(strip $(FILTER)),--filter '$(strip $(FILTER))')
 ifeq ($(UNAME_S),Darwin)
 SWIFT ?= /usr/bin/swift
 else
@@ -71,6 +76,18 @@ CLOUD_HYPERVISOR_URL := https://github.com/cloud-hypervisor/cloud-hypervisor/rel
 # SHA256 of the v52.0 aarch64 static binary (verified locally from the
 # upstream release artifact). Bump alongside CLOUD_HYPERVISOR_URL.
 CLOUD_HYPERVISOR_SHA256 := bf004ddc1a148f47caa87ac49a783b8dbd6bf9bc27abe522ed197df7b982d3b1
+
+RUNC_VERSION := v1.5.1
+RUNC_ASSET_ARCH := $(if $(filter $(KERNEL_ARCH),arm64),arm64,amd64)
+RUNC_URL := https://github.com/opencontainers/runc/releases/download/$(RUNC_VERSION)/runc.$(RUNC_ASSET_ARCH)
+# SHA256 of the pinned static release binaries, from the PGP-signed
+# runc.sha256sum manifest of the $(RUNC_VERSION) release. Bump alongside
+# RUNC_VERSION.
+RUNC_SHA256_arm64 := ca70e7dbd6616ca782a59b5d3ac86909123fdaa9fa3f89dcf29051c70eee7ce9
+RUNC_SHA256_amd64 := 177df879d50c913eb205e898d5c1c05a18f574053c0ce5524c471208eaf06f6f
+RUNC_SHA256 := $(RUNC_SHA256_$(RUNC_ASSET_ARCH))
+# Staged into the initfs at /sbin/runc when present. Opt-in: `make fetch-runc`.
+RUNC_BIN := bin/runc-$(KERNEL_ARCH)
 
 SWIFT_VERSION := $(shell cat $(ROOT_DIR)/.swift-version)
 SWIFT_SDK_URL := $(shell grep '^SWIFT_SDK_URL' vminitd/Makefile | head -1 | sed 's/.*:= *//')
@@ -122,7 +139,7 @@ define linux_run
 		echo "Creating Linux build volume $(LINUX_BUILD_VOLUME)..."; \
 		container volume create $(LINUX_BUILD_VOLUME) > /dev/null; \
 	fi
-	@container run --rm $(2) --memory 16gb --cpus 8 \
+	@container run --tty --rm $(2) --memory 16gb --cpus 8 \
 		--env SCRATCH_ROOT=$(LINUX_SCRATCH_ROOT) \
 		--env XDG_CACHE_HOME=$(LINUX_SHARED_CACHE) \
 		-v $(ROOT_DIR):/workspace \
@@ -150,7 +167,7 @@ endif
 ifeq ($(UNAME_S),Darwin)
 .PHONY: linux-image
 linux-image:
-	container build \
+	@container build \
 		--progress plain \
 		-f images/linux-dev/Dockerfile \
 		--build-arg SWIFT_VERSION=$(SWIFT_VERSION) \
@@ -170,7 +187,7 @@ endif
 
 .PHONY: linux-test
 linux-test:
-	$(call linux_run,swift test $(SWIFT_CONFIGURATION) --scratch-path $(LINUX_SCRATCH_ROOT)/build-containerization)
+	$(call linux_run,swift test $(SWIFT_CONFIGURATION) --scratch-path $(LINUX_SCRATCH_ROOT)/build-containerization $(linux_test_filter))
 
 .PHONY: build-cloud-hypervisor
 # Build cloud-hypervisor from the patched source at .local/cloud-hypervisor and
@@ -328,7 +345,7 @@ endif
 # variables so `vminitd` (compile only) and `init` (compile + build the initfs
 # in a single container run) don't duplicate the command.
 VMINITD_BUILD_CMD = make -C vminitd BUILD_CONFIGURATION=$(BUILD_CONFIGURATION) WARNINGS_AS_ERRORS=$(WARNINGS_AS_ERRORS)
-INITFS_BUILD_CMD = ./scripts/build-initfs.sh --vminitd vminitd/bin/vminitd --vmexec vminitd/bin/vmexec --ext4 bin/initfs.ext4 --tar bin/init.rootfs.tar.gz
+INITFS_BUILD_CMD = ./scripts/build-initfs.sh --vminitd vminitd/bin/vminitd --vmexec vminitd/bin/vmexec --ext4 bin/initfs.ext4 --tar bin/init.rootfs.tar.gz $(if $(wildcard $(RUNC_BIN)),--runc $(RUNC_BIN))
 
 .PHONY: init
 ifeq ($(UNAME_S),Darwin)
@@ -391,7 +408,7 @@ update-libarchive-source:
 .PHONY: test
 test:
 	@echo Testing all test targets...
-	@$(SWIFT) test $(SWIFT_CONFIGURATION)
+	@$(SWIFT) test --enable-code-coverage $(SWIFT_CONFIGURATION) $(if $(strip $(FILTER)),--filter '$(strip $(FILTER))')
 
 .PHONY: coverage-tools-test
 coverage-tools-test:
@@ -466,6 +483,24 @@ fetch-cloud-hypervisor:
 	fi
 	@chmod +x bin/cloud-hypervisor
 
+.PHONY: fetch-runc
+# Downloads to a .tmp path and only moves it into place after the checksum
+# passes: nothing downstream re-validates the binary, it is staged into the
+# initfs by presence alone.
+fetch-runc:
+	@mkdir -p bin
+	@curl -fSsL -o $(RUNC_BIN).tmp $(RUNC_URL)
+	@actual=$$(shasum -a 256 $(RUNC_BIN).tmp | awk '{print $$1}'); \
+	if [ "$$actual" != "$(RUNC_SHA256)" ]; then \
+		echo "ERROR: runc checksum mismatch" >&2; \
+		echo "  expected: $(RUNC_SHA256)" >&2; \
+		echo "  actual:   $$actual" >&2; \
+		rm -f $(RUNC_BIN).tmp; \
+		exit 1; \
+	fi
+	@chmod +x $(RUNC_BIN).tmp
+	@mv $(RUNC_BIN).tmp $(RUNC_BIN)
+
 .PHONY: check
 check: swift-fmt-check check-licenses
 
@@ -534,20 +569,18 @@ cleancontent:
 	@echo Cleaning the content...
 	@rm -rf ~/Library/Application\ Support/com.apple.containerization
 
-.PHONY: examples
-examples:
-	@echo Building examples...
-	@mkdir -p bin
-	@"$(MAKE)" -C examples/sandboxy build BUILD_CONFIGURATION=$(BUILD_CONFIGURATION)
-	@install examples/sandboxy/bin/sandboxy ./bin/
-	@codesign --force --sign - --timestamp=none --entitlements=signing/vz.entitlements bin/sandboxy
+.PHONY: cleanlinux
+cleanlinux:
+	@echo Cleaning Linux build files...
+	@container image delete --force $(LINUX_DEV_IMAGE) > /dev/null 2>&1 || true
+	@container volume delete $(LINUX_BUILD_VOLUME) > /dev/null 2>&1 || true
 
 .PHONY: clean
-clean:
+clean: cleanlinux
 	@echo Cleaning build files...
 	@rm -rf bin/
 	@rm -rf _site/
 	@rm -rf _serve/
-	@rm -f $(COV_REPORT_FILE)
+	@rm -rf $(COV_REPORT_DIR)
 	@$(SWIFT) package clean
 	@"$(MAKE)" -C vminitd clean

@@ -82,7 +82,7 @@ public struct Mount: Sendable {
     public enum RuntimeOptions: Sendable {
         case virtioblk([String])
         case virtiofs([String])
-        case shared
+        case shared(String?)
         case any([String])
     }
 
@@ -163,18 +163,22 @@ public struct Mount: Sendable {
     }
 
     /// A mount referencing a shared pod volume by name.
+    ///
+    /// `subpath` is a path within the volume to bind at `destination` instead of
+    /// the whole volume. It is resolved in the guest and never leaves the volume.
     public static func sharedMount(
         name: String,
         destination: String,
         options: [String] = [],
-        fileOwnership: FileMountOwnership? = nil
+        fileOwnership: FileMountOwnership? = nil,
+        subpath: String? = nil
     ) -> Self {
         .init(
             type: "none",
             source: name,
             destination: destination,
             options: options,
-            runtimeOptions: .shared,
+            runtimeOptions: .shared(subpath),
             fileOwnership: fileOwnership
         )
     }

@@ -52,6 +52,8 @@ public final class CHVirtualMachineInstance: Sendable {
         public var initialFilesystem: Mount?
         public var bootLog: BootLog?
         public var extensions: [any Sendable] = []
+        /// Options for every virtiofsd this VM starts, at boot and on hotplug.
+        public var virtiofsd: VirtiofsdOptions = .init()
 
         public init() {
             self.cpus = 4
@@ -220,6 +222,7 @@ public final class CHVirtualMachineInstance: Sendable {
             client: self.client,
             workDir: workDir,
             virtiofsdBinary: virtiofsdBinary,
+            virtiofsdOptions: config.virtiofsd,
             allocator: allocator,
             initialMounts: inventory.attachments,
             logger: logger
@@ -578,6 +581,8 @@ extension CHVirtualMachineInstance {
 
         // Disks: rootfs forced read-only at the device level; container disks
         // honor their `ro` option through chDiskConfig.
+        // Every disk also gets the per-device runtime options of its mount, such
+        // as `directio`, through chDiskConfig.
         var disks: [CloudHypervisor.DiskConfig] = []
         for bd in bootDisks {
             let chId = bd.containerId.map { "blk-\($0)-\(bd.letter)" } ?? "rootfs"
@@ -629,7 +634,8 @@ extension CHVirtualMachineInstance {
                                 binary: binary,
                                 socketPath: socket,
                                 sharedDir: URL(fileURLWithPath: source),
-                                readonly: entry.mounts.allSatisfy { $0.options.contains("ro") }
+                                readonly: entry.mounts.allSatisfy { $0.options.contains("ro") },
+                                options: config.virtiofsd
                             ),
                             logger: logger
                         )

@@ -28,7 +28,7 @@ import SystemPackage
 
 extension IntegrationSuite {
     /// Clone a rootfs mount to a new location for use by a container in a pod
-    private func cloneRootfs(_ rootfs: Containerization.Mount, testID: String, containerID: String) throws -> Containerization.Mount {
+    func cloneRootfs(_ rootfs: Containerization.Mount, testID: String, containerID: String) throws -> Containerization.Mount {
         let clonePath = Self.testDir.appending(component: "\(testID)-\(containerID).ext4").absolutePath()
         try? FileManager.default.removeItem(atPath: clonePath)
         return try rootfs.clone(to: clonePath)
@@ -38,9 +38,7 @@ extension IntegrationSuite {
         let id = "test-pod-single-container"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -63,9 +61,7 @@ extension IntegrationSuite {
         let id = "test-pod-multiple-containers"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -100,9 +96,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-output"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -132,9 +126,7 @@ extension IntegrationSuite {
         let id = "test-pod-concurrent-containers"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -177,9 +169,7 @@ extension IntegrationSuite {
         let id = "test-pod-exec-in-container"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -218,9 +208,7 @@ extension IntegrationSuite {
         let id = "test-pod-exec-in-container-env"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -260,9 +248,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-hostname"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -293,9 +279,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-hostname-default"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -325,9 +309,7 @@ extension IntegrationSuite {
         let id = "test-pod-stop-container-idempotency"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -354,9 +336,7 @@ extension IntegrationSuite {
         let id = "test-pod-list-containers"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -382,9 +362,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-statistics"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -438,9 +416,7 @@ extension IntegrationSuite {
         let id = "test-pod-memory-events-oom-kill"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -497,9 +473,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-resource-limits"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -568,9 +542,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-filesystem-isolation"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -639,9 +611,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-pid-isolation"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -720,9 +690,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-independent-limits"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -844,9 +812,7 @@ extension IntegrationSuite {
         let id = "test-pod-shared-pid-namespace"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             config.sharedNamespaces = [.process]
         }
@@ -938,9 +904,7 @@ extension IntegrationSuite {
         let bs = try await bootstrap(id)
         var rootfs = bs.rootfs
         rootfs.options.append("ro")
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -966,9 +930,7 @@ extension IntegrationSuite {
         let bs = try await bootstrap(id)
         var rootfs = bs.rootfs
         rootfs.options.append("ro")
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1010,9 +972,7 @@ extension IntegrationSuite {
             .appendingPathComponent("pod-config.txt")
         try testContent.write(to: hostFile, atomically: true, encoding: .utf8)
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1053,9 +1013,7 @@ extension IntegrationSuite {
         let id = "test-pod-container-hosts"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1093,9 +1051,7 @@ extension IntegrationSuite {
         let id = "test-pod-multi-dns"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1150,9 +1106,7 @@ extension IntegrationSuite {
         let id = "test-pod-multi-hosts"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1220,9 +1174,7 @@ extension IntegrationSuite {
         let id = "test-pod-level-dns"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             // Set DNS at the pod level
             config.dns = DNS(nameservers: ["9.9.9.9", "149.112.112.112"])
@@ -1279,9 +1231,7 @@ extension IntegrationSuite {
         let id = "test-pod-level-dns-override"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             // Set DNS at the pod level
             config.dns = DNS(nameservers: ["9.9.9.9"])
@@ -1341,9 +1291,7 @@ extension IntegrationSuite {
         let id = "test-pod-level-hosts"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             // Set hosts at the pod level
             config.hosts = Hosts(entries: [
@@ -1403,9 +1351,7 @@ extension IntegrationSuite {
         let id = "test-pod-level-hosts-override"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             // Set hosts at the pod level
             config.hosts = Hosts(entries: [
@@ -1478,9 +1424,7 @@ extension IntegrationSuite {
         let id = "test-pod-level-hostname"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             // Set hostname at the pod level
             config.hostname = "pod-host"
@@ -1529,9 +1473,7 @@ extension IntegrationSuite {
         let id = "test-pod-level-hostname-override"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             // Set hostname at the pod level
             config.hostname = "pod-host"
@@ -1584,9 +1526,7 @@ extension IntegrationSuite {
         let id = "test-pod-rlimit-open-files"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1623,9 +1563,7 @@ extension IntegrationSuite {
         let id = "test-pod-rlimit-exec"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1676,9 +1614,7 @@ extension IntegrationSuite {
         let id = "test-pod-use-init-basic"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1711,9 +1647,7 @@ extension IntegrationSuite {
         let bs = try await bootstrap(id)
 
         // Test exit code 0
-        var pod = try LinuxPod("\(id)-success", vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        var pod = try LinuxPod("\(id)-success", vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1732,9 +1666,7 @@ extension IntegrationSuite {
         }
 
         // Test non-zero exit code
-        pod = try LinuxPod("\(id)-failure", vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        pod = try LinuxPod("\(id)-failure", vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1753,9 +1685,7 @@ extension IntegrationSuite {
         }
 
         // Test custom exit code
-        pod = try LinuxPod("\(id)-custom", vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        pod = try LinuxPod("\(id)-custom", vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1778,9 +1708,7 @@ extension IntegrationSuite {
         let id = "test-pod-use-init-signal"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1815,9 +1743,7 @@ extension IntegrationSuite {
         let id = "test-pod-use-init-multiple"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1871,9 +1797,7 @@ extension IntegrationSuite {
         let id = "test-pod-use-init-shared-pid"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             config.sharedNamespaces = [.process]
         }
@@ -1918,9 +1842,7 @@ extension IntegrationSuite {
 
         let hostSocketPath = try createPodHostUnixSocket()
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -1986,9 +1908,7 @@ extension IntegrationSuite {
         let id = "test-pod-sysctl"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -2027,9 +1947,7 @@ extension IntegrationSuite {
         let id = "test-pod-sysctl-multi"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -2089,9 +2007,7 @@ extension IntegrationSuite {
         let id = "test-pod-invalid-volume-ref"
         let bs = try await bootstrap(id)
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -2115,9 +2031,7 @@ extension IntegrationSuite {
         let id = "test-pod-duplicate-volume-name"
         let bs = try await bootstrap(id)
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             config.volumes = [
                 .init(name: "data", source: .nbd(url: URL(string: "nbd://localhost:10809")!), format: "ext4"),
@@ -2155,9 +2069,7 @@ extension IntegrationSuite {
             throw IntegrationError.assert(msg: "failed to create network interface")
         }
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
             config.interfaces = [interface]
         }
@@ -2208,9 +2120,7 @@ extension IntegrationSuite {
         let filesystem = try EXT4.Formatter(FilePath(diskImageURL.absolutePath()), minDiskSize: 64.mib())
         try filesystem.close()
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -2323,9 +2233,7 @@ extension IntegrationSuite {
         let id = "test-pod-hotplug-virtiofs-rootfs"
         let bs = try await bootstrap(id)
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 
@@ -2382,9 +2290,7 @@ extension IntegrationSuite {
         let id = "test-pod-hotplug-block-rootfs"
         let bs = try await bootstrap(id)
 
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: .default) { config in
             config.bootLog = bs.bootLog
         }
 

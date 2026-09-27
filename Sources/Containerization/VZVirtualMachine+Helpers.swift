@@ -141,9 +141,9 @@ extension VZVirtualMachine {
 
 extension VZVirtualMachine {
     func waitForAgent(queue: DispatchQueue) async throws -> FileHandle {
-        // Preserve the previous 201-attempt, 20 ms sleep budget while adding
+        // Preserve the upstream 500-attempt, 20 ms sleep budget while adding
         // earlier connection attempts inside each original 20 ms interval.
-        var remainingRetryDelay: Duration = .milliseconds(4020)
+        var remainingRetryDelay: Duration = .milliseconds(10000)
         var pollBackoff = PollBackoff(
             initialDelay: .milliseconds(5),
             maximumDelay: .milliseconds(20)
