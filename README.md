@@ -232,4 +232,4 @@ Containerization is under active development. Source stability is guaranteed
 within a minor release line; use SwiftPM's `upToNextMinor` requirement when a
 consumer must avoid potentially source-breaking minor upgrades.
 
-VSOCK descriptor handoff closes the original descriptor after duplication so closing the returned handle propagates EOF. See [the ownership correction](docs/PR-vsock-descriptor-close.md).
+VSOCK descriptor handoff closes the original descriptor after duplication so closing the returned handle propagates EOF. See [the ownership correction](docs/PR-105.md).
