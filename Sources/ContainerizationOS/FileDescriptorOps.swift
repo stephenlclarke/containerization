@@ -104,7 +104,7 @@ public enum FileDescriptorOps {
         try validateRelativePath(relativePath)
         try mkdir(
             fd,
-            relativePath.components,
+            Array(relativePath.components)[...],
             permissions: permissions,
             makeIntermediates: makeIntermediates,
             completion: completion
@@ -121,7 +121,7 @@ public enum FileDescriptorOps {
         completion: (FileDescriptor) throws -> Void
     ) throws {
         try validateRelativePath(relativePath)
-        try withOpenDirectory(fd, relativePath.components, completion: completion)
+        try withOpenDirectory(fd, Array(relativePath.components)[...], completion: completion)
     }
 
     /// Recursively removes a direct child of the directory at `fd`.
@@ -237,9 +237,12 @@ public enum FileDescriptorOps {
 
     // MARK: - Private helpers
 
+    // Parse once at the public boundary. Slices reuse those components without
+    // rebuilding and normalizing the remaining path at every directory level.
+
     private static func mkdir(
         _ fd: FileDescriptor,
-        _ relativeComponents: FilePath.ComponentView,
+        _ relativeComponents: ArraySlice<FilePath.Component>,
         permissions: FilePermissions? = nil,
         makeIntermediates: Bool,
         completion: (FileDescriptor) throws -> Void
@@ -248,7 +251,7 @@ public enum FileDescriptorOps {
             try completion(fd)
             return
         }
-        let childComponents = FilePath.ComponentView(relativeComponents.dropFirst())
+        let childComponents = relativeComponents.dropFirst()
 
         var componentFd = openat(fd.rawValue, currentComponent.string, O_NOFOLLOW | O_RDONLY | O_DIRECTORY)
         var createdComponent = false
@@ -290,7 +293,7 @@ public enum FileDescriptorOps {
 
     private static func withOpenDirectory(
         _ fd: FileDescriptor,
-        _ relativeComponents: FilePath.ComponentView,
+        _ relativeComponents: ArraySlice<FilePath.Component>,
         completion: (FileDescriptor) throws -> Void
     ) throws {
         guard let currentComponent = relativeComponents.first else {
@@ -314,7 +317,7 @@ public enum FileDescriptorOps {
         defer { try? componentFileDescriptor.close() }
         try withOpenDirectory(
             componentFileDescriptor,
-            FilePath.ComponentView(relativeComponents.dropFirst()),
+            relativeComponents.dropFirst(),
             completion: completion
         )
     }

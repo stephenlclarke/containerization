@@ -506,24 +506,26 @@ struct ArchiveTests {
         #expect((roPerms & 0o777) == 0o444, "Read-only permissions should be preserved")
     }
 
-    @Test func archiveDirectoryLargeFile() throws {
+    @Test(arguments: [false, true])
+    func archiveDirectoryLargeFile(compressed: Bool) throws {
         let testDir = createTemporaryDirectory(baseName: "ArchiveTests.archiveDirLargeFile")!
         defer { try? FileManager.default.removeItem(at: testDir) }
 
         let sourceDir = testDir.appendingPathComponent("source")
         try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
 
-        // 2MB file with repeating pattern
+        // Cross multiple archive input blocks, including a partial final block.
+        let byteCount = 8 * 1024 * 1024 + 137
         let pattern = Data("ContainerizationArchiveTestPattern\n".utf8)
-        var largeData = Data(capacity: 2 * 1024 * 1024)
-        while largeData.count < 2 * 1024 * 1024 {
+        var largeData = Data(capacity: byteCount)
+        while largeData.count < byteCount {
             largeData.append(pattern)
         }
-        largeData = largeData.prefix(2 * 1024 * 1024)
+        largeData = largeData.prefix(byteCount)
         try largeData.write(to: sourceDir.appendingPathComponent("large.bin"))
 
         let archiveURL = testDir.appendingPathComponent("test.tar.gz")
-        let writer = try ArchiveWriter(format: .pax, filter: .gzip, file: archiveURL)
+        let writer = try ArchiveWriter(format: .pax, filter: compressed ? .gzip : .none, file: archiveURL)
         try writer.archiveDirectory(sourceDir)
         try writer.finishEncoding()
 

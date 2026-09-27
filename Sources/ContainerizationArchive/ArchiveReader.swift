@@ -49,6 +49,7 @@ public struct ArchiveEntryReader: ReadableStream {
 
 /// A class responsible for reading entries from an archive file.
 public final class ArchiveReader {
+    // Keep sparse-aware extraction from issuing one write for every 4 KiB input block.
     private static let chunkSize = 4 * 1024 * 1024
 
     /// A pointer to the underlying `archive` C structure.
@@ -114,7 +115,7 @@ public final class ArchiveReader {
             .checkOk(elseThrow: .unableToAddFilter(filter.code, filter))
 
         let fd = fileHandle.fileDescriptor
-        try archive_read_open_fd(underlying, fd, 4096)
+        try archive_read_open_fd(underlying, fd, Self.chunkSize)
             .checkOk(elseThrow: { .unableToOpenArchive($0) })
     }
 
@@ -129,7 +130,7 @@ public final class ArchiveReader {
         try archive_read_support_format_all(underlying)
             .checkOk(elseThrow: .failedToDetectFormat)
 
-        try archive_read_open_fd(underlying, fileHandle.fileDescriptor, 4096)
+        try archive_read_open_fd(underlying, fileHandle.fileDescriptor, Self.chunkSize)
             .checkOk(elseThrow: { .unableToOpenArchive($0) })
     }
 
@@ -151,7 +152,7 @@ public final class ArchiveReader {
             try ZstdArchiveSource.open(archive: underlying, source: handle)
                 .checkOk(elseThrow: { .unableToOpenArchive($0) })
         } else {
-            try archive_read_open_fd(underlying, handle.fileDescriptor, 4096)
+            try archive_read_open_fd(underlying, handle.fileDescriptor, Self.chunkSize)
                 .checkOk(elseThrow: { .unableToOpenArchive($0) })
         }
     }
