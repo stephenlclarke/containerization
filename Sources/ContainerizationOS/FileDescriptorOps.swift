@@ -418,7 +418,7 @@ public enum FileDescriptorOps {
         completion: (FileDescriptor) throws -> Void
     ) throws {
         try validateRelativePath(relativePath)
-        try withOpenDirectory(fd, relativePath.components, completion: completion)
+        try withOpenDirectory(fd, Array(relativePath.components)[...], completion: completion)
     }
 
     /// Recursively removes a direct child of the directory at `fd`.
@@ -566,7 +566,7 @@ public enum FileDescriptorOps {
 
     private static func withOpenDirectory(
         _ fd: FileDescriptor,
-        _ relativeComponents: FilePath.ComponentView,
+        _ relativeComponents: ArraySlice<FilePath.Component>,
         completion: (FileDescriptor) throws -> Void
     ) throws {
         guard let currentComponent = relativeComponents.first else {
@@ -590,7 +590,7 @@ public enum FileDescriptorOps {
         defer { try? componentFileDescriptor.close() }
         try withOpenDirectory(
             componentFileDescriptor,
-            FilePath.ComponentView(relativeComponents.dropFirst()),
+            relativeComponents.dropFirst(),
             completion: completion
         )
     }

@@ -37,6 +37,10 @@ in `container-compose`'s [README](https://github.com/stephenlclarke/container-co
 [STATUS.md](https://github.com/stephenlclarke/container-compose/blob/main/docs/project/STATUS.md),
 and [BUILD.md](https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/BUILD.md).
 
+Archive extraction batches input in 4 MiB blocks and reuses parsed directory
+components during secure traversal. Sparse files and deferred directory metadata
+remain supported; see the [performance change](docs/PR-runtime-performance.md).
+
 Containerization provides APIs to:
 
 - [Manage OCI images](./Sources/ContainerizationOCI/).
