@@ -19,3 +19,12 @@ integers preserves deepest-first ordering without repeatedly walking every path
 during sorting. All 68 archive tests pass; the same debug deep-nesting fixture
 fell again from 5.368 seconds to 0.863 seconds. Deferred permissions, timestamps
 and last-entry behavior remain covered by the existing regressions.
+
+## Fourth iteration: allocate runtime shares on demand
+
+Keep all reserved runtime virtiofs devices and their tags, but leave unused
+shares nil until assigned. The SDK explicitly allows a nullable share. Clearing
+a released device also returns it to nil. Device-budget reconciliation accepts
+nil or empty shares and still rejects occupied excess devices. Focused VZ pool
+and device-budget tests pass. VM startup and post-start attachment remain the
+required runtime acceptance gates for this candidate.
