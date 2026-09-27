@@ -17,3 +17,7 @@ Logs, staged-tree fingerprints, test reports, and pre-merge bundles are retained
 ## Risks and related work
 
 Linux test compilation is blocked because the installed Static Linux SDK does not ship the Swift Testing module (`guest-tests-compile.log`). Host tests and guest executable cross-compilation do not establish Linux test execution or a refreshed end-to-end performance comparison. Existing benchmark evidence belongs to its recorded prior revisions. See [the matching issue](ISSUE-upstream-sync-20260927.md).
+
+## Integration executable follow-up
+
+The remote build exposed two fork-only pod integration setups still assigning VM resources through the removed configuration properties. They now pass explicit `VMResources`. Both `containerization-integration` and `cctl` compile successfully through Bazel (retained `containerization-integration-compile.log`). This changes integration setup only; the library and Linux guest bytes benchmarked at f58053c are unchanged. The full Linux guest unit suite remains limited by the installed SDK's missing Swift Testing module.

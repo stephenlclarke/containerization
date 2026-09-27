@@ -854,9 +854,7 @@ extension IntegrationSuite {
         let id = "test-pod-shared-ipc-namespace"
 
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: VMResources(cpus: 4, memoryInBytes: 1024.mib())) { config in
             config.bootLog = bs.bootLog
             config.sharedNamespaces = [.interprocessCommunication]
         }
@@ -2332,9 +2330,7 @@ extension IntegrationSuite {
     func testPodHotplugPreservesRunningWorkload() async throws {
         let id = "test-pod-hotplug-preserves-running-workload"
         let bs = try await bootstrap(id)
-        let pod = try LinuxPod(id, vmm: bs.vmm) { config in
-            config.cpus = 4
-            config.memoryInBytes = 1024.mib()
+        let pod = try LinuxPod(id, vmm: bs.vmm, vm: VMResources(cpus: 4, memoryInBytes: 1024.mib())) { config in
             config.bootLog = bs.bootLog
             config.extensions.append(
                 VZPreexposedDirectoryShare(roots: [Self.testDir])
