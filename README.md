@@ -39,7 +39,8 @@ and [BUILD.md](https://github.com/stephenlclarke/container-compose/blob/main/doc
 
 Archive extraction batches input in 4 MiB blocks and reuses parsed directory
 components during secure traversal. Sparse files and deferred directory metadata
-remain supported; see the [performance change](docs/PR-runtime-performance.md).
+remain supported. Main-branch publication builds the Linux guest in release
+mode; pull-request validation retains debug guests. See the [performance change](docs/PR-runtime-performance.md).
 
 Containerization provides APIs to:
 
