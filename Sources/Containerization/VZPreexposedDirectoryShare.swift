@@ -125,8 +125,8 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
         }
         for device in excessDevices {
             guard
-                device.share == nil
-                    || (device.share as? VZMultipleDirectoryShare)?.directories.isEmpty == true
+                let share = device.share as? VZMultipleDirectoryShare,
+                share.directories.isEmpty
             else {
                 throw ContainerizationError(
                     .invalidState,
@@ -218,7 +218,7 @@ public struct VZPreexposedDirectoryShare: VZInstanceExtension {
                 )
             }
             let runtimeDevice = VZVirtioFileSystemDeviceConfiguration(tag: tag)
-            // Keep the device reserved, but allocate its host share only when used.
+            runtimeDevice.share = VZMultipleDirectoryShare(directories: [:])
             config.directorySharingDevices.append(runtimeDevice)
         }
     }

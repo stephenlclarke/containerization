@@ -20,11 +20,10 @@ during sorting. All 68 archive tests pass; the same debug deep-nesting fixture
 fell again from 5.368 seconds to 0.863 seconds. Deferred permissions, timestamps
 and last-entry behavior remain covered by the existing regressions.
 
-## Fourth iteration: allocate runtime shares on demand
+## Rejected fourth iteration
 
-Keep all reserved runtime virtiofs devices and their tags, but leave unused
-shares nil until assigned. The SDK explicitly allows a nullable share. Clearing
-a released device also returns it to nil. Device-budget reconciliation accepts
-nil or empty shares and still rejects occupied excess devices. Focused VZ pool
-and device-budget tests pass. VM startup and post-start attachment remain the
-required runtime acceptance gates for this candidate.
+Leaving reserved virtiofs shares nil preserved VM boot in three runtime trials
+but did not materially close the startup gap (approximately 710 ms versus the
+prior 730 ms, within run-to-run variation). Restore the existing share behavior
+rather than retain a new live-attachment configuration without a demonstrated
+benefit. The final production implementation is identical to `47ded59ac35d4a71d712cd41cb3382f3a3e9c4f6`; later changes record this experiment.
