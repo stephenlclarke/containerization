@@ -75,13 +75,7 @@ public actor ManagedContainer {
         // how they get the pod's address. Apply those keys directly instead and hand
         // the runtime only the rest. The remaining keys are ipc- or uts-namespaced and
         // the spec does declare those, so the runtime accepts them.
-        if ociRuntimePath != nil, let sysctls = spec.linux?.sysctl, !sysctls.isEmpty {
-            let networkKeys = sysctls.filter { $0.key.hasPrefix("net.") }
-            if !networkKeys.isEmpty {
-                try Self.applyNetworkSysctls(networkKeys, log: log)
-                spec.linux?.sysctl = sysctls.filter { !$0.key.hasPrefix("net.") }
-            }
-        }
+        try Self.prepareSysctlsForRuntime(spec: &spec, ociRuntimePath: ociRuntimePath, log: log)
 
         let bundle = try ContainerizationOCI.Bundle.create(
             path: Self.craftBundlePath(id: id),
@@ -146,6 +140,23 @@ public actor ManagedContainer {
 }
 
 extension ManagedContainer {
+    /// Move only network sysctls out of a runc spec after their VM writes succeed.
+    static func prepareSysctlsForRuntime(
+        spec: inout ContainerizationOCI.Spec,
+        ociRuntimePath: String?,
+        procSysRoot: String = "/proc/sys",
+        log: Logger
+    ) throws {
+        guard ociRuntimePath != nil, let sysctls = spec.linux?.sysctl, !sysctls.isEmpty else {
+            return
+        }
+        let networkKeys = sysctls.filter { $0.key.hasPrefix("net.") }
+        guard !networkKeys.isEmpty else { return }
+
+        try Self.applyNetworkSysctls(networkKeys, procSysRoot: procSysRoot, log: log)
+        spec.linux?.sysctl = sysctls.filter { !$0.key.hasPrefix("net.") }
+    }
+
     // removeCgroupWithRetry will remove a cgroup path handling EAGAIN and EBUSY errors and
     // retrying the remove after an exponential timeout
     private func removeCgroupWithRetry() async throws {
@@ -389,9 +400,13 @@ extension ManagedContainer {
     /// land in the namespace every container in the pod shares — the scope a pod-level
     /// sysctl means. Values are written once per container that declares them, which is
     /// idempotent.
-    static func applyNetworkSysctls(_ sysctls: [String: String], log: Logger) throws {
+    static func applyNetworkSysctls(
+        _ sysctls: [String: String],
+        procSysRoot: String = "/proc/sys",
+        log: Logger
+    ) throws {
         for (key, value) in sysctls.sorted(by: { $0.key < $1.key }) {
-            let path = "/proc/sys/" + key.replacingOccurrences(of: ".", with: "/")
+            let path = procSysRoot + "/" + key.replacingOccurrences(of: ".", with: "/")
             // Raw open/write rather than Data.write(to:): procfs rejects the
             // create-and-rename Foundation may use, and these are single-write files.
             let fd = open(path, O_WRONLY, 0)

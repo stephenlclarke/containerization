@@ -39,12 +39,16 @@ def discover_test_executables(build_bin_dir: Path) -> list[Path]:
 
     executables: list[Path] = []
     for bundle in bundles:
-        name = bundle.name.removesuffix(".xctest")
-        candidates = (bundle / "Contents" / "MacOS" / name, bundle / name)
-        matches = [candidate for candidate in candidates if candidate.exists()]
-        if len(matches) != 1:
-            raise ValueError(f"expected one executable for {bundle}, found {len(matches)}")
-        executable = matches[0]
+        if bundle.is_file() or bundle.is_symlink():
+            # Linux SwiftPM emits an executable ending in .xctest rather than a bundle.
+            executable = bundle
+        else:
+            name = bundle.name.removesuffix(".xctest")
+            candidates = (bundle / "Contents" / "MacOS" / name, bundle / name)
+            matches = [candidate for candidate in candidates if candidate.exists()]
+            if len(matches) != 1:
+                raise ValueError(f"expected one executable for {bundle}, found {len(matches)}")
+            executable = matches[0]
         if executable.is_symlink() or not executable.is_file() or not os.access(executable, os.X_OK):
             raise ValueError(f"test bundle executable is not a regular executable: {executable}")
         executables.append(executable.resolve())
@@ -56,7 +60,7 @@ def llvm_cov_command(
     compilation_dir: Path,
     profile: Path,
     executables: Sequence[Path],
-    xcrun: str = "xcrun",
+    coverage_tool: Sequence[str] | None = None,
 ) -> list[str]:
     """Build an llvm-cov command that merges every supplied test executable."""
     if mode not in ("show", "lcov"):
@@ -66,7 +70,10 @@ def llvm_cov_command(
     if not executables:
         raise ValueError("at least one test executable is required")
 
-    command = [xcrun, "llvm-cov", "export" if mode == "lcov" else "show"]
+    tool = list(coverage_tool) if coverage_tool is not None else (
+        ["xcrun", "llvm-cov"] if sys.platform == "darwin" else ["llvm-cov"]
+    )
+    command = tool + ["export" if mode == "lcov" else "show"]
     if mode == "lcov":
         command.append("--format=lcov")
     command.extend(
@@ -91,6 +98,8 @@ def write_report(command: Sequence[str], output: Path, runner: Runner = subproce
     try:
         with temporary.open("wb") as stream:
             runner(command, check=True, stdout=stream)
+        if temporary.stat().st_size == 0:
+            raise ValueError("LLVM coverage export is empty")
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
