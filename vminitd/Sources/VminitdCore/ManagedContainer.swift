@@ -25,6 +25,8 @@ import LCShim
 import Logging
 
 public actor ManagedContainer {
+    private static let defaultProcSysRoot = Cgroup2Manager.defaultProcRoot.appending(path: "sys")
+
     public let id: String
     let initProcess: any ContainerProcess
 
@@ -144,7 +146,7 @@ extension ManagedContainer {
     static func prepareSysctlsForRuntime(
         spec: inout ContainerizationOCI.Spec,
         ociRuntimePath: String?,
-        procSysRoot: String = "/proc/sys",
+        procSysRoot: URL = ManagedContainer.defaultProcSysRoot,
         log: Logger
     ) throws {
         guard ociRuntimePath != nil, let sysctls = spec.linux?.sysctl, !sysctls.isEmpty else {
@@ -402,11 +404,15 @@ extension ManagedContainer {
     /// idempotent.
     static func applyNetworkSysctls(
         _ sysctls: [String: String],
-        procSysRoot: String = "/proc/sys",
+        procSysRoot: URL = ManagedContainer.defaultProcSysRoot,
         log: Logger
     ) throws {
         for (key, value) in sysctls.sorted(by: { $0.key < $1.key }) {
-            let path = procSysRoot + "/" + key.replacingOccurrences(of: ".", with: "/")
+            let components = key.split(separator: ".", omittingEmptySubsequences: false)
+            guard components.allSatisfy({ !$0.isEmpty && !$0.contains("/") }) else {
+                throw ContainerizationError(.invalidArgument, message: "invalid sysctl key \(key)")
+            }
+            let path = components.reduce(procSysRoot) { $0.appending(path: String($1)) }.path
             // Raw open/write rather than Data.write(to:): procfs rejects the
             // create-and-rename Foundation may use, and these are single-write files.
             let fd = open(path, O_WRONLY, 0)

@@ -27,6 +27,33 @@ import Testing
 struct ManagedContainerSysctlTests {
     private let log = Logger(label: "ManagedContainerSysctlTests")
 
+    @Test func missingNetworkSysctlFailsBeforeBundleCreation() async throws {
+        let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        let id = "missing-network-sysctl-\(suffix)"
+        let key = "net.containerization_test_\(suffix)"
+        let path = "/proc/sys/net/containerization_test_\(suffix)"
+        let bundlePath = ManagedContainer.craftBundlePath(id: id)
+        try #require(!FileManager.default.fileExists(atPath: path))
+        try #require(!FileManager.default.fileExists(atPath: bundlePath.path))
+
+        do {
+            _ = try await ManagedContainer(
+                id: id,
+                stdio: HostStdio(stdin: nil, stdout: nil, stderr: nil, terminal: false),
+                spec: Spec(linux: Linux(sysctl: [key: "1"])),
+                ociRuntimePath: "/usr/bin/runc",
+                log: log
+            )
+            Issue.record("expected the missing network sysctl to reject container creation")
+        } catch {
+            let containerError = try #require(error as? ContainerizationError)
+            #expect(containerError.code == .invalidArgument)
+            #expect(containerError.message.contains("failed to open \(path) for sysctl \(key)"))
+        }
+
+        #expect(!FileManager.default.fileExists(atPath: bundlePath.path))
+    }
+
     @Test func runcWritesNetworkSysctlAndKeepsOnlyNamespacedKeys() throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -43,7 +70,7 @@ struct ManagedContainerSysctlTests {
         try ManagedContainer.prepareSysctlsForRuntime(
             spec: &spec,
             ociRuntimePath: "/usr/bin/runc",
-            procSysRoot: root.path,
+            procSysRoot: root,
             log: log
         )
 
@@ -57,7 +84,7 @@ struct ManagedContainerSysctlTests {
         try ManagedContainer.prepareSysctlsForRuntime(
             spec: &vmexecSpec,
             ociRuntimePath: nil,
-            procSysRoot: missingRoot.path,
+            procSysRoot: missingRoot,
             log: log
         )
         #expect(vmexecSpec.linux?.sysctl == ["net.ipv4.ip_forward": "1"])
@@ -66,7 +93,7 @@ struct ManagedContainerSysctlTests {
         try ManagedContainer.prepareSysctlsForRuntime(
             spec: &nonNetworkSpec,
             ociRuntimePath: "/usr/bin/runc",
-            procSysRoot: missingRoot.path,
+            procSysRoot: missingRoot,
             log: log
         )
         #expect(nonNetworkSpec.linux?.sysctl == ["kernel.shm_rmid_forced": "0"])
@@ -75,7 +102,7 @@ struct ManagedContainerSysctlTests {
         try ManagedContainer.prepareSysctlsForRuntime(
             spec: &emptySpec,
             ociRuntimePath: "/usr/bin/runc",
-            procSysRoot: missingRoot.path,
+            procSysRoot: missingRoot,
             log: log
         )
         #expect(emptySpec.linux == nil)
@@ -92,7 +119,7 @@ struct ManagedContainerSysctlTests {
             try ManagedContainer.prepareSysctlsForRuntime(
                 spec: &spec,
                 ociRuntimePath: "/usr/bin/runc",
-                procSysRoot: root.path,
+                procSysRoot: root,
                 log: log
             )
         }
@@ -116,7 +143,7 @@ struct ManagedContainerSysctlTests {
             try ManagedContainer.prepareSysctlsForRuntime(
                 spec: &spec,
                 ociRuntimePath: "/usr/bin/runc",
-                procSysRoot: root.path,
+                procSysRoot: root,
                 log: log
             )
         }
@@ -137,11 +164,33 @@ struct ManagedContainerSysctlTests {
             try ManagedContainer.prepareSysctlsForRuntime(
                 spec: &spec,
                 ociRuntimePath: "/usr/bin/runc",
-                procSysRoot: root.path,
+                procSysRoot: root,
                 log: log
             )
         }
         #expect(spec.linux?.sysctl == sysctls)
+    }
+
+    @Test func malformedNetworkSysctlCannotAliasAValidPath() throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let networkFile = root.appending(path: "net/ipv4/ip_forward")
+        try FileManager.default.createDirectory(at: networkFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("original".utf8).write(to: networkFile)
+
+        for key in ["net.ipv4.ip_forward.", "net..ipv4.ip_forward", "net.ipv4/ip_forward"] {
+            var spec = Spec(linux: Linux(sysctl: [key: "1"]))
+            #expect(throws: ContainerizationError.self) {
+                try ManagedContainer.prepareSysctlsForRuntime(
+                    spec: &spec,
+                    ociRuntimePath: "/usr/bin/runc",
+                    procSysRoot: root,
+                    log: log
+                )
+            }
+            #expect(try String(contentsOf: networkFile, encoding: .utf8) == "original")
+            #expect(spec.linux?.sysctl == [key: "1"])
+        }
     }
 
     private func temporaryRoot() throws -> URL {
