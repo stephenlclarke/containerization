@@ -65,6 +65,8 @@ jobs:
             --compilation-dir "$PWD" \
             --output coverage-linux.lcov
           python3 Tools/coverage/lcov-to-sonarqube-generic.py coverage-linux.lcov coverage-linux.xml
+          test "$PWD" = "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           python3 Tools/coverage/merge-sonarqube-generic.py stamp \
             --repository . --report coverage-linux.xml --output coverage-identity.json
 
