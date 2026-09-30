@@ -14,8 +14,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  swift-version:
+    name: Determine Swift version
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')
+    runs-on: ubuntu-24.04
+    outputs:
+      image: ${{ steps.version.outputs.image }}
+    steps:
+      - name: Check out version at analyzed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .swift-version
+          sparse-checkout-cone-mode: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Read Swift version
+        id: version
+        run: echo "image=swift:$(cat .swift-version)-noble" >> "$GITHUB_OUTPUT"
+
+  linux-coverage:
+    name: Instrumented Linux coverage
+    needs: swift-version
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container: ${{ needs.swift-version.outputs.image }}
+    steps:
+      - name: Check out analyzed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install system dependencies
+        run: apt-get update && apt-get install -y curl make python3 libarchive-dev libbz2-dev liblzma-dev libssl-dev
+
+      - name: Run instrumented Linux tests
+        run: swift test --enable-code-coverage --disable-automatic-resolution -Xswiftc -warnings-as-errors
+
+      - name: Export source-bound Linux coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          coverage_dir="$(dirname "$(swift test --show-coverage-path)")"
+          profile="${coverage_dir}/default.profdata"
+          build_bin="$(swift build --show-bin-path)"
+          python3 Tools/coverage/llvm_cov_report.py lcov \
+            --build-bin-dir "$build_bin" \
+            --profile "$profile" \
+            --compilation-dir "$PWD" \
+            --output coverage-linux.lcov
+          python3 Tools/coverage/lcov-to-sonarqube-generic.py coverage-linux.lcov coverage-linux.xml
+          test "$PWD" = "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          python3 Tools/coverage/merge-sonarqube-generic.py stamp \
+            --repository . --report coverage-linux.xml --output coverage-identity.json
+
+      - name: Upload Linux coverage evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sonar-linux-coverage-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            coverage-linux.lcov
+            coverage-linux.xml
+            coverage-identity.json
+          if-no-files-found: error
+
   analyze:
     name: Analyze Swift
+    needs: linux-coverage
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')
     runs-on: macos-26
     timeout-minutes: 60
@@ -30,6 +97,22 @@ jobs:
 
       - name: Generate coverage
         run: make coverage-sonar
+
+      - name: Download Linux coverage from this run
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: sonar-linux-coverage-${{ github.event.pull_request.head.sha || github.sha }}
+          path: linux-coverage
+
+      - name: Combine exact-source platform coverage
+        run: |
+          mv coverage.xml coverage-macos.xml
+          python3 Tools/coverage/merge-sonarqube-generic.py merge \
+            --repository . \
+            --mac coverage-macos.xml \
+            --linux linux-coverage/coverage-linux.xml \
+            --identity linux-coverage/coverage-identity.json \
+            --output coverage.xml
 
       - name: Validate SonarQube project policy
         env:
@@ -122,4 +205,8 @@ jobs:
           path: |
             coverage.lcov
             coverage.xml
+            coverage-macos.xml
+            linux-coverage/coverage-linux.lcov
+            linux-coverage/coverage-linux.xml
+            linux-coverage/coverage-identity.json
           if-no-files-found: error

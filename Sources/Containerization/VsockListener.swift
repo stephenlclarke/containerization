@@ -103,6 +103,9 @@ extension VsockListener: VZVirtioSocketListenerDelegate {
             return false
         }
 
+        // The duplicate is transferred to the caller; retaining the original
+        // descriptor would keep the peer open after FileHandle.close().
+        conn.close()
         let fh = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
         retainConnectionOwner(conn, for: fh)
         let result = cont.yield(fh)

@@ -224,10 +224,12 @@ open http://localhost:8000/containerization/documentation/
 
 Contributions to Containerization are welcomed and encouraged. Please see [CONTRIBUTING.md](/CONTRIBUTING.md) for more information.
 
-`make coverage-sonar` runs the instrumented Swift package suite and emits project-confined LCOV plus SonarQube generic XML. Coverage includes every test executable emitted by SwiftPM, supporting both the historical aggregate test bundle and the split per-target bundles produced by current Xcode releases. `make sonar-scan` submits that evidence with the exact current commit as the previous-version baseline; the hosted workflow performs both steps for pull requests and `main`.
+`make coverage-sonar` runs the instrumented Swift package suite and emits project-confined LCOV plus SonarQube generic XML. Coverage includes every test executable emitted by SwiftPM, supporting both the historical aggregate test bundle and the split per-target bundles produced by current Xcode releases. `make sonar-scan` submits that evidence with the exact current commit as the previous-version baseline. The hosted SonarQube workflow also runs instrumented Linux tests, then combines macOS and Linux line hits from the same commit, source tree, and dependency lock before scanning. It fails if the Linux guest coverage or source identity is missing or inconsistent.
 
 ## Project Status
 
 Containerization is under active development. Source stability is guaranteed
 within a minor release line; use SwiftPM's `upToNextMinor` requirement when a
 consumer must avoid potentially source-breaking minor upgrades.
+
+VSOCK descriptor handoff closes the original descriptor after duplication so closing the returned handle propagates EOF. See [the ownership correction](docs/PR-105.md).
