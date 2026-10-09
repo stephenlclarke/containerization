@@ -32,3 +32,11 @@ another duplicate package-identity edge when the full stack resolves.
 - [SwiftNIO SSL pull request 2](https://github.com/stephenlclarke/swift-nio-ssl/pull/2)
 - [Container release integration pull request 169](https://github.com/stephenlclarke/container/pull/169)
 - [Container Compose release pull request 333](https://github.com/stephenlclarke/container-compose/pull/333)
+
+## Current TLS dependency
+
+The earlier `09c5c9a` pin recorded above was superseded by SwiftNIO SSL PR 7,
+merged at `aee34db2144717ddce7bd145e45cf4fb9dab73fb`. The root and vminitd
+resolved graphs now select that exact fork revision. This source update does not
+by itself refresh any already-published Containerization or downstream binary
+layer; those artifacts require a new source-mode qualification and release.

@@ -37,6 +37,13 @@ in `container-compose`'s [README](https://github.com/stephenlclarke/container-co
 [STATUS.md](https://github.com/stephenlclarke/container-compose/blob/main/docs/project/STATUS.md),
 and [BUILD.md](https://github.com/stephenlclarke/container-compose/blob/main/docs/guides/BUILD.md).
 
+The package graph pins the merged SwiftNIO SSL Darwin trust-alert fix at
+`aee34db2144717ddce7bd145e45cf4fb9dab73fb`. The Containerization and vminitd
+resolved graphs select that exact fork revision; rebuild and qualify the
+enhanced dependency layers before claiming a compiled runtime includes it.
+See the TLS dependency update in [issue 53](docs/ISSUE-53.md) and
+[PR 54](docs/PR-54.md).
+
 Archive extraction batches input in 4 MiB blocks and reuses parsed directory
 components during secure traversal. Sparse files and deferred directory metadata
 remain supported. Main-branch publication builds the Linux guest in release
