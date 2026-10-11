@@ -118,4 +118,59 @@ struct EXT4ExtentBoundsTests {
         let extents = try reader.decodeExtents(inodeBlock: Data(block))
         #expect(extents.isEmpty)
     }
+    @Test
+    func rejectsZeroLengthAndOverlappingLogicalRanges() throws {
+        let (reader, url) = try makeReader()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let malformed = [
+            extentHeader(entries: 1, depth: 0) + extentLeaf(length: 0, startLow: 100),
+            extentHeader(entries: 2, depth: 0) + extentLeaf(block: 2, length: 2, startLow: 100) + extentLeaf(block: 3, length: 1, startLow: 110),
+            extentHeader(entries: 2, depth: 0) + extentLeaf(block: 2, length: 1, startLow: 100) + extentLeaf(block: 1, length: 1, startLow: 110),
+            extentHeader(entries: 1, depth: 0) + extentLeaf(block: UInt32.max, length: 2, startLow: 100),
+            extentHeader(entries: 1, depth: 0) + extentLeaf(length: 2, startLow: UInt32.max),
+        ]
+        for bytes in malformed {
+            #expect(throws: EXT4.Error.invalidExtents) {
+                _ = try reader.decodeExtents(inodeBlock: Data(bytes))
+            }
+        }
+    }
+
+    @Test
+    func distinguishesMaximumInitializedLengthFromUnwrittenFlag() throws {
+        let (reader, url) = try makeReader()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let initialized = try reader.decodeExtents(inodeBlock: Data(extentHeader(entries: 1, depth: 0) + extentLeaf(length: 0x8000, startLow: 100)))
+        #expect(initialized.first?.end == UInt32(32868))
+        let unwritten = try reader.decodeExtents(inodeBlock: Data(extentHeader(entries: 1, depth: 0) + extentLeaf(length: 0x8001, startLow: 100)))
+        #expect(unwritten.first?.end == 101)
+    }
+
+    @Test
+    func rejectsInvalidBlockSizeBeforeReadingGeometry() throws {
+        let (_, url) = try makeReader()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let offset = try #require(MemoryLayout<EXT4.SuperBlock>.offset(of: \.logBlockSize))
+        let handle = try FileHandle(forUpdating: url)
+        defer { try? handle.close() }
+        try handle.seek(toOffset: EXT4.SuperBlockOffset + UInt64(offset))
+        var logarithm = UInt32(21).littleEndian
+        try withUnsafeBytes(of: &logarithm) { try handle.write(contentsOf: Data($0)) }
+        #expect(throws: EXT4.Error.invalidSuperBlock) {
+            _ = try EXT4.EXT4Reader(blockDevice: FilePath(url.path))
+        }
+    }
+
+    @Test
+    func checkedByteOffsetsRejectMultiplicationAndAdditionOverflow() throws {
+        #expect(throws: EXT4.Error.invalidExtents) {
+            _ = try EXT4.EXT4Reader.checkedByteOffset(block: (1 << 48) - 1, blockSize: 1 << 31)
+        }
+        #expect(throws: EXT4.Error.invalidExtents) {
+            _ = try EXT4.EXT4Reader.checkedByteOffset(block: UInt64.max / 4096, blockSize: 4096, offset: 4096)
+        }
+        #expect(try EXT4.EXT4Reader.checkedByteOffset(block: UInt64.max / 4096, blockSize: 4096, offset: 4095) == UInt64.max)
+        #expect(try EXT4.EXT4Reader.checkedByteOffset(block: 100, blockSize: 4096, offset: 37) == 409637)
+    }
+
 }

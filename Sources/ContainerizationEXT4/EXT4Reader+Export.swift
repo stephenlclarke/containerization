@@ -63,56 +63,15 @@ extension EXT4.EXT4Reader {
                 try writer.writeEntry(entry: entry, data: nil)
             } else if mode.isReg() {
                 entry.fileType = .regular
-                var data = Data()
-                var remaining: UInt64 = size
-                if let block = item.blocks {
-                    for dataBlock in block.start..<block.end {
-                        try self.seek(block: dataBlock)
-                        var count: UInt64
-                        if remaining > self.blockSize {
-                            count = self.blockSize
-                        } else {
-                            count = remaining
-                        }
-                        guard let dataBytes = try self.handle.read(upToCount: Int(count)) else {
-                            throw EXT4.Error.couldNotReadBlock(dataBlock)
-                        }
-                        data.append(dataBytes)
-                        remaining -= UInt64(dataBytes.count)
-                    }
-                }
-                if let additionalBlocks = item.additionalBlocks {
-                    for block in additionalBlocks {
-                        for dataBlock in block.start..<block.end {
-                            try self.seek(block: dataBlock)
-                            var count: UInt64
-                            if remaining > self.blockSize {
-                                count = self.blockSize
-                            } else {
-                                count = remaining
-                            }
-                            guard let dataBytes = try self.handle.read(upToCount: Int(count)) else {
-                                throw EXT4.Error.couldNotReadBlock(dataBlock)
-                            }
-                            data.append(dataBytes)
-                            remaining -= UInt64(dataBytes.count)
-                        }
-                    }
-                }
-                try writer.writeEntry(entry: entry, data: data)
+                try writer.writeEntry(entry: entry, data: try archiveFileData(inode: item.inode, size: size))
             } else if mode.isLink() {
                 entry.fileType = .symbolicLink
                 if size < 60 {
                     let linkBytes = EXT4.tupleToArray(inode.block)
                     entry.symlinkTarget = String(bytes: linkBytes.prefix(Int(size)), encoding: .utf8) ?? ""
                 } else {
-                    if let block = item.blocks {
-                        try self.seek(block: block.start)
-                        guard let linkBytes = try self.handle.read(upToCount: Int(size)) else {
-                            throw EXT4.Error.couldNotReadBlock(block.start)
-                        }
-                        entry.symlinkTarget = String(bytes: linkBytes, encoding: .utf8) ?? ""
-                    }
+                    let linkBytes = try archiveFileData(inode: item.inode, size: size)
+                    entry.symlinkTarget = String(bytes: linkBytes, encoding: .utf8) ?? ""
                 }
                 try writer.writeEntry(entry: entry, data: nil)
             } else {  // do not process sockets, fifo, character and block devices
@@ -134,7 +93,7 @@ extension EXT4.EXT4Reader {
                 // so the archive does not reference a path that it does not contain.
                 entry.fileType = .regular
                 let size = (UInt64(inode.sizeHigh) << 32) | UInt64(inode.sizeLow)
-                try writer.writeEntry(entry: entry, data: try fileData(inode: number, size: size))
+                try writer.writeEntry(entry: entry, data: try archiveFileData(inode: number, size: size))
                 hardlinkTargets[number] = archivePath
             }
         }
@@ -175,23 +134,9 @@ extension EXT4.EXT4Reader {
         return entry
     }
 
-    private func fileData(inode: EXT4.InodeNumber, size: UInt64) throws -> Data {
-        var data = Data()
-        var remaining = size
-        for blockRange in try getExtents(inode: inode) ?? [] {
-            for dataBlock in blockRange.start..<blockRange.end {
-                guard remaining > 0 else {
-                    return data
-                }
-                try seek(block: dataBlock)
-                let count = min(remaining, blockSize)
-                guard let dataBytes = try handle.read(upToCount: Int(count)) else {
-                    throw EXT4.Error.couldNotReadBlock(dataBlock)
-                }
-                data.append(dataBytes)
-                remaining -= UInt64(dataBytes.count)
-            }
-        }
+    private func archiveFileData(inode: EXT4.InodeNumber, size: UInt64) throws -> Data {
+        let data = try readFileBytesFromExtents(inodeNum: inode, offset: 0, count: size)
+        guard UInt64(data.count) == size else { throw EXT4.Error.invalidExtents }
         return data
     }
 

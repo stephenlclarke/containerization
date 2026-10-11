@@ -236,3 +236,5 @@ consumer must avoid potentially source-breaking minor upgrades.
 VSOCK descriptor handoff closes the original descriptor after duplication so closing the returned handle propagates EOF. See [the ownership correction](docs/PR-105.md).
 
 The host SDK and separate vminitd resolved graphs select the validated SSL and gRPC fork corrections by immutable revision; see the [lower-fork selection handoff](docs/upstream/PR-lower-fork-selection.md). Existing release artifacts remain bound to their original source graphs.
+
+EXT4 reads and tar export preserve logical sparse holes and unwritten extents, including hardlinks; malformed extent ranges and short export reads fail safely. See the [sparse EXT4 correctness handoff](docs/upstream/PR-958.md).
