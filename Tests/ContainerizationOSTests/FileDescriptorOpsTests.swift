@@ -215,8 +215,8 @@ struct FileDescriptorPathSecureTests {
         #expect(!isDirectory.boolValue)
     }
 
-    @Test
-    func withOpenDirectoryRefusesSymlinkAndClosesOnCallbackFailure() throws {
+    @Test(arguments: [false, true])
+    func withOpenDirectoryRefusesSymlinkAndClosesOnCallbackFailure(reuseReleasedDescriptor: Bool) throws {
         let rootPath = try createTempDirectory()
         defer { try? FileManager.default.removeItem(atPath: rootPath.string) }
         try createEntries(
@@ -231,16 +231,34 @@ struct FileDescriptorPathSecureTests {
             try FileDescriptorOps.withOpenDirectory(rootFd, FilePath("alias")) { _ in }
         }
         var callbackFD: Int32 = -1
+        var callbackIdentity = stat()
         #expect(throws: Errno.invalidArgument) {
             try FileDescriptorOps.withOpenDirectory(rootFd, FilePath("parent")) { directory in
                 callbackFD = directory.rawValue
+                #expect(fstat(callbackFD, &callbackIdentity) == 0)
                 #expect(fcntl(directory.rawValue, F_GETFD) & FD_CLOEXEC != 0)
                 throw Errno.invalidArgument
             }
         }
         #expect(callbackFD >= 0)
-        #expect(fcntl(callbackFD, F_GETFD) == -1)
-        #expect(errno == EBADF)
+        var replacement: FileDescriptor?
+        defer { try? replacement?.close() }
+        if reuseReleasedDescriptor {
+            // Allocate only a free slot; never overwrite another parallel test's descriptor.
+            let raw = fcntl(rootFd.rawValue, F_DUPFD_CLOEXEC, callbackFD)
+            try #require(raw >= 0)
+            replacement = FileDescriptor(rawValue: raw)
+        }
+        var afterClose = stat()
+        let result = fstat(callbackFD, &afterClose)
+        let savedErrno = errno
+        if result == 0 {
+            // A parallel open may already have reused the number, but not this private directory.
+            #expect(afterClose.st_dev != callbackIdentity.st_dev || afterClose.st_ino != callbackIdentity.st_ino)
+        } else {
+            #expect(result == -1)
+            #expect(savedErrno == EBADF)
+        }
         #expect(fcntl(rootFd.rawValue, F_GETFD) >= 0)
     }
 
