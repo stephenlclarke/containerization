@@ -341,7 +341,11 @@ extension EXT4.EXT4Reader {
             return blockData.prefix(Int(size))
         }
 
-        return try readFileBytesFromExtents(inodeNum: inodeNum, offset: 0, count: size)
+        let data = try readFileBytesFromExtents(inodeNum: inodeNum, offset: 0, count: size)
+        guard UInt64(data.count) == size else {
+            throw EXT4.Error.invalidExtents
+        }
+        return data
     }
 
     /// Common logical-range reader for file data, long symlinks and archive export.

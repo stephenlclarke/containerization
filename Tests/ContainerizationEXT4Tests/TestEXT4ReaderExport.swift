@@ -275,6 +275,68 @@ struct EXT4ReaderExportTests {
         #expect(data.isEmpty)
     }
 
+    @Test("selected export rejects truncated extent-backed symlink targets")
+    func rejectsTruncatedExtentBackedSymlink() throws {
+        let directory = FileManager.default.uniqueTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let image = FilePath(directory.appendingPathComponent("truncated-symlink.ext4").path)
+        let formatter = try EXT4.Formatter(image, minDiskSize: 1.mib())
+        try formatter.create(path: FilePath("/real"), mode: EXT4.Inode.Mode(.S_IFDIR, 0o755))
+        try formatter.create(path: FilePath("/real/target"), mode: EXT4.Inode.Mode(.S_IFREG, 0o644), buf: nil)
+        let validPrefix = "/real/target"
+        let target = validPrefix + String(repeating: "x", count: 60)
+        try formatter.create(
+            path: FilePath("/selected-link"),
+            link: FilePath(target),
+            mode: EXT4.Inode.Mode(.S_IFLNK, 0o777)
+        )
+        try formatter.close()
+
+        let originalReader = try EXT4.EXT4Reader(blockDevice: image)
+        let inodeNumber = try originalReader.stat(FilePath("/selected-link"), followSymlinks: false).inodeNumber
+        let extent = try #require(try originalReader.getLogicalExtents(inode: inodeNumber).first)
+        let lastBlock = UInt64(originalReader.superBlock.blocksCountLow) - 1
+        let group = try originalReader.getGroupDescriptor((inodeNumber - 1) / originalReader.superBlock.inodesPerGroup)
+        let inodeOffset =
+            UInt64(group.inodeTableLow) * originalReader.blockSize
+            + UInt64((inodeNumber - 1) % originalReader.superBlock.inodesPerGroup)
+            * UInt64(originalReader.superBlock.inodeSize)
+        let inodeBlockOffset = try #require(MemoryLayout<EXT4.Inode>.offset(of: \.block))
+        let startHighOffset = try #require(MemoryLayout<EXT4.ExtentLeaf>.offset(of: \.startHigh))
+        let startLowOffset = try #require(MemoryLayout<EXT4.ExtentLeaf>.offset(of: \.startLow))
+        let extentStartHighOffset = MemoryLayout<EXT4.ExtentHeader>.size + startHighOffset
+        let extentStartLowOffset = MemoryLayout<EXT4.ExtentHeader>.size + startLowOffset
+        #expect(extent.physicalBlock < lastBlock)
+
+        let handle = try FileHandle(forUpdating: image.url)
+        var startHigh = UInt16(0).littleEndian
+        var startLow = UInt32(lastBlock).littleEndian
+        try handle.seek(toOffset: inodeOffset + UInt64(inodeBlockOffset + extentStartHighOffset))
+        try handle.write(contentsOf: withUnsafeBytes(of: &startHigh) { Data($0) })
+        try handle.seek(toOffset: inodeOffset + UInt64(inodeBlockOffset + extentStartLowOffset))
+        try handle.write(contentsOf: withUnsafeBytes(of: &startLow) { Data($0) })
+        let lastBlockOffset = lastBlock * originalReader.blockSize
+        try handle.seek(toOffset: lastBlockOffset)
+        try handle.write(contentsOf: Data(validPrefix.utf8))
+        try handle.truncate(atOffset: lastBlockOffset + UInt64(validPrefix.utf8.count))
+        try handle.close()
+
+        let reader = try EXT4.EXT4Reader(blockDevice: image)
+        #expect(throws: EXT4.Error.invalidExtents) {
+            try reader.export(
+                archive: FilePath(directory.appendingPathComponent("selected.tar").path),
+                selectedPath: FilePath("/selected-link")
+            )
+        }
+        #expect(throws: EXT4.Error.invalidExtents) {
+            try reader.export(
+                archive: FilePath(directory.appendingPathComponent("followed.tar").path),
+                selectedPath: FilePath("/selected-link"),
+                followSymlink: true
+            )
+        }
+    }
+
     @Test("selected export rejects root, directory, and missing paths")
     func rejectsInvalidSelectedPaths() throws {
         let (directory, _) = try selectedFixture()

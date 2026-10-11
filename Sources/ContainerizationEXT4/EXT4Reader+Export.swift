@@ -143,6 +143,9 @@ extension EXT4.EXT4Reader {
             } else {
                 linkBytes = Array(try readFileBytesFromExtents(inodeNum: inodeNumber, offset: 0, count: size))
             }
+            guard UInt64(linkBytes.count) == size else {
+                throw EXT4.Error.invalidExtents
+            }
             guard let target = String(bytes: linkBytes, encoding: .utf8) else {
                 throw EXT4.PathIOError.invalidPath("symbolic link target is not UTF-8: \(archivePath)")
             }

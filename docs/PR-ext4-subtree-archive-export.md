@@ -63,7 +63,7 @@ lifecycle policy, or Compose model handling.
 ## Validation
 
 The preceding subtree-export checkpoint passed its focused test, full package
-suite (641 tests in 84 suites), and `make check`. The selected-path, sparse export, path-resolution and clean-journal additions pass 54 focused reader tests with no skips. The proof captures the exact implementation/test bytes and restores the verification checkout clean. Coverage is retained for the four affected files: reader initialization 82.8%, export 84.4%, path I/O 95.2%, and shared errors 63.3%; these focused percentages include existing code outside this test selection. Broader package, guest and runtime checkpoint gates remain pending. No predecessor binaries or measurements were rebuilt or rerun.
+suite (641 tests in 84 suites), and `make check`. The selected-path, sparse export, path-resolution and clean-journal additions pass 55 focused reader tests with no skips. The proof captures the exact implementation/test bytes and restores the verification checkout clean. Coverage is retained for the four affected files: reader initialization 82.8%, export 84.4%, path I/O 95.2%, and shared errors 63.3%; these focused percentages include existing code outside this test selection. A malformed-image regression proves that both link-preserving and link-following exports reject a truncated extent-backed target, even when the surviving prefix names a valid existing file. Broader package, guest and runtime checkpoint gates remain pending. No predecessor binaries or measurements were rebuilt or rerun.
 
 ## Compatibility and risks
 
