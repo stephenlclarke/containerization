@@ -238,3 +238,5 @@ VSOCK descriptor handoff closes the original descriptor after duplication so clo
 The host SDK and separate vminitd resolved graphs select the validated SSL and gRPC fork corrections by immutable revision; see the [lower-fork selection handoff](docs/upstream/PR-lower-fork-selection.md). Existing release artifacts remain bound to their original source graphs.
 
 EXT4 reads and tar export preserve logical sparse holes and unwritten extents, including hardlinks; malformed extent ranges and short export reads fail safely. See the [sparse EXT4 correctness handoff](docs/upstream/PR-958.md).
+
+Guest-agent clients retain the configured gRPC channel until socket activation completes and close the transport directly before awaiting the connection runner. Immediate shutdown works before the runner starts, with an open or disconnected peer; see the [guest connection lifetime handoff](docs/upstream/PR-guest-connection-lifetime.md).

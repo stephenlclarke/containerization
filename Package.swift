@@ -44,7 +44,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.2.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"5.0.0"),
         .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
-        .package(url: "https://github.com/stephenlclarke/grpc-swift-nio-transport.git", revision: "44247d21352316e6ce3a39ba0f1f79ec39876c9f"),
+        .package(url: "https://github.com/stephenlclarke/grpc-swift-nio-transport.git", revision: "2ddb7175729b30e5a12f4c3cb14f15985b1b2b1e"),
         .package(url: "https://github.com/grpc/grpc-swift-protobuf.git", from: "2.2.0"),
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.36.0"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.80.0"),

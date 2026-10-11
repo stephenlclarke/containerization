@@ -34,25 +34,20 @@ public struct Vminitd: Sendable {
     // The FileHandle retains the Virtualization connection that owns this descriptor.
     private let retainedConnection: FileHandle
     private let connectionTask: Task<Void, Error>
+    private let transport: HTTP2ClientTransport.WrappedChannel
 
     public init(connection: FileHandle, group: any EventLoopGroup) async throws {
         let transport = try await HTTP2ClientTransport.WrappedChannel.wrapping(
             config: .defaults { $0.connection.maxIdleTime = nil },
             serviceConfig: .init()
         ) { configure in
-            try await withCheckedThrowingContinuation { continuation in
-                ClientBootstrap(group: group)
-                    .channelInitializer { channel in
-                        configure(channel).map { configured in
-                            continuation.resume(returning: configured)
-                        }
-                    }
-                    .withConnectedSocket(connection.fileDescriptor)
-                    .whenFailure { error in
-                        continuation.resume(throwing: error)
-                    }
-            }
+            // Keep the configured pipeline alive until socket registration and activation finish.
+            try await ClientBootstrap(group: group).withConnectedSocket(
+                connection.fileDescriptor,
+                channelInitializer: { channel in configure(channel) }
+            )
         }
+        self.transport = transport
         let grpcClient = GRPCClient(transport: transport)
         self.grpcClient = grpcClient
         self.client = Com_Apple_Containerization_Sandbox_V3_SandboxContext.Client(wrapping: self.grpcClient)
@@ -66,7 +61,9 @@ public struct Vminitd: Sendable {
 
     /// Close the connection to the guest agent.
     public func close() async throws {
-        self.grpcClient.beginGracefulShutdown()
+        // The connection task may not have entered GRPCClient.runConnections() yet.
+        // Close the transport directly so that its eagerly configured channel is always owned.
+        try await self.transport.close()
         try await self.connectionTask.value
     }
 }
