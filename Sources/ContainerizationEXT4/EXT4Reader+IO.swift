@@ -217,7 +217,8 @@ extension EXT4.EXT4Reader {
         let inode: EXT4.Inode
     }
 
-    /// Resolve a path to an inode (optionally following symlinks).
+    /// Resolve a path to an inode, following symlinks in parent components and
+    /// optionally following a symlink in the final component.
     /// Paths may be absolute ("/...") or relative (from "/").
     public func resolvePath(_ path: FilePath, followSymlinks: Bool, maxSymlinks: Int = 40) throws -> ResolvedPath {
         var components: [String] = normalize(path: path)
@@ -272,7 +273,8 @@ extension EXT4.EXT4Reader {
 
             // Check if child is a symlink
             let childInode = try getInode(number: child.1)
-            if childInode.mode.isLink() && followSymlinks {
+            let isFinalComponent = componentIndex == components.count - 1
+            if childInode.mode.isLink() && (followSymlinks || !isFinalComponent) {
                 // Enforce max symlink depth
                 symlinkHops += 1
                 if symlinkHops > maxSymlinks {

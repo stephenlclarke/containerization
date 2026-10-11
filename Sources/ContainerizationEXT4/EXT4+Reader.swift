@@ -41,7 +41,15 @@ extension EXT4 {
             return UInt16(MemoryLayout<EXT4.GroupDescriptor>.size)
         }
 
-        public init(blockDevice: FilePath) throws {
+        /// Opens and indexes an ext4 block device.
+        ///
+        /// - Parameters:
+        ///   - blockDevice: Path to the ext4 block device.
+        ///   - requireCleanJournal: When true, rejects a filesystem marked for
+        ///     journal recovery before reading group descriptors.
+        /// - Throws: An `EXT4.Error` when the device is unavailable or invalid,
+        ///   or when clean-journal mode finds pending recovery.
+        public init(blockDevice: FilePath, requireCleanJournal: Bool = false) throws {
             guard FileManager.default.fileExists(atPath: blockDevice.description) else {
                 throw EXT4.Error.notFound(blockDevice.description)
             }
@@ -53,7 +61,7 @@ extension EXT4 {
             try handle.seek(toOffset: EXT4.SuperBlockOffset)
 
             let superBlockSize = MemoryLayout<EXT4.SuperBlock>.size
-            guard let data = try? self.handle.read(upToCount: superBlockSize) else {
+            guard let data = try? self.handle.read(upToCount: superBlockSize), data.count == superBlockSize else {
                 throw EXT4.Error.couldNotReadSuperBlock(blockDevice.description, EXT4.SuperBlockOffset, superBlockSize)
             }
             let sb = data.withUnsafeBytes { ptr in
@@ -61,6 +69,9 @@ extension EXT4 {
             }
             guard sb.magic == EXT4.SuperBlockMagic, sb.logBlockSize <= 6 else {
                 throw EXT4.Error.invalidSuperBlock
+            }
+            if requireCleanJournal, sb.featureIncompat & EXT4.IncompatFeature.recover.rawValue != 0 {
+                throw EXT4.Error.journalRecoveryRequired
             }
             self._superBlock = sb
             var items: [(item: Ptr<EXT4.FileTree.FileTreeNode>, inode: InodeNumber)] = [

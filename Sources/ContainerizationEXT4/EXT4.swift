@@ -319,6 +319,7 @@ extension EXT4 {
         case notFound(_ path: String)
         case couldNotReadSuperBlock(_ path: String, _ offset: UInt64, _ size: Int)
         case invalidSuperBlock
+        case journalRecoveryRequired
         case deepExtentsUnimplemented
         case invalidExtents
         case invalidXattrEntry
@@ -334,6 +335,8 @@ extension EXT4 {
                 return "could not read \(size) bytes of superblock from \(path) at offset \(offset)"
             case .invalidSuperBlock:
                 return "not a valid EXT4 superblock"
+            case .journalRecoveryRequired:
+                return "EXT4 filesystem requires journal recovery"
             case .deepExtentsUnimplemented:
                 return "deep extents are not supported"
             case .invalidExtents:

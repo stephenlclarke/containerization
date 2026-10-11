@@ -115,6 +115,43 @@ struct EXT4SparseReadTests {
             if subtree == "/" { #expect(try exported.readFile(at: "/z-outside/data") == expected) }
         }
     }
+
+    @Test(arguments: [false, true])
+    func exportsSelectedSparseHardlinkWithLogicalContent(allHoles: Bool) throws {
+        let (directory, expected, _) = try fixture(allHoles: allHoles)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let source = FilePath(directory.appendingPathComponent("source.ext4").path)
+        let archive = directory.appendingPathComponent("selected.tar")
+        let reader = try EXT4.EXT4Reader(blockDevice: source)
+
+        try reader.export(archive: FilePath(archive.path), selectedPath: FilePath("/a-selected/alias"))
+
+        let archiveReader = try ArchiveReader(format: .pax, filter: .none, file: archive)
+        var iterator = archiveReader.makeIterator()
+        let next = iterator.next()
+        let (entry, data) = try #require(next)
+        #expect(entry.path == "alias")
+        #expect(entry.fileType == .regular)
+        #expect(entry.hardlink == nil)
+        // The iterator's convenience Data API omits trailing sparse holes
+        // (and returns no bytes for an
+        // all-hole file). The entry metadata and sparse-aware extraction path
+        // retain the complete logical file length and contents.
+        #expect(entry.size == Int64(expected.count))
+        #expect(data.count <= expected.count)
+        #expect(data == Data(expected.prefix(data.count)))
+        if let extra = iterator.next() {
+            Issue.record("Expected one archive entry, found extra entry \(extra.0.path ?? "<unnamed>")")
+        }
+        try archiveReader.throwIfStreamFailed()
+
+        let extractReader = try ArchiveReader(format: .pax, filter: .none, file: archive)
+        let destination = directory.appendingPathComponent("extract")
+        let rejected = try extractReader.extractContents(to: destination, preserveOwnership: false)
+        #expect(rejected.isEmpty)
+        #expect(try Data(contentsOf: destination.appendingPathComponent("alias")) == expected)
+    }
+
     @Test
     func rejectsOutOfDeviceExtentsBeforeWritingBuffer() throws {
         let (directory, _, _) = try fixture(invalidPhysical: true)
