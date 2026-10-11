@@ -1,0 +1,7 @@
+# build: select validated SSL and gRPC fork revisions
+
+The SDK root manifest now selects Stephen's SSL `8f2f979a28610f47714d50eccfe16b435e7e04a5` and gRPC transport `44247d21352316e6ce3a39ba0f1f79ec39876c9f` by full revision. Normal SwiftPM resolution updates only these two entries in both the SDK lock and the separate vminitd lock. The vminitd manifest and all SDK production sources remain unchanged. Both graphs retain every other selected dependency revision.
+
+The two leaves were independently validated before selection. On Apple Swift 6.4, the affected SDK unit and OCI suites completed with warnings-as-errors and four jobs, reporting 247 SDK tests and 213 OCI tests. Five pre-existing credential/external-push tests were skipped; no successful authenticated registry or external-push coverage is claimed. The corrected filtered command completed in 29.330 seconds using the retained SDK scratch directory. An initial unquoted filter command failed in shell setup; that raw log is retained separately. Formatting and license checks passed. SDK consumer validation and its exact graph delta, toolchain, commands, raw logs and source hashes are retained under the performance goal's `upstream-audit/sdk-fork-selection` directory. No parent Container pin, existing release asset or guest image was changed. Linux guest compilation and live VM qualification remain separate release stages.
+
+Related: [issue handoff](ISSUE-lower-fork-selection.md).
