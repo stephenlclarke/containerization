@@ -23,6 +23,7 @@
 <!-- markdownlint-enable MD033 -->
 
 The Containerization package allows applications to use Linux containers.
+The [October 2026 upstream synchronization handoff](docs/PR-apple-main-sync-20261011.md) records the adopted traversal, authentication and EXT4 changes, preserved fork behavior, successful focused host/e2fsck validation and remaining full release qualification.
 Containerization is written in [Swift](https://www.swift.org) and uses [Virtualization.framework](https://developer.apple.com/documentation/virtualization) on Apple silicon.
 
 > **Looking for command line binaries for running containers?**\

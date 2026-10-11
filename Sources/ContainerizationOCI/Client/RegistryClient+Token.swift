@@ -108,9 +108,8 @@ struct TokenRequest: Sendable {
 
     /// The realm against which the token should be requested.
     let realm: String
-    /// The name of the service which hosts the resource. Optional: the parameter is a Docker
-    /// registry convention, not a requirement of RFC 6750, and some registries (notably Google
-    /// Artifact Registry) omit it from their challenge entirely.
+    /// The name of the service which hosts the resource. Optional, as registries are not
+    /// required to supply a `service` parameter in their authentication challenge.
     let service: String?
     /// Whether to return a refresh token along with the bearer token.
     let offlineToken: Bool
@@ -267,6 +266,25 @@ struct AuthenticateChallenge: Equatable {
 }
 
 extension RegistryClient {
+    /// Query parameters for a token request.
+    ///
+    /// `service` is omitted when the registry's challenge did not supply one. It is an optional
+    /// parameter of the Docker token specification, and registries that do not send it in their
+    /// challenge do not expect it echoed back.
+    internal static func tokenQueryItems(for request: TokenRequest) -> [URLQueryItem] {
+        var items = [URLQueryItem(name: "client_id", value: request.clientId)]
+        if let service = request.service {
+            items.append(URLQueryItem(name: "service", value: service))
+        }
+        if let scope = request.scope {
+            items.append(URLQueryItem(name: "scope", value: scope))
+        }
+        if request.offlineToken {
+            items.append(URLQueryItem(name: "offline_token", value: "true"))
+        }
+        return items
+    }
+
     /// Fetch an auto token for all subsequent HTTP requests
     /// See https://docs.docker.com/registry/spec/auth/token/
     internal func fetchToken(request: TokenRequest) async throws -> TokenResponse {
@@ -274,21 +292,7 @@ extension RegistryClient {
             throw ContainerizationError(.invalidArgument, message: "cannot create URL from \(request.realm)")
         }
         try validateRealm(components)
-        components.queryItems = [
-            URLQueryItem(name: "client_id", value: request.clientId)
-        ]
-        if let service = request.service {
-            components.queryItems?.append(URLQueryItem(name: "service", value: service))
-        }
-        var scope = ""
-        if let reqScope = request.scope {
-            scope = reqScope
-            components.queryItems?.append(URLQueryItem(name: "scope", value: reqScope))
-        }
-
-        if request.offlineToken {
-            components.queryItems?.append(URLQueryItem(name: "offline_token", value: "true"))
-        }
+        components.queryItems = Self.tokenQueryItems(for: request)
         guard let url = components.url?.absoluteString else {
             throw ContainerizationError(.invalidArgument, message: "invalid url \(components.path)")
         }
@@ -350,7 +354,7 @@ extension RegistryClient {
             throw ContainerizationError(.internalError, message: "authorization server returned no token response body")
         }
         var response = try JSONDecoder().decode(TokenResponse.self, from: Data(body.readableBytesView))
-        response.scope = scope
+        response.scope = request.scope ?? ""
         return response
     }
 

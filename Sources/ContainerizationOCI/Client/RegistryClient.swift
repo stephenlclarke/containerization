@@ -196,7 +196,7 @@ public final class RegistryClient: ContentClient {
         var request = HTTPClientRequest(url: url)
         request.method = method
         request.headers.add(name: "User-Agent", value: clientID)
-        for (k, v) in headers ?? [] {
+        headers?.forEach { (k, v) in
             if k.lowercased() == "user-agent" {
                 request.headers.replaceOrAdd(name: k, value: v)
             } else {
