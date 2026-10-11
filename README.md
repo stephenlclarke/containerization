@@ -172,7 +172,7 @@ make all
 
 ## Test the package
 
-Directory cleanup regressions check file identity so concurrent descriptor reuse cannot produce a false leak report; see the [descriptor test handoff](docs/upstream/PR-descriptor-cleanup-test.md).
+Directory cleanup regressions check file identity so concurrent descriptor reuse cannot produce a false leak report. The directory-creation helper documents why its optional default callback performs no descriptor operation; see the [descriptor test handoff](docs/upstream/PR-descriptor-cleanup-test.md).
 
 After building, run basic and integration tests:
 

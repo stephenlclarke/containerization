@@ -59,7 +59,9 @@ extension FileDescriptorOps {
         _ relativePath: FilePath,
         permissions: FilePermissions? = nil,
         makeIntermediates: Bool = false,
-        completion: (FileDescriptor) throws -> Void = { _ in }
+        completion: (FileDescriptor) throws -> Void = { _ in
+            // Directory creation alone needs no caller operation on the descriptor.
+        }
     ) throws {
         try validateRelativePath(relativePath)
 

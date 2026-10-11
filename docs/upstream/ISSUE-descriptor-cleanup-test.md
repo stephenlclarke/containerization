@@ -9,3 +9,7 @@ The callback-failure cleanup regression requires a released descriptor number to
 The test must detect whether the original private directory remains open, while accepting a number reused for another object. The production helper already closes its owned descriptor in defer and must remain unchanged.
 
 Related: [implementation handoff](PR-descriptor-cleanup-test.md).
+
+## Quality follow-up
+
+After full macOS and Linux coverage passed, SonarCloud's separate zero-issue check identified S1186 on the helper's intentionally empty default callback. Explain inside the closure that directory creation alone needs no caller operation on the descriptor. This is a documentation correction, with no change to resource ownership or callback behavior.
