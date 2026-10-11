@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOS
@@ -94,6 +95,238 @@ struct LinuxContainerTests {
             #expect(copiedAttributes[.ownerAccountID] as? NSNumber == originalOwner as? NSNumber)
             #expect(copiedAttributes[.groupOwnerAccountID] as? NSNumber == originalGroup as? NSNumber)
         }
+    }
+
+    @Test(arguments: ["relative-target", "missing-target", "/absolute-target"])
+    func materializeCopyOutSymlinkPreservesTargetWithoutFollowing(target: String) throws {
+        let container = try LinuxContainer(
+            "copy-out-symlink-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-out-symlink-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archiveURL = directory.appendingPathComponent("source.tar.gz")
+        try writeCopyOutSymlinkArchive(at: archiveURL, target: target)
+        let archive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? archive.close() }
+        let destination = directory.appendingPathComponent("copied-link")
+
+        try container.materializeCopyOutSymlink(
+            archive: archive,
+            destination: destination,
+            expectedName: "link"
+        )
+
+        var status = stat()
+        #expect(lstat(destination.path, &status) == 0)
+        #expect(status.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == target)
+        #expect(
+            try Set(FileManager.default.contentsOfDirectory(atPath: directory.path))
+                == ["copied-link", "source.tar.gz"]
+        )
+    }
+
+    @Test func materializeCopyOutSymlinkAtomicallyReplacesFileAndCleansStagingOnFailure() throws {
+        let container = try LinuxContainer(
+            "copy-out-symlink-replacement-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-out-symlink-replacement-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archiveURL = directory.appendingPathComponent("source.tar.gz")
+        try writeCopyOutSymlinkArchive(at: archiveURL, target: "replacement-target")
+        let destination = directory.appendingPathComponent("output")
+        try Data("old destination".utf8).write(to: destination)
+        let archive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? archive.close() }
+
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: archive,
+                destination: destination,
+                expectedName: "../output"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "old destination")
+
+        try container.materializeCopyOutSymlink(
+            archive: archive,
+            destination: destination,
+            expectedName: "link"
+        )
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == "replacement-target")
+
+        let protectedTarget = directory.appendingPathComponent("protected-target")
+        try Data("do not truncate through symlink".utf8).write(to: protectedTarget)
+        try FileManager.default.removeItem(at: destination)
+        try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: protectedTarget)
+        let replacementArchive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? replacementArchive.close() }
+        try container.materializeCopyOutSymlink(
+            archive: replacementArchive,
+            destination: destination,
+            expectedName: "link"
+        )
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == "replacement-target")
+        #expect(try String(contentsOf: protectedTarget, encoding: .utf8) == "do not truncate through symlink")
+
+        try FileManager.default.removeItem(at: destination)
+        try Data("preserve me".utf8).write(to: destination)
+        let nestedArchiveURL = directory.appendingPathComponent("nested-member.tar.gz")
+        try writeCopyOutSymlinkArchive(at: nestedArchiveURL, target: "unused", memberPath: "nested/link")
+        let nestedArchive = try FileHandle(forReadingFrom: nestedArchiveURL)
+        defer { try? nestedArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: nestedArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let regularArchiveURL = directory.appendingPathComponent("regular-member.tar.gz")
+        try writeCopyOutRegularArchive(at: regularArchiveURL, memberPath: "link")
+        let regularArchive = try FileHandle(forReadingFrom: regularArchiveURL)
+        defer { try? regularArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: regularArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let multiMemberArchiveURL = directory.appendingPathComponent("multi-member.tar.gz")
+        try writeCopyOutSymlinkArchive(
+            at: multiMemberArchiveURL,
+            target: "unused",
+            additionalMemberPath: "extra"
+        )
+        let multiMemberArchive = try FileHandle(forReadingFrom: multiMemberArchiveURL)
+        defer { try? multiMemberArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: multiMemberArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let rejectedArchiveURL = directory.appendingPathComponent("rejected-member.tar.gz")
+        try writeCopyOutSymlinkArchive(at: rejectedArchiveURL, target: "unused", memberPath: "../rejected")
+        let rejectedArchive = try FileHandle(forReadingFrom: rejectedArchiveURL)
+        defer { try? rejectedArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: rejectedArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let destinationDirectory = directory.appendingPathComponent("destination-directory", isDirectory: true)
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: false)
+        let directoryCollisionArchive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? directoryCollisionArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: directoryCollisionArchive,
+                destination: destinationDirectory,
+                expectedName: "link"
+            )
+        }
+        #expect(
+            try Set(FileManager.default.contentsOfDirectory(atPath: directory.path))
+                == [
+                    "source.tar.gz", "protected-target", "output", "nested-member.tar.gz", "rejected-member.tar.gz",
+                    "multi-member.tar.gz", "regular-member.tar.gz", "destination-directory",
+                ]
+        )
+    }
+
+    @Test func materializeCopyOutSymlinkPreservesOwnershipWhenRequested() throws {
+        let container = try LinuxContainer(
+            "copy-out-symlink-ownership-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-out-symlink-ownership-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archiveURL = directory.appendingPathComponent("source.tar.gz")
+        try writeCopyOutSymlinkArchive(at: archiveURL, target: "ownership-target")
+        let archive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? archive.close() }
+        let destination = directory.appendingPathComponent("copied-link")
+        let expectedUID = getuid()
+        let expectedGID = getgid()
+
+        try container.materializeCopyOutSymlink(
+            archive: archive,
+            destination: destination,
+            expectedName: "link",
+            preserveOwnership: true,
+            uid: expectedUID,
+            gid: expectedGID
+        )
+
+        var status = stat()
+        #expect(lstat(destination.path, &status) == 0)
+        #expect(status.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK))
+        #expect(status.st_uid == expectedUID)
+        #expect(status.st_gid == expectedGID)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == "ownership-target")
+        #expect(try Set(FileManager.default.contentsOfDirectory(atPath: directory.path)) == ["copied-link", "source.tar.gz"])
+    }
+
+    private func writeCopyOutSymlinkArchive(
+        at url: URL,
+        target: String,
+        memberPath: String = "link",
+        additionalMemberPath: String? = nil
+    ) throws {
+        let writer = try ArchiveWriter(format: .pax, filter: .gzip, file: url)
+        let link = WriteEntry()
+        link.path = memberPath
+        link.fileType = .symbolicLink
+        link.symlinkTarget = target
+        link.size = 0
+        try writer.writeEntry(entry: link, data: nil)
+        if let additionalMemberPath {
+            let extra = WriteEntry()
+            extra.path = additionalMemberPath
+            extra.fileType = .regular
+            extra.permissions = 0o644
+            extra.size = 1
+            try writer.writeEntry(entry: extra, data: Data([0x41]))
+        }
+        try writer.finishEncoding()
+    }
+
+    private func writeCopyOutRegularArchive(at url: URL, memberPath: String) throws {
+        let writer = try ArchiveWriter(format: .pax, filter: .gzip, file: url)
+        let file = WriteEntry()
+        file.path = memberPath
+        file.fileType = .regular
+        file.permissions = 0o644
+        file.size = 1
+        try writer.writeEntry(entry: file, data: Data([0x41]))
+        try writer.finishEncoding()
     }
 
     @Test func copyInEncodesExplicitZeroModeWithoutChangingOtherModes() {

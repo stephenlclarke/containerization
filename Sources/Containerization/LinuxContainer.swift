@@ -26,6 +26,12 @@ import SystemPackage
 
 import struct ContainerizationOS.Terminal
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 /// A device node that should be discovered from the booted guest before the
 /// container process starts.
 public struct LinuxGuestDeviceRequest: Sendable, Equatable {
@@ -2242,7 +2248,22 @@ extension LinuxContainer {
                             do {
                                 defer { conn.closeFile() }
 
-                                if metadata.isArchive {
+                                if metadata.isArchive,
+                                    metadata.mode & UInt32(S_IFMT) == UInt32(S_IFLNK)
+                                {
+                                    let archiveHandle = FileHandle(
+                                        fileDescriptor: conn.fileDescriptor,
+                                        closeOnDealloc: false
+                                    )
+                                    try self.materializeCopyOutSymlink(
+                                        archive: archiveHandle,
+                                        destination: destination,
+                                        expectedName: source.lastPathComponent,
+                                        preserveOwnership: preserveOwnership,
+                                        uid: metadata.uid,
+                                        gid: metadata.gid
+                                    )
+                                } else if metadata.isArchive {
                                     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
                                     let fh = FileHandle(fileDescriptor: dup(conn.fileDescriptor), closeOnDealloc: true)
                                     let reader = try ArchiveReader(format: .pax, filter: .gzip, fileHandle: fh)
@@ -2580,6 +2601,90 @@ extension LinuxContainer {
             logger?.debug(
                 "copyOut: unable to preserve mode",
                 metadata: ["error": "\(String(cString: strerror(errno)))"]
+            )
+        }
+    }
+
+    func materializeCopyOutSymlink(
+        archive: FileHandle,
+        destination: URL,
+        expectedName: String,
+        preserveOwnership: Bool = false,
+        uid: UInt32 = 0,
+        gid: UInt32 = 0
+    ) throws {
+        guard let component = FilePath.Component(expectedName), case .regular = component.kind else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "copyOut: expected a single regular archive path component for the symbolic link"
+            )
+        }
+        let parent = destination.deletingLastPathComponent()
+        let staging = parent.appendingPathComponent(".container-copyout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: staging,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: staging) }
+
+        let archiveFd = dup(archive.fileDescriptor)
+        guard archiveFd >= 0 else {
+            throw ContainerizationError(
+                .internalError,
+                message: "copyOut: failed to duplicate symlink archive descriptor: \(String(cString: strerror(errno)))"
+            )
+        }
+        let archiveHandle = FileHandle(fileDescriptor: archiveFd, closeOnDealloc: true)
+        let reader = try ArchiveReader(format: .pax, filter: .gzip, fileHandle: archiveHandle)
+        let rejectedPaths = try reader.extractContents(to: staging, preserveOwnership: false)
+        guard rejectedPaths.isEmpty else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "copyOut: symlink archive contains rejected paths: \(rejectedPaths.joined(separator: ", "))"
+            )
+        }
+
+        let inventory = try FileManager.default.contentsOfDirectory(atPath: staging.path)
+        guard inventory == [component.string] else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "copyOut: expected exactly one top-level symlink archive member"
+            )
+        }
+        let stagedLink = staging.appendingPathComponent(component.string)
+        var linkStatus = stat()
+        let statusResult = stagedLink.path.withCString { path in
+            lstat(path, &linkStatus)
+        }
+        guard statusResult == 0, linkStatus.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK) else {
+            throw ContainerizationError(
+                .invalidArgument,
+                message: "copyOut: archive member is not a symbolic link"
+            )
+        }
+
+        if preserveOwnership {
+            let ownershipResult = stagedLink.path.withCString { path in
+                lchown(path, uid_t(uid), gid_t(gid))
+            }
+            if ownershipResult != 0 {
+                logger?.debug(
+                    "copyOut: unable to preserve symbolic link ownership",
+                    metadata: ["error": "\(String(cString: strerror(errno)))"]
+                )
+            }
+        }
+
+        let renameResult = stagedLink.path.withCString { sourcePath in
+            destination.path.withCString { destinationPath in
+                rename(sourcePath, destinationPath)
+            }
+        }
+        guard renameResult == 0 else {
+            throw ContainerizationError(
+                .internalError,
+                message: "copyOut: failed to install symbolic link at '\(destination.path)': \(String(cString: strerror(errno)))"
             )
         }
     }
