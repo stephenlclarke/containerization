@@ -54,6 +54,19 @@ typealias _stat_struct = Glibc.stat
 private let _stat: @Sendable (UnsafePointer<CChar>, UnsafeMutablePointer<_stat_struct>) -> Int32 = stat
 #endif
 
+func applyCopyInFileMode(fd: Int32, mode: mode_t, path: String) throws {
+    guard fchmod(fd, mode) == 0 else {
+        throw RPCError(
+            code: .internalError,
+            message: "copy: failed to preserve mode for '\(path)': \(String(cString: strerror(errno)))"
+        )
+    }
+}
+
+func resolveCopyInFileMode(_ requestedMode: UInt32) -> mode_t {
+    requestedMode > 0 ? mode_t(requestedMode & 0o777) : mode_t(0o644)
+}
+
 extension ContainerizationError {
     func toRPCError(operation: String) -> RPCError {
         let message = "\(operation): \(self)"
@@ -556,7 +569,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     try RootfsResolver.createDirectoryInRoot(dirFd: rootFd, path: FilePath(path).removingLastComponent().string)
                 }
 
-                let mode = request.mode > 0 ? mode_t(request.mode & 0o777) : mode_t(0o644)
+                let mode = resolveCopyInFileMode(request.mode)
                 let fd = RootfsResolver.openInRoot(
                     dirFd: rootFd,
                     path: path,
@@ -602,13 +615,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                             message: "copy: failed to preserve ownership for '\(path)': \(swiftErrno("fchown"))"
                         )
                     }
-                    guard fchmod(fd, mode) == 0 else {
-                        throw RPCError(
-                            code: .internalError,
-                            message: "copy: failed to preserve mode for '\(path)': \(swiftErrno("fchmod"))"
-                        )
-                    }
                 }
+                try applyCopyInFileMode(fd: fd, mode: mode, path: path)
                 return []
             }
 

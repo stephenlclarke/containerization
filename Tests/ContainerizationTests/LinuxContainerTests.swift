@@ -32,6 +32,12 @@ import struct ContainerizationOCI.Spec
 
 @testable import Containerization
 
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
+
 struct LinuxContainerTests {
 
     @Test func archiveCopyRejectsNonPositiveChunkSizeBeforeContainerState() async throws {
@@ -56,6 +62,44 @@ struct LinuxContainerTests {
                 chunkSize: -1
             )
         }
+    }
+
+    @Test func copyOutPreservesSourceModesWithoutPreservingOwnership() throws {
+        let container = try LinuxContainer(
+            "copy-out-mode-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("copy-out-mode-\(UUID().uuidString)")
+        try Data("copy mode fixture".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let fd = open(file.path, O_RDWR | O_CLOEXEC)
+        try #require(fd >= 0)
+        defer { close(fd) }
+        try #require(fchmod(fd, 0o600) == 0)
+
+        let originalAttributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        let originalOwner = originalAttributes[.ownerAccountID]
+        let originalGroup = originalAttributes[.groupOwnerAccountID]
+
+        for mode: UInt32 in [0o000, 0o640, 0o664, 0o755] {
+            let sourceMode = UInt32(S_IFREG) | mode
+            let metadata = Vminitd.CopyMetadata(isArchive: false, totalSize: 0, mode: sourceMode, uid: 0, gid: 0)
+            container.applyCopyOutAttributes(metadata, to: fd, preserveOwnership: false)
+
+            let copiedAttributes = try FileManager.default.attributesOfItem(atPath: file.path)
+            #expect((copiedAttributes[.posixPermissions] as? NSNumber)?.uint32Value == mode)
+            #expect(copiedAttributes[.ownerAccountID] as? NSNumber == originalOwner as? NSNumber)
+            #expect(copiedAttributes[.groupOwnerAccountID] as? NSNumber == originalGroup as? NSNumber)
+        }
+    }
+
+    @Test func copyInEncodesExplicitZeroModeWithoutChangingOtherModes() {
+        #expect(LinuxContainer.encodeCopyInMode(0) == UInt32(S_IFREG))
+        #expect(LinuxContainer.encodeCopyInMode(0o640) == 0o640)
+        #expect(LinuxContainer.encodeCopyInMode(0o755) == 0o755)
     }
 
     @Test func copyOverloadsAreAvailableAfterCreateWithoutStartingWorkload() async throws {

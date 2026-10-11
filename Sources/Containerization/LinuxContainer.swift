@@ -2002,7 +2002,7 @@ extension LinuxContainer {
                 preserveOwnership && !isArchive
                 ? try Self.fileStatus(path: transferSource.path, operation: "copyIn")
                 : nil
-            let fileMode = sourceStat.map { UInt32($0.st_mode) } ?? mode
+            let fileMode = sourceStat.map { UInt32($0.st_mode) } ?? Self.encodeCopyInMode(mode)
 
             let root = self.root
             let destinationPath: String = try await vm.withAgent { agent in
@@ -2281,9 +2281,7 @@ extension LinuxContainer {
                                             written += w
                                         }
                                     }
-                                    if preserveOwnership {
-                                        self.applyCopyOutAttributes(metadata, to: destFd)
-                                    }
+                                    self.applyCopyOutAttributes(metadata, to: destFd, preserveOwnership: preserveOwnership)
                                 }
                                 continuation.resume()
                             } catch {
@@ -2567,15 +2565,16 @@ extension LinuxContainer {
         return info
     }
 
-    private func applyCopyOutAttributes(_ metadata: Vminitd.CopyMetadata, to fd: Int32) {
-        if fchown(fd, uid_t(metadata.uid), gid_t(metadata.gid)) != 0 {
+    static func encodeCopyInMode(_ mode: UInt32) -> UInt32 {
+        mode == 0 ? UInt32(S_IFREG) : mode
+    }
+
+    func applyCopyOutAttributes(_ metadata: Vminitd.CopyMetadata, to fd: Int32, preserveOwnership: Bool) {
+        if preserveOwnership, fchown(fd, uid_t(metadata.uid), gid_t(metadata.gid)) != 0 {
             logger?.debug(
                 "copyOut: unable to preserve ownership",
                 metadata: ["error": "\(String(cString: strerror(errno)))"]
             )
-        }
-        guard metadata.mode != 0 else {
-            return
         }
         if fchmod(fd, mode_t(metadata.mode & 0o777)) != 0 {
             logger?.debug(
