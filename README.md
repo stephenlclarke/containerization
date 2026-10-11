@@ -63,6 +63,7 @@ Containerization provides APIs to:
   kernel does not expose `/dev/dri/renderD128`; unit tests still cover the
   graphics configuration contract independently of the guest kernel artifact.
 - [Spawn and interact with containerized processes](./Sources/Containerization/LinuxProcess.swift).
+- Copy files and tar archives through `LinuxContainer.copyIn` and `copyOut` after `create()` has prepared the VM, without starting the container's initial process. Copy operations accept the created and started states; initialized, stopped, paused, and errored containers remain unavailable.
 - Use Rosetta 2 for running linux/amd64 containers on Apple silicon.
 
 View the fork's [DocC API reference](https://stephenlclarke.github.io/api/containerization/) for information on the Swift packages that Containerization provides. The [Apple upstream API reference](https://apple.github.io/containerization/documentation/) remains available for comparison.

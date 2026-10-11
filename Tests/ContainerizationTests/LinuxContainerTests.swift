@@ -58,6 +58,219 @@ struct LinuxContainerTests {
         }
     }
 
+    @Test func copyOverloadsAreAvailableAfterCreateWithoutStartingWorkload() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "copy-created-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init()
+        )
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-created-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        try await container.create()
+        let vm = try #require(manager.vm)
+        #expect(vm.agent.createdProcessSpec == nil)
+
+        try await assertCopyOverloadsReachVM(container, source: source)
+
+        #expect(vm.startCalls == 1)
+        #expect(vm.agent.createdProcessSpec == nil)
+    }
+
+    @Test func copyOverloadsRemainAvailableAfterWorkloadStarts() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "copy-started-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init()
+        )
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-started-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        try await container.create()
+        try await container.start()
+        let vm = try #require(manager.vm)
+        #expect(vm.agent.createdProcessSpec != nil)
+
+        try await assertCopyOverloadsReachVM(container, source: source)
+
+        #expect(vm.agent.createdProcessSpec != nil)
+    }
+
+    @Test func copyOverloadsStillRejectInitializedStoppedAndPausedStates() async throws {
+        let initialized = try LinuxContainer(
+            "copy-initialized-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        try await assertCopyOverloadsRejectState(initialized)
+
+        let stopped = try LinuxContainer(
+            "copy-stopped-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        try await stopped.create()
+        try await stopped.stop()
+        try await assertCopyOverloadsRejectState(stopped)
+
+        let paused = try LinuxContainer(
+            "copy-paused-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        try await paused.create()
+        try await paused.start()
+        try await paused.pause()
+        try await assertCopyOverloadsRejectState(paused)
+        try await paused.resume()
+        try await paused.stop()
+    }
+
+    @Test func copyOverloadsRethrowTheOriginalContainerError() async throws {
+        let startError = ContainerizationError(.internalError, message: "VM startup failed")
+        let container = try LinuxContainer(
+            "copy-errored-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(startError: startError),
+            configuration: .init()
+        )
+        await #expect(throws: ContainerizationError.self) {
+            try await container.create()
+        }
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-errored-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        for error in await copyErrors(container, source: source) {
+            #expect(error.code == .internalError)
+            #expect(error.message == "VM startup failed")
+        }
+    }
+
+    private func assertCopyOverloadsReachVM(_ container: LinuxContainer, source: URL) async throws {
+        let archiveInput = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
+        defer { try? archiveInput.close() }
+        let archiveOutput = try FileHandle(forWritingTo: URL(fileURLWithPath: "/dev/null"))
+        defer { try? archiveOutput.close() }
+
+        let fileIn = await #expect(throws: ContainerizationError.self) {
+            try await container.copyIn(from: source, to: URL(filePath: "/copy-target"))
+        }
+        #expect(fileIn?.code == .unsupported)
+
+        let archiveIn = await #expect(throws: ContainerizationError.self) {
+            try await container.copyIn(archive: archiveInput, to: URL(filePath: "/copy-target"))
+        }
+        #expect(archiveIn?.code == .internalError)
+        #expect(archiveIn?.message == "listen should not be called by LinuxContainerTests")
+
+        let fileOut = await #expect(throws: ContainerizationError.self) {
+            try await container.copyOut(
+                from: URL(filePath: "/copy-source"),
+                to: URL(filePath: "/tmp/copy-created-state-output"),
+                createParents: false
+            )
+        }
+        #expect(fileOut?.code == .internalError)
+        #expect(fileOut?.message == "listen should not be called by LinuxContainerTests")
+
+        let archiveOut = await #expect(throws: ContainerizationError.self) {
+            try await container.copyOut(from: URL(filePath: "/copy-source"), to: archiveOutput)
+        }
+        #expect(archiveOut?.code == .internalError)
+        #expect(archiveOut?.message == "listen should not be called by LinuxContainerTests")
+    }
+
+    private func assertCopyOverloadsRejectState(_ container: LinuxContainer) async throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-invalid-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let errors = await copyErrors(container, source: source)
+        for error in errors {
+            #expect(error.code == .invalidState)
+        }
+        #expect(
+            errors.map(\.message) == [
+                "failed to copyIn: container filesystem must be prepared or running",
+                "failed to copyIn: container filesystem must be prepared or running",
+                "failed to copyOut: container filesystem must be prepared or running",
+                "failed to copyOut: container filesystem must be prepared or running",
+            ]
+        )
+    }
+
+    private func copyErrors(_ container: LinuxContainer, source: URL) async -> [ContainerizationError] {
+        var errors = [ContainerizationError]()
+        do {
+            try await container.copyIn(from: source, to: URL(filePath: "/copy-target"))
+            Issue.record("expected copyIn to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        let archiveInput: FileHandle
+        do {
+            archiveInput = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
+        } catch {
+            Issue.record("failed to open archive fixture: \(error)")
+            return errors
+        }
+        defer { try? archiveInput.close() }
+        do {
+            try await container.copyIn(archive: archiveInput, to: URL(filePath: "/copy-target"))
+            Issue.record("expected archive copyIn to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        do {
+            try await container.copyOut(
+                from: URL(filePath: "/copy-source"),
+                to: URL(filePath: "/tmp/copy-invalid-state-output"),
+                createParents: false
+            )
+            Issue.record("expected copyOut to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        let archiveOutput: FileHandle
+        do {
+            archiveOutput = try FileHandle(forWritingTo: URL(fileURLWithPath: "/dev/null"))
+        } catch {
+            Issue.record("failed to open archive output fixture: \(error)")
+            return errors
+        }
+        defer { try? archiveOutput.close() }
+        do {
+            try await container.copyOut(from: URL(filePath: "/copy-source"), to: archiveOutput)
+            Issue.record("expected archive copyOut to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        return errors
+    }
+
     @Test func ipv6OnlyInterfaceOmitsIPv4GuestConfiguration() async throws {
         let agent = RecordingVirtualMachineAgent()
         let ipv6Address = try CIDRv6("fd00:2026:806::2/64")

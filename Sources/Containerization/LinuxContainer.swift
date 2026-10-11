@@ -436,6 +436,22 @@ public final class LinuxContainer: Container, Sendable {
             }
         }
 
+        func copyableVM(_ operation: String) throws -> any VirtualMachineInstance {
+            switch self {
+            case .created(let state):
+                return state.vm
+            case .started(let state):
+                return state.vm
+            case .errored(let error):
+                throw error
+            default:
+                throw ContainerizationError(
+                    .invalidState,
+                    message: "failed to \(operation): container filesystem must be prepared or running"
+                )
+            }
+        }
+
         func pausedState(_ operation: String) throws -> PausedState {
             switch self {
             case .paused(let state):
@@ -1962,6 +1978,8 @@ extension LinuxContainer {
     /// Data transfer happens over a dedicated vsock connection. For directories,
     /// the source is archived as tar+gzip and streamed directly through vsock
     /// without intermediate temp files.
+    /// The VM must have been prepared with `create()`; the initial process does
+    /// not need to be started.
     public func copyIn(
         from source: URL,
         to destination: URL,
@@ -1972,7 +1990,7 @@ extension LinuxContainer {
         chunkSize: Int = defaultCopyChunkSize
     ) async throws {
         try await self.state.withLock {
-            let state = try $0.startedState("copyIn")
+            let vm = try $0.copyableVM("copyIn")
 
             let transferSource = followSymlink ? source.resolvingSymlinksInPath() : source
             var isDirectory: ObjCBool = false
@@ -1987,7 +2005,7 @@ extension LinuxContainer {
             let fileMode = sourceStat.map { UInt32($0.st_mode) } ?? mode
 
             let root = self.root
-            let destinationPath: String = try await state.vm.withAgent { agent in
+            let destinationPath: String = try await vm.withAgent { agent in
                 guard let vminitd = agent as? Vminitd else {
                     throw ContainerizationError(.unsupported, message: "copyIn requires Vminitd agent")
                 }
@@ -2005,12 +2023,12 @@ extension LinuxContainer {
             // a caller that reuses the number immediately finds the port free
             // to listen on again.
             defer { self.hostVsockPorts.release(port) }
-            let listener = try state.vm.listen(port)
+            let listener = try vm.listen(port)
             defer { try? listener.finish() }
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    try await state.vm.withAgent { agent in
+                    try await vm.withAgent { agent in
                         guard let vminitd = agent as? Vminitd else {
                             throw ContainerizationError(.unsupported, message: "copyIn requires Vminitd agent")
                         }
@@ -2140,6 +2158,8 @@ extension LinuxContainer {
     /// Data transfer happens over a dedicated vsock connection. For directories,
     /// the guest archives the source as tar+gzip and streams it directly through
     /// vsock. The host extracts the archive without intermediate temp files.
+    /// The VM must have been prepared with `create()`; the initial process does
+    /// not need to be started.
     public func copyOut(
         from source: URL,
         to destination: URL,
@@ -2149,7 +2169,7 @@ extension LinuxContainer {
         chunkSize: Int = defaultCopyChunkSize
     ) async throws {
         try await self.state.withLock {
-            let state = try $0.startedState("copyOut")
+            let vm = try $0.copyableVM("copyOut")
 
             if createParents {
                 let parentDir = destination.deletingLastPathComponent()
@@ -2161,7 +2181,7 @@ extension LinuxContainer {
             let port = self.hostVsockPorts.allocate()
             // Deferred LIFO: listener back first, then the port number.
             defer { self.hostVsockPorts.release(port) }
-            let listener = try state.vm.listen(port)
+            let listener = try vm.listen(port)
             defer { try? listener.finish() }
 
             let (metadataStream, metadataCont) = AsyncStream.makeStream(of: Vminitd.CopyMetadata.self)
@@ -2175,7 +2195,7 @@ extension LinuxContainer {
                 group.addTask {
                     defer { metadataCont.finish() }
                     do {
-                        try await state.vm.withAgent { agent in
+                        try await vm.withAgent { agent in
                             guard let vminitd = agent as? Vminitd else {
                                 throw ContainerizationError(.unsupported, message: "copyOut requires Vminitd agent")
                             }
@@ -2279,6 +2299,8 @@ extension LinuxContainer {
     }
 
     /// Stream a tar archive directly into a container directory.
+    /// The VM must have been prepared with `create()`; the initial process does
+    /// not need to be started.
     public func copyIn(
         archive: FileHandle,
         to destination: URL,
@@ -2291,21 +2313,21 @@ extension LinuxContainer {
         defer { try? archiveFd.close() }
 
         try await self.state.withLock {
-            let state = try $0.startedState("copyIn")
+            let vm = try $0.copyableVM("copyIn")
             let root = self.root
             let destinationPath = destination.path
             let port = self.hostVsockPorts.allocate()
             // Deferred LIFO: hand the listener back before the port number, so
             // a caller that reuses the number immediately finds the slot free.
             defer { self.hostVsockPorts.release(port) }
-            let listener = try state.vm.listen(port)
+            let listener = try vm.listen(port)
             let producerError = CopyOutProducerError()
             defer { try? listener.finish() }
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
                     do {
-                        try await state.vm.withAgent { agent in
+                        try await vm.withAgent { agent in
                             guard let vminitd = agent as? Vminitd else {
                                 throw ContainerizationError(
                                     .unsupported,
@@ -2367,6 +2389,8 @@ extension LinuxContainer {
     }
 
     /// Stream a container path directly to a file handle as an uncompressed tar archive.
+    /// The VM must have been prepared with `create()`; the initial process does
+    /// not need to be started.
     public func copyOut(
         from source: URL,
         to archive: FileHandle,
@@ -2379,14 +2403,14 @@ extension LinuxContainer {
         defer { try? archiveFd.close() }
 
         try await self.state.withLock {
-            let state = try $0.startedState("copyOut")
+            let vm = try $0.copyableVM("copyOut")
             let root = self.root
             let sourcePath = source.path
             let port = self.hostVsockPorts.allocate()
             // Deferred LIFO: hand the listener back before the port number, so
             // a caller that reuses the number immediately finds the slot free.
             defer { self.hostVsockPorts.release(port) }
-            let listener = try state.vm.listen(port)
+            let listener = try vm.listen(port)
             let (metadataStream, metadataCont) = AsyncStream.makeStream(of: Vminitd.CopyMetadata.self)
             let producerError = CopyOutProducerError()
             defer {
@@ -2397,7 +2421,7 @@ extension LinuxContainer {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
                     do {
-                        try await state.vm.withAgent { agent in
+                        try await vm.withAgent { agent in
                             guard let vminitd = agent as? Vminitd else {
                                 throw ContainerizationError(
                                     .unsupported,
