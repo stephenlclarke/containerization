@@ -61,6 +61,27 @@ private final class CopyOutProducerError: Sendable {
     }
 }
 
+private struct CopyInRPCRequest: Sendable {
+    let root: String
+    let path: String
+    let vsockPort: UInt32
+    var mode: UInt32 = 0
+    var createParents = true
+    var isArchive = false
+    var preserveOwnership = false
+    var uid: UInt32 = 0
+    var gid: UInt32 = 0
+}
+
+private struct CopyOutRPCRequest: Sendable {
+    let root: String
+    let path: String
+    let vsockPort: UInt32
+    var isArchive = false
+    var followSymlink = false
+    var copyContents = false
+}
+
 /// `LinuxContainer` is an easy to use type for launching and managing the
 /// full lifecycle of a Linux container ran inside of a virtual machine.
 public final class LinuxContainer: Container, Sendable {
@@ -2032,84 +2053,38 @@ extension LinuxContainer {
             let listener = try vm.listen(port)
             defer { try? listener.finish() }
 
+            let request = CopyInRPCRequest(
+                root: root,
+                path: destinationPath,
+                vsockPort: port,
+                mode: fileMode,
+                createParents: createParents,
+                isArchive: isArchive,
+                preserveOwnership: isArchive ? preserveOwnership : sourceStat != nil,
+                uid: sourceStat.map { UInt32($0.st_uid) } ?? 0,
+                gid: sourceStat.map { UInt32($0.st_gid) } ?? 0
+            )
+
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    try await vm.withAgent { agent in
-                        guard let vminitd = agent as? Vminitd else {
-                            throw ContainerizationError(.unsupported, message: "copyIn requires Vminitd agent")
-                        }
-                        try await vminitd.copy(
-                            direction: .copyIn,
-                            root: root,
-                            path: destinationPath,
-                            vsockPort: port,
-                            mode: fileMode,
-                            createParents: createParents,
-                            isArchive: isArchive,
-                            preserveOwnership: isArchive ? preserveOwnership : sourceStat != nil,
-                            uid: sourceStat.map { UInt32($0.st_uid) } ?? 0,
-                            gid: sourceStat.map { UInt32($0.st_gid) } ?? 0
-                        )
-                    }
+                    try await self.runCopyInGuest(
+                        vm: vm,
+                        request: request
+                    )
                 }
 
                 group.addTask {
-                    guard let conn = await listener.first(where: { _ in true }) else {
+                    guard let conn = await self.nextConnection(from: listener) else {
                         throw ContainerizationError(.internalError, message: "copyIn: vsock connection not established")
                     }
                     try listener.finish()
-
-                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                        self.copyQueue.async {
-                            do {
-                                defer { conn.closeFile() }
-
-                                if isArchive {
-                                    let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: .gzip))
-                                    try writer.open(fileDescriptor: conn.fileDescriptor)
-                                    try writer.archiveDirectory(transferSource)
-                                    try writer.finishEncoding()
-                                } else {
-                                    let srcFd = open(transferSource.path, O_RDONLY)
-                                    guard srcFd != -1 else {
-                                        throw ContainerizationError(
-                                            .internalError,
-                                            message: "copyIn: failed to open '\(source.path)': \(String(cString: strerror(errno)))"
-                                        )
-                                    }
-                                    defer { close(srcFd) }
-
-                                    var buf = [UInt8](repeating: 0, count: chunkSize)
-                                    while true {
-                                        let n = read(srcFd, &buf, buf.count)
-                                        if n == 0 { break }
-                                        guard n > 0 else {
-                                            throw ContainerizationError(
-                                                .internalError,
-                                                message: "copyIn: read error: \(String(cString: strerror(errno)))"
-                                            )
-                                        }
-                                        var written = 0
-                                        while written < n {
-                                            let w = buf.withUnsafeBytes { ptr in
-                                                write(conn.fileDescriptor, ptr.baseAddress! + written, n - written)
-                                            }
-                                            guard w > 0 else {
-                                                throw ContainerizationError(
-                                                    .internalError,
-                                                    message: "copyIn: vsock write error: \(String(cString: strerror(errno)))"
-                                                )
-                                            }
-                                            written += w
-                                        }
-                                    }
-                                }
-                                continuation.resume()
-                            } catch {
-                                continuation.resume(throwing: error)
-                            }
-                        }
-                    }
+                    try await self.copyInSourceOnQueue(
+                        conn: conn,
+                        source: transferSource,
+                        displayPath: source.path,
+                        isArchive: isArchive,
+                        chunkSize: chunkSize
+                    )
                 }
 
                 try await group.waitForAll()
@@ -2199,43 +2174,30 @@ extension LinuxContainer {
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    defer { metadataCont.finish() }
-                    do {
-                        try await vm.withAgent { agent in
-                            guard let vminitd = agent as? Vminitd else {
-                                throw ContainerizationError(.unsupported, message: "copyOut requires Vminitd agent")
-                            }
-                            try await vminitd.copy(
-                                direction: .copyOut,
-                                root: root,
-                                path: sourcePath,
-                                vsockPort: port,
-                                followSymlink: followSymlink,
-                                onMetadata: { meta in
-                                    metadataCont.yield(meta)
-                                    metadataCont.finish()
-                                }
-                            )
-                        }
-                    } catch {
-                        // A guest-side validation error can arrive before either stream
-                        // yields. Finish both so the sibling task releases the state lock.
-                        producerError.store(error)
-                        metadataCont.finish()
-                        try? listener.finish()
-                        throw error
-                    }
+                    let request = CopyOutRPCRequest(
+                        root: root,
+                        path: sourcePath,
+                        vsockPort: port,
+                        followSymlink: followSymlink
+                    )
+                    try await self.runCopyOutProducer(
+                        vm: vm,
+                        request: request,
+                        metadataCont: metadataCont,
+                        producerError: producerError,
+                        listener: listener
+                    )
                 }
 
                 group.addTask {
-                    guard let metadata = await metadataStream.first(where: { _ in true }) else {
+                    guard let metadata = await self.nextMetadata(from: metadataStream) else {
                         if let error = producerError.load() {
                             throw error
                         }
                         throw ContainerizationError(.internalError, message: "copyOut: no metadata received")
                     }
 
-                    guard let conn = await listener.first(where: { _ in true }) else {
+                    guard let conn = await self.nextConnection(from: listener) else {
                         if let error = producerError.load() {
                             throw error
                         }
@@ -2243,73 +2205,14 @@ extension LinuxContainer {
                     }
                     try listener.finish()
 
-                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                        self.copyQueue.async {
-                            do {
-                                defer { conn.closeFile() }
-
-                                if metadata.isArchive,
-                                    metadata.mode & UInt32(S_IFMT) == UInt32(S_IFLNK)
-                                {
-                                    let archiveHandle = FileHandle(
-                                        fileDescriptor: conn.fileDescriptor,
-                                        closeOnDealloc: false
-                                    )
-                                    try self.materializeCopyOutSymlink(
-                                        archive: archiveHandle,
-                                        destination: destination,
-                                        expectedName: source.lastPathComponent,
-                                        preserveOwnership: preserveOwnership,
-                                        uid: metadata.uid,
-                                        gid: metadata.gid
-                                    )
-                                } else if metadata.isArchive {
-                                    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-                                    let fh = FileHandle(fileDescriptor: dup(conn.fileDescriptor), closeOnDealloc: true)
-                                    let reader = try ArchiveReader(format: .pax, filter: .gzip, fileHandle: fh)
-                                    _ = try reader.extractContents(to: destination)
-                                } else {
-                                    let destFd = open(destination.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-                                    guard destFd != -1 else {
-                                        throw ContainerizationError(
-                                            .internalError,
-                                            message: "copyOut: failed to open '\(destination.path)': \(String(cString: strerror(errno)))"
-                                        )
-                                    }
-                                    defer { close(destFd) }
-
-                                    var buf = [UInt8](repeating: 0, count: chunkSize)
-                                    while true {
-                                        let n = read(conn.fileDescriptor, &buf, buf.count)
-                                        if n == 0 { break }
-                                        guard n > 0 else {
-                                            throw ContainerizationError(
-                                                .internalError,
-                                                message: "copyOut: vsock read error: \(String(cString: strerror(errno)))"
-                                            )
-                                        }
-                                        var written = 0
-                                        while written < n {
-                                            let w = buf.withUnsafeBytes { ptr in
-                                                write(destFd, ptr.baseAddress! + written, n - written)
-                                            }
-                                            guard w > 0 else {
-                                                throw ContainerizationError(
-                                                    .internalError,
-                                                    message: "copyOut: write error: \(String(cString: strerror(errno)))"
-                                                )
-                                            }
-                                            written += w
-                                        }
-                                    }
-                                    self.applyCopyOutAttributes(metadata, to: destFd, preserveOwnership: preserveOwnership)
-                                }
-                                continuation.resume()
-                            } catch {
-                                continuation.resume(throwing: error)
-                            }
-                        }
-                    }
+                    try await self.copyOutToHostOnQueue(
+                        conn: conn,
+                        metadata: metadata,
+                        source: source,
+                        destination: destination,
+                        preserveOwnership: preserveOwnership,
+                        chunkSize: chunkSize
+                    )
                 }
 
                 try await group.waitForAll()
@@ -2345,34 +2248,25 @@ extension LinuxContainer {
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    do {
-                        try await vm.withAgent { agent in
-                            guard let vminitd = agent as? Vminitd else {
-                                throw ContainerizationError(
-                                    .unsupported,
-                                    message: "copyIn requires Vminitd agent"
-                                )
-                            }
-                            try await vminitd.copy(
-                                direction: .copyIn,
-                                root: root,
-                                path: destinationPath,
-                                vsockPort: port,
-                                createParents: createParents,
-                                isArchive: true,
-                                preserveOwnership: preserveOwnership
-                            )
-                        }
-                    } catch {
-                        producerError.store(error)
-                        try? listener.finish()
-                        try? archiveFd.close()
-                        throw error
-                    }
+                    let request = CopyInRPCRequest(
+                        root: root,
+                        path: destinationPath,
+                        vsockPort: port,
+                        createParents: createParents,
+                        isArchive: true,
+                        preserveOwnership: preserveOwnership
+                    )
+                    try await self.runArchiveCopyInProducer(
+                        vm: vm,
+                        request: request,
+                        producerError: producerError,
+                        listener: listener,
+                        archiveFd: archiveFd
+                    )
                 }
 
                 group.addTask {
-                    guard let conn = await listener.first(where: { _ in true }) else {
+                    guard let conn = await self.nextConnection(from: listener) else {
                         if let error = producerError.load() {
                             throw error
                         }
@@ -2383,23 +2277,13 @@ extension LinuxContainer {
                     }
                     try listener.finish()
 
-                    try await withCheckedThrowingContinuation {
-                        (continuation: CheckedContinuation<Void, any Error>) in
-                        self.copyQueue.async {
-                            do {
-                                defer { conn.closeFile() }
-                                try Self.spliceFd(
-                                    from: archiveFd.fileDescriptor,
-                                    to: conn.fileDescriptor,
-                                    chunkSize: chunkSize,
-                                    label: "copyIn"
-                                )
-                                continuation.resume()
-                            } catch {
-                                continuation.resume(throwing: error)
-                            }
-                        }
-                    }
+                    try await self.spliceOnCopyQueue(
+                        from: archiveFd,
+                        to: conn,
+                        chunkSize: chunkSize,
+                        label: "copyIn",
+                        closing: conn
+                    )
                 }
 
                 try await group.waitForAll()
@@ -2439,39 +2323,26 @@ extension LinuxContainer {
 
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    do {
-                        try await vm.withAgent { agent in
-                            guard let vminitd = agent as? Vminitd else {
-                                throw ContainerizationError(
-                                    .unsupported,
-                                    message: "copyOut requires Vminitd agent"
-                                )
-                            }
-                            try await vminitd.copy(
-                                direction: .copyOut,
-                                root: root,
-                                path: sourcePath,
-                                vsockPort: port,
-                                isArchive: true,
-                                followSymlink: followSymlink,
-                                copyContents: copyContents,
-                                onMetadata: { metadata in
-                                    metadataCont.yield(metadata)
-                                    metadataCont.finish()
-                                }
-                            )
-                        }
-                    } catch {
-                        producerError.store(error)
-                        metadataCont.finish()
-                        try? listener.finish()
-                        try? archiveFd.close()
-                        throw error
-                    }
+                    let request = CopyOutRPCRequest(
+                        root: root,
+                        path: sourcePath,
+                        vsockPort: port,
+                        isArchive: true,
+                        followSymlink: followSymlink,
+                        copyContents: copyContents
+                    )
+                    try await self.runArchiveCopyOutProducer(
+                        vm: vm,
+                        request: request,
+                        metadataCont: metadataCont,
+                        producerError: producerError,
+                        listener: listener,
+                        archiveFd: archiveFd
+                    )
                 }
 
                 group.addTask {
-                    guard await metadataStream.first(where: { _ in true }) != nil else {
+                    guard await self.nextMetadata(from: metadataStream) != nil else {
                         if let error = producerError.load() {
                             throw error
                         }
@@ -2480,7 +2351,7 @@ extension LinuxContainer {
                             message: "copyOut: no metadata received"
                         )
                     }
-                    guard let conn = await listener.first(where: { _ in true }) else {
+                    guard let conn = await self.nextConnection(from: listener) else {
                         if let error = producerError.load() {
                             throw error
                         }
@@ -2491,26 +2362,310 @@ extension LinuxContainer {
                     }
                     try listener.finish()
 
-                    try await withCheckedThrowingContinuation {
-                        (continuation: CheckedContinuation<Void, any Error>) in
-                        self.copyQueue.async {
-                            do {
-                                defer { conn.closeFile() }
-                                try Self.spliceFd(
-                                    from: conn.fileDescriptor,
-                                    to: archiveFd.fileDescriptor,
-                                    chunkSize: chunkSize,
-                                    label: "copyOut"
-                                )
-                                continuation.resume()
-                            } catch {
-                                continuation.resume(throwing: error)
-                            }
-                        }
-                    }
+                    try await self.spliceOnCopyQueue(
+                        from: conn,
+                        to: archiveFd,
+                        chunkSize: chunkSize,
+                        label: "copyOut",
+                        closing: conn
+                    )
                 }
 
                 try await group.waitForAll()
+            }
+        }
+    }
+
+    private func runCopyInGuest(
+        vm: any VirtualMachineInstance,
+        request: CopyInRPCRequest
+    ) async throws {
+        try await vm.withAgent { agent in
+            guard let vminitd = agent as? Vminitd else {
+                throw ContainerizationError(.unsupported, message: "copyIn requires Vminitd agent")
+            }
+            try await vminitd.copy(
+                direction: .copyIn,
+                root: request.root,
+                path: request.path,
+                vsockPort: request.vsockPort,
+                mode: request.mode,
+                createParents: request.createParents,
+                isArchive: request.isArchive,
+                preserveOwnership: request.preserveOwnership,
+                uid: request.uid,
+                gid: request.gid
+            )
+        }
+    }
+
+    private func runCopyOutProducer(
+        vm: any VirtualMachineInstance,
+        request: CopyOutRPCRequest,
+        metadataCont: AsyncStream<Vminitd.CopyMetadata>.Continuation,
+        producerError: CopyOutProducerError,
+        listener: VsockListener
+    ) async throws {
+        defer { metadataCont.finish() }
+        do {
+            try await vm.withAgent { agent in
+                guard let vminitd = agent as? Vminitd else {
+                    throw ContainerizationError(.unsupported, message: "copyOut requires Vminitd agent")
+                }
+                try await vminitd.copy(
+                    direction: .copyOut,
+                    root: request.root,
+                    path: request.path,
+                    vsockPort: request.vsockPort,
+                    followSymlink: request.followSymlink,
+                    onMetadata: { metadata in
+                        metadataCont.yield(metadata)
+                        metadataCont.finish()
+                    }
+                )
+            }
+        } catch {
+            // A guest-side validation error can arrive before either stream
+            // yields. Finish both so the sibling task releases the state lock.
+            producerError.store(error)
+            metadataCont.finish()
+            try? listener.finish()
+            throw error
+        }
+    }
+
+    private func runArchiveCopyInProducer(
+        vm: any VirtualMachineInstance,
+        request: CopyInRPCRequest,
+        producerError: CopyOutProducerError,
+        listener: VsockListener,
+        archiveFd: FileHandle
+    ) async throws {
+        do {
+            try await vm.withAgent { agent in
+                guard let vminitd = agent as? Vminitd else {
+                    throw ContainerizationError(.unsupported, message: "copyIn requires Vminitd agent")
+                }
+                try await vminitd.copy(
+                    direction: .copyIn,
+                    root: request.root,
+                    path: request.path,
+                    vsockPort: request.vsockPort,
+                    createParents: request.createParents,
+                    isArchive: request.isArchive,
+                    preserveOwnership: request.preserveOwnership
+                )
+            }
+        } catch {
+            producerError.store(error)
+            try? listener.finish()
+            try? archiveFd.close()
+            throw error
+        }
+    }
+
+    private func runArchiveCopyOutProducer(
+        vm: any VirtualMachineInstance,
+        request: CopyOutRPCRequest,
+        metadataCont: AsyncStream<Vminitd.CopyMetadata>.Continuation,
+        producerError: CopyOutProducerError,
+        listener: VsockListener,
+        archiveFd: FileHandle
+    ) async throws {
+        do {
+            try await vm.withAgent { agent in
+                guard let vminitd = agent as? Vminitd else {
+                    throw ContainerizationError(.unsupported, message: "copyOut requires Vminitd agent")
+                }
+                try await vminitd.copy(
+                    direction: .copyOut,
+                    root: request.root,
+                    path: request.path,
+                    vsockPort: request.vsockPort,
+                    isArchive: request.isArchive,
+                    followSymlink: request.followSymlink,
+                    copyContents: request.copyContents,
+                    onMetadata: { metadata in
+                        metadataCont.yield(metadata)
+                        metadataCont.finish()
+                    }
+                )
+            }
+        } catch {
+            producerError.store(error)
+            metadataCont.finish()
+            try? listener.finish()
+            try? archiveFd.close()
+            throw error
+        }
+    }
+
+    private func nextConnection(from listener: VsockListener) async -> FileHandle? {
+        var iterator = listener.makeAsyncIterator()
+        return await iterator.next()
+    }
+
+    private func nextMetadata(
+        from stream: AsyncStream<Vminitd.CopyMetadata>
+    ) async -> Vminitd.CopyMetadata? {
+        var iterator = stream.makeAsyncIterator()
+        return await iterator.next()
+    }
+
+    private func copyInSourceOnQueue(
+        conn: FileHandle,
+        source: URL,
+        displayPath: String,
+        isArchive: Bool,
+        chunkSize: Int
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            self.copyQueue.async {
+                do {
+                    defer { conn.closeFile() }
+
+                    if isArchive {
+                        let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: .gzip))
+                        try writer.open(fileDescriptor: conn.fileDescriptor)
+                        try writer.archiveDirectory(source)
+                        try writer.finishEncoding()
+                    } else {
+                        let srcFd = open(source.path, O_RDONLY)
+                        guard srcFd != -1 else {
+                            throw ContainerizationError(
+                                .internalError,
+                                message: "copyIn: failed to open '\(displayPath)': \(String(cString: strerror(errno)))"
+                            )
+                        }
+                        defer { close(srcFd) }
+
+                        var buf = [UInt8](repeating: 0, count: chunkSize)
+                        while true {
+                            let n = read(srcFd, &buf, buf.count)
+                            if n == 0 { break }
+                            guard n > 0 else {
+                                throw ContainerizationError(
+                                    .internalError,
+                                    message: "copyIn: read error: \(String(cString: strerror(errno)))"
+                                )
+                            }
+                            var written = 0
+                            while written < n {
+                                let w = Self.writeBuffer(buf, offset: written, to: conn.fileDescriptor, count: n - written)
+                                guard w > 0 else {
+                                    throw ContainerizationError(
+                                        .internalError,
+                                        message: "copyIn: vsock write error: \(String(cString: strerror(errno)))"
+                                    )
+                                }
+                                written += w
+                            }
+                        }
+                    }
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func copyOutToHostOnQueue(
+        conn: FileHandle,
+        metadata: Vminitd.CopyMetadata,
+        source: URL,
+        destination: URL,
+        preserveOwnership: Bool,
+        chunkSize: Int
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            self.copyQueue.async {
+                do {
+                    defer { conn.closeFile() }
+
+                    if metadata.isArchive,
+                        metadata.mode & UInt32(S_IFMT) == UInt32(S_IFLNK)
+                    {
+                        let archiveHandle = FileHandle(
+                            fileDescriptor: conn.fileDescriptor,
+                            closeOnDealloc: false
+                        )
+                        try self.materializeCopyOutSymlink(
+                            archive: archiveHandle,
+                            destination: destination,
+                            expectedName: source.lastPathComponent,
+                            preserveOwnership: preserveOwnership,
+                            uid: metadata.uid,
+                            gid: metadata.gid
+                        )
+                    } else if metadata.isArchive {
+                        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+                        let fh = FileHandle(fileDescriptor: dup(conn.fileDescriptor), closeOnDealloc: true)
+                        let reader = try ArchiveReader(format: .pax, filter: .gzip, fileHandle: fh)
+                        _ = try reader.extractContents(to: destination)
+                    } else {
+                        let destFd = open(destination.path, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+                        guard destFd != -1 else {
+                            throw ContainerizationError(
+                                .internalError,
+                                message: "copyOut: failed to open '\(destination.path)': \(String(cString: strerror(errno)))"
+                            )
+                        }
+                        defer { close(destFd) }
+
+                        var buf = [UInt8](repeating: 0, count: chunkSize)
+                        while true {
+                            let n = read(conn.fileDescriptor, &buf, buf.count)
+                            if n == 0 { break }
+                            guard n > 0 else {
+                                throw ContainerizationError(
+                                    .internalError,
+                                    message: "copyOut: vsock read error: \(String(cString: strerror(errno)))"
+                                )
+                            }
+                            var written = 0
+                            while written < n {
+                                let w = Self.writeBuffer(buf, offset: written, to: destFd, count: n - written)
+                                guard w > 0 else {
+                                    throw ContainerizationError(
+                                        .internalError,
+                                        message: "copyOut: write error: \(String(cString: strerror(errno)))"
+                                    )
+                                }
+                                written += w
+                            }
+                        }
+                        self.applyCopyOutAttributes(metadata, to: destFd, preserveOwnership: preserveOwnership)
+                    }
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func spliceOnCopyQueue(
+        from source: FileHandle,
+        to destination: FileHandle,
+        chunkSize: Int,
+        label: String,
+        closing: FileHandle
+    ) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            self.copyQueue.async {
+                do {
+                    defer { closing.closeFile() }
+                    try Self.spliceFd(
+                        from: source.fileDescriptor,
+                        to: destination.fileDescriptor,
+                        chunkSize: chunkSize,
+                        label: label
+                    )
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
@@ -2572,6 +2727,12 @@ extension LinuxContainer {
                 }
                 written += writeCount
             }
+        }
+    }
+
+    private static func writeBuffer(_ buffer: [UInt8], offset: Int, to fd: Int32, count: Int) -> Int {
+        buffer.withUnsafeBytes { bytes in
+            write(fd, bytes.baseAddress!.advanced(by: offset), count)
         }
     }
 
