@@ -50,7 +50,7 @@ Containerization provides APIs to:
 - [Manage OCI images](./Sources/ContainerizationOCI/).
 - [Interact with remote registries](./Sources/ContainerizationOCI/Client/).
 - [Create and populate ext4 file systems](./Sources/ContainerizationEXT4/).
-- Export one selected regular file or symbolic link with `EXT4.EXT4Reader.export(archive:selectedPath:followSymlink:)`; archive entries retain the requested basename, optional final-link following, ownership and metadata, and regular-file bytes stream in bounded chunks. `export(archive:subtree:)` continues to export a directory's contents at archive root. Offline readers can request `requireCleanJournal` to reject ext4 images marked for recovery before tree traversal.
+- Export one selected regular file or symbolic link with `EXT4.EXT4Reader.export(archive:selectedPath:followSymlink:)`; archive entries retain the requested basename, optional final-link following, ownership and metadata, and regular-file bytes stream in bounded chunks. `export(archive:subtree:)` continues to export a directory's contents at archive root. Offline readers can request `requireCleanJournal` to reject ext4 images marked for recovery before tree traversal. Metadata decoding accepts unaligned raw buffers through `loadUnaligned`; the [alignment repair](docs/upstream/PR-ext4-unaligned-load.md) records the original trap, 24 passing parameter cases and focused instrumented coverage.
 - [Interact with the Netlink socket family](./Sources/ContainerizationNetlink/).
 - [Create an optimized Linux kernel for fast boot times](./kernel/).
 - [Spawn lightweight virtual machines and manage the runtime environment](./Sources/Containerization/LinuxContainer.swift).
