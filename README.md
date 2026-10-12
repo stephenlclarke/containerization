@@ -45,6 +45,8 @@ mode; pull-request validation retains debug guests. See the [performance change]
 
 The guest command helper links shared OS, network and cgroup contracts directly, so guest server changes no longer rebuild it. This reduces its optimized ARM64 binary size by 16%; runtime latency is unchanged in the paired tests. See the [dependency change](docs/PR-vmexec-dependencies.md).
 
+The public `RegistryInfo` initializer constructs registry metadata without a Keychain operation, including when clients consume the optimized SDK release. See the [public API boundary repair](docs/PR-registry-public-construction.md).
+
 Containerization provides APIs to:
 
 - [Manage OCI images](./Sources/ContainerizationOCI/).
