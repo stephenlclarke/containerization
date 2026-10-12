@@ -68,6 +68,15 @@ class DiscoveryTests(unittest.TestCase):
             executable = make_bundle(root, "containerizationPackageTests", darwin=False)
             self.assertEqual(coverage.discover_test_executables(root), [executable])
 
+    def test_discovers_linux_executable_without_bundle_directory(self) -> None:
+        """Linux SwiftPM's .xctest executable is retained as a coverage object."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root / "containerizationPackageTests.xctest"
+            executable.write_bytes(b"fixture")
+            executable.chmod(0o755)
+            self.assertEqual(coverage.discover_test_executables(root), [executable.resolve()])
+
     def test_rejects_empty_build_products(self) -> None:
         """Missing test instrumentation fails before llvm-cov runs."""
         with tempfile.TemporaryDirectory() as directory:
@@ -106,9 +115,18 @@ class CommandTests(unittest.TestCase):
             profile = root / "default.profdata"
             profile.write_bytes(b"profile")
             objects = [root / "OneTests", root / "TwoTests"]
-            command = coverage.llvm_cov_command("lcov", root, profile, objects)
+            command = coverage.llvm_cov_command("lcov", root, profile, objects, ["xcrun", "llvm-cov"])
             self.assertEqual(command[:4], ["xcrun", "llvm-cov", "export", "--format=lcov"])
             self.assertEqual(command[-3:], [str(objects[0]), "--object", str(objects[1])])
+
+    def test_linux_export_uses_the_swift_toolchain_llvm_cov_directly(self) -> None:
+        """A Linux report does not depend on macOS xcrun."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile = root / "default.profdata"
+            profile.write_bytes(b"profile")
+            command = coverage.llvm_cov_command("lcov", root, profile, [root / "Tests.xctest"], ["llvm-cov"])
+            self.assertEqual(command[:3], ["llvm-cov", "export", "--format=lcov"])
 
     def test_write_report_replaces_output_after_success(self) -> None:
         """A complete report atomically replaces the previous file."""
@@ -134,6 +152,20 @@ class CommandTests(unittest.TestCase):
                 coverage.write_report(["llvm-cov"], output, runner=runner)
             self.assertEqual(output.read_text(encoding="utf-8"), "old")
             self.assertFalse(output.with_suffix(".lcov.tmp").exists())
+
+    def test_write_report_rejects_empty_export(self) -> None:
+        """An empty profile export cannot replace a usable report."""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "coverage.lcov"
+            output.write_text("old", encoding="utf-8")
+
+            def runner(_command, check, stdout):
+                self.assertTrue(check)
+                return subprocess.CompletedProcess([], 0)
+
+            with self.assertRaisesRegex(ValueError, "empty"):
+                coverage.write_report(["llvm-cov"], output, runner=runner)
+            self.assertEqual(output.read_text(encoding="utf-8"), "old")
 
 
 if __name__ == "__main__":

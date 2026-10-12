@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOS
@@ -31,6 +32,12 @@ import struct ContainerizationOCI.Mount
 import struct ContainerizationOCI.Spec
 
 @testable import Containerization
+
+#if canImport(Darwin)
+import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 
 struct LinuxContainerTests {
 
@@ -56,6 +63,489 @@ struct LinuxContainerTests {
                 chunkSize: -1
             )
         }
+    }
+
+    @Test func copyOutPreservesSourceModesWithoutPreservingOwnership() throws {
+        let container = try LinuxContainer(
+            "copy-out-mode-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("copy-out-mode-\(UUID().uuidString)")
+        try Data("copy mode fixture".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let fd = open(file.path, O_RDWR | O_CLOEXEC)
+        try #require(fd >= 0)
+        defer { close(fd) }
+        try #require(fchmod(fd, 0o600) == 0)
+
+        let originalAttributes = try FileManager.default.attributesOfItem(atPath: file.path)
+        let originalOwner = originalAttributes[.ownerAccountID]
+        let originalGroup = originalAttributes[.groupOwnerAccountID]
+
+        for mode: UInt32 in [0o000, 0o640, 0o664, 0o755] {
+            let sourceMode = UInt32(S_IFREG) | mode
+            let metadata = Vminitd.CopyMetadata(isArchive: false, totalSize: 0, mode: sourceMode, uid: 0, gid: 0)
+            container.applyCopyOutAttributes(metadata, to: fd, preserveOwnership: false)
+
+            let copiedAttributes = try FileManager.default.attributesOfItem(atPath: file.path)
+            #expect((copiedAttributes[.posixPermissions] as? NSNumber)?.uint32Value == mode)
+            #expect(copiedAttributes[.ownerAccountID] as? NSNumber == originalOwner as? NSNumber)
+            #expect(copiedAttributes[.groupOwnerAccountID] as? NSNumber == originalGroup as? NSNumber)
+        }
+    }
+
+    @Test(arguments: ["relative-target", "missing-target", "/absolute-target"])
+    func materializeCopyOutSymlinkPreservesTargetWithoutFollowing(target: String) throws {
+        let container = try LinuxContainer(
+            "copy-out-symlink-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-out-symlink-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archiveURL = directory.appendingPathComponent("source.tar.gz")
+        try writeCopyOutSymlinkArchive(at: archiveURL, target: target)
+        let archive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? archive.close() }
+        let destination = directory.appendingPathComponent("copied-link")
+
+        try container.materializeCopyOutSymlink(
+            archive: archive,
+            destination: destination,
+            expectedName: "link"
+        )
+
+        var status = stat()
+        #expect(lstat(destination.path, &status) == 0)
+        #expect(status.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == target)
+        #expect(
+            try Set(FileManager.default.contentsOfDirectory(atPath: directory.path))
+                == ["copied-link", "source.tar.gz"]
+        )
+    }
+
+    @Test func materializeCopyOutSymlinkAtomicallyReplacesFileAndCleansStagingOnFailure() throws {
+        let container = try LinuxContainer(
+            "copy-out-symlink-replacement-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-out-symlink-replacement-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archiveURL = directory.appendingPathComponent("source.tar.gz")
+        try writeCopyOutSymlinkArchive(at: archiveURL, target: "replacement-target")
+        let destination = directory.appendingPathComponent("output")
+        try Data("old destination".utf8).write(to: destination)
+        let archive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? archive.close() }
+
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: archive,
+                destination: destination,
+                expectedName: "../output"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "old destination")
+
+        try container.materializeCopyOutSymlink(
+            archive: archive,
+            destination: destination,
+            expectedName: "link"
+        )
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == "replacement-target")
+
+        let protectedTarget = directory.appendingPathComponent("protected-target")
+        try Data("do not truncate through symlink".utf8).write(to: protectedTarget)
+        try FileManager.default.removeItem(at: destination)
+        try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: protectedTarget)
+        let replacementArchive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? replacementArchive.close() }
+        try container.materializeCopyOutSymlink(
+            archive: replacementArchive,
+            destination: destination,
+            expectedName: "link"
+        )
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == "replacement-target")
+        #expect(try String(contentsOf: protectedTarget, encoding: .utf8) == "do not truncate through symlink")
+
+        try FileManager.default.removeItem(at: destination)
+        try Data("preserve me".utf8).write(to: destination)
+        let nestedArchiveURL = directory.appendingPathComponent("nested-member.tar.gz")
+        try writeCopyOutSymlinkArchive(at: nestedArchiveURL, target: "unused", memberPath: "nested/link")
+        let nestedArchive = try FileHandle(forReadingFrom: nestedArchiveURL)
+        defer { try? nestedArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: nestedArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let regularArchiveURL = directory.appendingPathComponent("regular-member.tar.gz")
+        try writeCopyOutRegularArchive(at: regularArchiveURL, memberPath: "link")
+        let regularArchive = try FileHandle(forReadingFrom: regularArchiveURL)
+        defer { try? regularArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: regularArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let multiMemberArchiveURL = directory.appendingPathComponent("multi-member.tar.gz")
+        try writeCopyOutSymlinkArchive(
+            at: multiMemberArchiveURL,
+            target: "unused",
+            additionalMemberPath: "extra"
+        )
+        let multiMemberArchive = try FileHandle(forReadingFrom: multiMemberArchiveURL)
+        defer { try? multiMemberArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: multiMemberArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let rejectedArchiveURL = directory.appendingPathComponent("rejected-member.tar.gz")
+        try writeCopyOutSymlinkArchive(at: rejectedArchiveURL, target: "unused", memberPath: "../rejected")
+        let rejectedArchive = try FileHandle(forReadingFrom: rejectedArchiveURL)
+        defer { try? rejectedArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: rejectedArchive,
+                destination: destination,
+                expectedName: "link"
+            )
+        }
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "preserve me")
+
+        let destinationDirectory = directory.appendingPathComponent("destination-directory", isDirectory: true)
+        try FileManager.default.createDirectory(at: destinationDirectory, withIntermediateDirectories: false)
+        let directoryCollisionArchive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? directoryCollisionArchive.close() }
+        #expect(throws: ContainerizationError.self) {
+            try container.materializeCopyOutSymlink(
+                archive: directoryCollisionArchive,
+                destination: destinationDirectory,
+                expectedName: "link"
+            )
+        }
+        #expect(
+            try Set(FileManager.default.contentsOfDirectory(atPath: directory.path))
+                == [
+                    "source.tar.gz", "protected-target", "output", "nested-member.tar.gz", "rejected-member.tar.gz",
+                    "multi-member.tar.gz", "regular-member.tar.gz", "destination-directory",
+                ]
+        )
+    }
+
+    @Test func materializeCopyOutSymlinkPreservesOwnershipWhenRequested() throws {
+        let container = try LinuxContainer(
+            "copy-out-symlink-ownership-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: StubVirtualMachineManager(),
+            configuration: .init()
+        )
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-out-symlink-ownership-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archiveURL = directory.appendingPathComponent("source.tar.gz")
+        try writeCopyOutSymlinkArchive(at: archiveURL, target: "ownership-target")
+        let archive = try FileHandle(forReadingFrom: archiveURL)
+        defer { try? archive.close() }
+        let destination = directory.appendingPathComponent("copied-link")
+        let expectedUID = getuid()
+        let expectedGID = getgid()
+
+        try container.materializeCopyOutSymlink(
+            archive: archive,
+            destination: destination,
+            expectedName: "link",
+            preserveOwnership: true,
+            uid: expectedUID,
+            gid: expectedGID
+        )
+
+        var status = stat()
+        #expect(lstat(destination.path, &status) == 0)
+        #expect(status.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK))
+        #expect(status.st_uid == expectedUID)
+        #expect(status.st_gid == expectedGID)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: destination.path) == "ownership-target")
+        #expect(try Set(FileManager.default.contentsOfDirectory(atPath: directory.path)) == ["copied-link", "source.tar.gz"])
+    }
+
+    private func writeCopyOutSymlinkArchive(
+        at url: URL,
+        target: String,
+        memberPath: String = "link",
+        additionalMemberPath: String? = nil
+    ) throws {
+        let writer = try ArchiveWriter(format: .pax, filter: .gzip, file: url)
+        let link = WriteEntry()
+        link.path = memberPath
+        link.fileType = .symbolicLink
+        link.symlinkTarget = target
+        link.size = 0
+        try writer.writeEntry(entry: link, data: nil)
+        if let additionalMemberPath {
+            let extra = WriteEntry()
+            extra.path = additionalMemberPath
+            extra.fileType = .regular
+            extra.permissions = 0o644
+            extra.size = 1
+            try writer.writeEntry(entry: extra, data: Data([0x41]))
+        }
+        try writer.finishEncoding()
+    }
+
+    private func writeCopyOutRegularArchive(at url: URL, memberPath: String) throws {
+        let writer = try ArchiveWriter(format: .pax, filter: .gzip, file: url)
+        let file = WriteEntry()
+        file.path = memberPath
+        file.fileType = .regular
+        file.permissions = 0o644
+        file.size = 1
+        try writer.writeEntry(entry: file, data: Data([0x41]))
+        try writer.finishEncoding()
+    }
+
+    @Test func copyInEncodesExplicitZeroModeWithoutChangingOtherModes() {
+        #expect(LinuxContainer.encodeCopyInMode(0) == UInt32(S_IFREG))
+        #expect(LinuxContainer.encodeCopyInMode(0o640) == 0o640)
+        #expect(LinuxContainer.encodeCopyInMode(0o755) == 0o755)
+    }
+
+    @Test func copyOverloadsAreAvailableAfterCreateWithoutStartingWorkload() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "copy-created-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init()
+        )
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-created-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        try await container.create()
+        let vm = try #require(manager.vm)
+        #expect(vm.agent.createdProcessSpec == nil)
+
+        try await assertCopyOverloadsReachVM(container, source: source)
+
+        #expect(vm.startCalls == 1)
+        #expect(vm.agent.createdProcessSpec == nil)
+    }
+
+    @Test func copyOverloadsRemainAvailableAfterWorkloadStarts() async throws {
+        let manager = RecordingVirtualMachineManager()
+        let container = try LinuxContainer(
+            "copy-started-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: manager,
+            configuration: .init()
+        )
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-started-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        try await container.create()
+        try await container.start()
+        let vm = try #require(manager.vm)
+        #expect(vm.agent.createdProcessSpec != nil)
+
+        try await assertCopyOverloadsReachVM(container, source: source)
+
+        #expect(vm.agent.createdProcessSpec != nil)
+    }
+
+    @Test func copyOverloadsStillRejectInitializedStoppedAndPausedStates() async throws {
+        let initialized = try LinuxContainer(
+            "copy-initialized-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        try await assertCopyOverloadsRejectState(initialized)
+
+        let stopped = try LinuxContainer(
+            "copy-stopped-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        try await stopped.create()
+        try await stopped.stop()
+        try await assertCopyOverloadsRejectState(stopped)
+
+        let paused = try LinuxContainer(
+            "copy-paused-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(),
+            configuration: .init()
+        )
+        try await paused.create()
+        try await paused.start()
+        try await paused.pause()
+        try await assertCopyOverloadsRejectState(paused)
+        try await paused.resume()
+        try await paused.stop()
+    }
+
+    @Test func copyOverloadsRethrowTheOriginalContainerError() async throws {
+        let startError = ContainerizationError(.internalError, message: "VM startup failed")
+        let container = try LinuxContainer(
+            "copy-errored-state-test",
+            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
+            vmm: RecordingVirtualMachineManager(startError: startError),
+            configuration: .init()
+        )
+        await #expect(throws: ContainerizationError.self) {
+            try await container.create()
+        }
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-errored-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        for error in await copyErrors(container, source: source) {
+            #expect(error.code == .internalError)
+            #expect(error.message == "VM startup failed")
+        }
+    }
+
+    private func assertCopyOverloadsReachVM(_ container: LinuxContainer, source: URL) async throws {
+        let archiveInput = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
+        defer { try? archiveInput.close() }
+        let archiveOutput = try FileHandle(forWritingTo: URL(fileURLWithPath: "/dev/null"))
+        defer { try? archiveOutput.close() }
+
+        let fileIn = await #expect(throws: ContainerizationError.self) {
+            try await container.copyIn(from: source, to: URL(filePath: "/copy-target"))
+        }
+        #expect(fileIn?.code == .unsupported)
+
+        let archiveIn = await #expect(throws: ContainerizationError.self) {
+            try await container.copyIn(archive: archiveInput, to: URL(filePath: "/copy-target"))
+        }
+        #expect(archiveIn?.code == .internalError)
+        #expect(archiveIn?.message == "listen should not be called by LinuxContainerTests")
+
+        let fileOut = await #expect(throws: ContainerizationError.self) {
+            try await container.copyOut(
+                from: URL(filePath: "/copy-source"),
+                to: URL(filePath: "/tmp/copy-created-state-output"),
+                createParents: false
+            )
+        }
+        #expect(fileOut?.code == .internalError)
+        #expect(fileOut?.message == "listen should not be called by LinuxContainerTests")
+
+        let archiveOut = await #expect(throws: ContainerizationError.self) {
+            try await container.copyOut(from: URL(filePath: "/copy-source"), to: archiveOutput)
+        }
+        #expect(archiveOut?.code == .internalError)
+        #expect(archiveOut?.message == "listen should not be called by LinuxContainerTests")
+    }
+
+    private func assertCopyOverloadsRejectState(_ container: LinuxContainer) async throws {
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copy-invalid-state-\(UUID().uuidString)")
+        try Data("copy fixture".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let errors = await copyErrors(container, source: source)
+        for error in errors {
+            #expect(error.code == .invalidState)
+        }
+        #expect(
+            errors.map(\.message) == [
+                "failed to copyIn: container filesystem must be prepared or running",
+                "failed to copyIn: container filesystem must be prepared or running",
+                "failed to copyOut: container filesystem must be prepared or running",
+                "failed to copyOut: container filesystem must be prepared or running",
+            ]
+        )
+    }
+
+    private func copyErrors(_ container: LinuxContainer, source: URL) async -> [ContainerizationError] {
+        var errors = [ContainerizationError]()
+        do {
+            try await container.copyIn(from: source, to: URL(filePath: "/copy-target"))
+            Issue.record("expected copyIn to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        let archiveInput: FileHandle
+        do {
+            archiveInput = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
+        } catch {
+            Issue.record("failed to open archive fixture: \(error)")
+            return errors
+        }
+        defer { try? archiveInput.close() }
+        do {
+            try await container.copyIn(archive: archiveInput, to: URL(filePath: "/copy-target"))
+            Issue.record("expected archive copyIn to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        do {
+            try await container.copyOut(
+                from: URL(filePath: "/copy-source"),
+                to: URL(filePath: "/tmp/copy-invalid-state-output"),
+                createParents: false
+            )
+            Issue.record("expected copyOut to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        let archiveOutput: FileHandle
+        do {
+            archiveOutput = try FileHandle(forWritingTo: URL(fileURLWithPath: "/dev/null"))
+        } catch {
+            Issue.record("failed to open archive output fixture: \(error)")
+            return errors
+        }
+        defer { try? archiveOutput.close() }
+        do {
+            try await container.copyOut(from: URL(filePath: "/copy-source"), to: archiveOutput)
+            Issue.record("expected archive copyOut to reject the container state")
+        } catch let error as ContainerizationError {
+            errors.append(error)
+        } catch {
+            Issue.record("expected ContainerizationError, got \(error)")
+        }
+        return errors
     }
 
     @Test func ipv6OnlyInterfaceOmitsIPv4GuestConfiguration() async throws {

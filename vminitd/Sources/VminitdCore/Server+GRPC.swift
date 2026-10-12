@@ -54,6 +54,29 @@ typealias _stat_struct = Glibc.stat
 private let _stat: @Sendable (UnsafePointer<CChar>, UnsafeMutablePointer<_stat_struct>) -> Int32 = stat
 #endif
 
+func applyCopyInFileMode(fd: Int32, mode: mode_t, path: String) throws {
+    guard fchmod(fd, mode) == 0 else {
+        throw RPCError(
+            code: .internalError,
+            message: "copy: failed to preserve mode for '\(path)': \(String(cString: strerror(errno)))"
+        )
+    }
+}
+
+func resolveCopyInFileMode(_ requestedMode: UInt32) -> mode_t {
+    requestedMode > 0 ? mode_t(requestedMode & 0o777) : mode_t(0o644)
+}
+
+enum CopyOutClassification {
+    static func preservesFinalSymlink(followSymlink: Bool) -> Bool {
+        !followSymlink
+    }
+
+    static func isArchive(requestedArchive: Bool, sourceIsDirectory: Bool, sourceIsSymlink: Bool) -> Bool {
+        requestedArchive || sourceIsDirectory || sourceIsSymlink
+    }
+}
+
 extension ContainerizationError {
     func toRPCError(operation: String) -> RPCError {
         let message = "\(operation): \(self)"
@@ -556,7 +579,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     try RootfsResolver.createDirectoryInRoot(dirFd: rootFd, path: FilePath(path).removingLastComponent().string)
                 }
 
-                let mode = request.mode > 0 ? mode_t(request.mode & 0o777) : mode_t(0o644)
+                let mode = resolveCopyInFileMode(request.mode)
                 let fd = RootfsResolver.openInRoot(
                     dirFd: rootFd,
                     path: path,
@@ -602,13 +625,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                             message: "copy: failed to preserve ownership for '\(path)': \(swiftErrno("fchown"))"
                         )
                     }
-                    guard fchmod(fd, mode) == 0 else {
-                        throw RPCError(
-                            code: .internalError,
-                            message: "copy: failed to preserve mode for '\(path)': \(swiftErrno("fchmod"))"
-                        )
-                    }
                 }
+                try applyCopyInFileMode(fd: fd, mode: mode, path: path)
                 return []
             }
 
@@ -648,7 +666,9 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         let rootFd = try openRootDirectory(root)
         defer { close(rootFd) }
 
-        let preserveSourceSymlink = request.isArchive && !request.followSymlink
+        let preserveSourceSymlink = CopyOutClassification.preservesFinalSymlink(
+            followSymlink: request.followSymlink
+        )
         let openFlags = RootfsResolver.oPath | O_CLOEXEC | (preserveSourceSymlink ? O_NOFOLLOW : 0)
         let fd = RootfsResolver.openInRoot(dirFd: rootFd, path: path, flags: openFlags)
         guard fd != -1 else {
@@ -667,8 +687,12 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         let fileType = s.st_mode & UInt32(S_IFMT)
         let sourceIsDirectory = fileType == UInt32(S_IFDIR)
         let sourceIsSymlink = fileType == UInt32(S_IFLNK)
-        let isArchive = sourceIsDirectory || request.isArchive
-        guard fileType == UInt32(S_IFREG) || sourceIsDirectory || (request.isArchive && sourceIsSymlink) else {
+        let isArchive = CopyOutClassification.isArchive(
+            requestedArchive: request.isArchive,
+            sourceIsDirectory: sourceIsDirectory,
+            sourceIsSymlink: sourceIsSymlink
+        )
+        guard fileType == UInt32(S_IFREG) || sourceIsDirectory || (isArchive && sourceIsSymlink) else {
             throw RPCError(code: .invalidArgument, message: "copy: cannot copy out '\(path)': unsupported file type")
         }
         let totalSize: UInt64 = isArchive ? 0 : UInt64(s.st_size)
@@ -700,7 +724,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 let writer = try ArchiveWriter(configuration: .init(format: .pax, filter: filter))
                 try writer.open(fileDescriptor: sock.fileDescriptor)
                 let source = try FileDescriptorOps.getCanonicalPath(FileDescriptor(rawValue: fd))
-                if !request.isArchive {
+                if sourceIsDirectory, !request.isArchive {
                     try writer.archiveDirectory(URL(fileURLWithPath: source.string))
                 } else if sourceIsDirectory, request.copyContents || FilePath(path).lastComponent == nil {
                     try writer.archiveDirectory(

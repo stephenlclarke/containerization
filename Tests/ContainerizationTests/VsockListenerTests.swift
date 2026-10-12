@@ -40,7 +40,8 @@ struct VsockListenerTests {
         #expect(weakOwner == nil)
     }
 
-    @Test func vminitdRetainsConnectionOwnerWhileUsingDescriptor() async throws {
+    @Test(arguments: [false, true])
+    func vminitdRetainsConnectionOwnerWhileUsingDescriptor(peerClosesFirst: Bool) async throws {
         var descriptors = [Int32](repeating: -1, count: 2)
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0 else {
             throw POSIXError(.init(rawValue: errno) ?? .EIO)
@@ -64,8 +65,10 @@ struct VsockListenerTests {
 
         #expect(weakOwner != nil)
 
-        try peer.close()
-        try? await client?.close()
+        if peerClosesFirst {
+            try peer.close()
+        }
+        try await client?.close()
         client = nil
 
         #expect(weakOwner == nil)

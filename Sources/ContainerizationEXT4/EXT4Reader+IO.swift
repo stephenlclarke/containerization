@@ -54,13 +54,6 @@ extension EXT4.EXT4Reader {
         return lo | (hi << 32)
     }
 
-    /// Validate that a physical block address is within device bounds
-    private func validateBlockAddress(_ block: UInt32) throws {
-        guard UInt64(block) < totalBlocks else {
-            throw EXT4.PathIOError.invalidPath("block address \(block) exceeds device bounds (\(totalBlocks) blocks)")
-        }
-    }
-
     /// Metadata (inode + inode number) for a path.
     public func stat(_ path: FilePath, followSymlinks: Bool = true) throws -> (inodeNumber: EXT4.InodeNumber, inode: EXT4.Inode) {
         let resolved = try resolvePath(path, followSymlinks: followSymlinks)
@@ -161,109 +154,60 @@ extension EXT4.EXT4Reader {
         wantedBytes: UInt64,
         into buffer: UnsafeMutableRawBufferPointer
     ) throws -> Int {
-        if wantedBytes == 0 {
-            return 0
-        }
-
-        guard let extents = try self.getExtents(inode: inodeNumber), !extents.isEmpty else {
-            return 0
-        }
-
-        for (physStartBlk, physEndBlk) in extents {
-            try validateBlockAddress(physStartBlk)
-            if physEndBlk > physStartBlk {
-                try validateBlockAddress(physEndBlk - 1)
-            }
-        }
-
-        guard let base = buffer.baseAddress else {
-            return 0
-        }
-
         let desiredBytes = Int(min(wantedBytes, UInt64(buffer.count)))
-        if desiredBytes == 0 {
-            return 0
+        guard desiredBytes > 0, let base = buffer.baseAddress else { return 0 }
+        let extents = try getLogicalExtents(inode: inodeNumber)
+        for extent in extents {
+            guard extent.physicalBlock < totalBlocks,
+                extent.blockCount <= totalBlocks - extent.physicalBlock
+            else { throw EXT4.Error.invalidExtents }
+            // Validate even non-overlapping ranges before touching the caller's buffer.
+            _ = try Self.checkedByteOffset(block: extent.physicalBlock, blockSize: blockSize)
+            _ = try Self.checkedByteOffset(
+                block: extent.physicalBlock + extent.blockCount - 1, blockSize: blockSize, offset: blockSize - 1)
         }
 
-        let blockSizeBytes = self.blockSize
-        let reqStart = start
-        let reqEnd = start + UInt64(desiredBytes)
-        var logicalOffset: UInt64 = 0
+        let requestEnd = start + UInt64(desiredBytes)
         var bytesWritten = 0
-
-        for (physStartBlk, physEndBlk) in extents {
-            let extentBytes = UInt64(physEndBlk - physStartBlk) * blockSizeBytes
-            let logicalEnd = logicalOffset + extentBytes
-
-            if logicalEnd <= reqStart {
-                logicalOffset = logicalEnd
-                continue
-            }
-            if logicalOffset >= reqEnd {
-                break
-            }
-
-            let overlapStart = max(logicalOffset, reqStart)
-            let overlapEnd = min(logicalEnd, reqEnd)
+        func zeros(_ count: Int) {
+            base.advanced(by: bytesWritten).initializeMemory(as: UInt8.self, repeating: 0, count: count)
+            bytesWritten += count
+        }
+        for extent in extents {
+            let logicalStart = try Self.checkedByteOffset(block: extent.logicalBlock, blockSize: blockSize)
+            let logicalEnd = try Self.checkedByteOffset(block: extent.logicalBlock + extent.blockCount, blockSize: blockSize)
+            if logicalEnd <= start { continue }
+            if logicalStart >= requestEnd { break }
+            let overlapStart = max(start, logicalStart)
+            let overlapEnd = min(requestEnd, logicalEnd)
+            zeros(Int(overlapStart - start) - bytesWritten)
             var remaining = overlapEnd - overlapStart
-            if remaining == 0 {
-                logicalOffset = logicalEnd
+            if extent.unwritten {
+                zeros(Int(remaining))
                 continue
             }
-
-            let offsetIntoExtent = overlapStart - logicalOffset
-            let absoluteByteOffset = (UInt64(physStartBlk) * blockSizeBytes) + offsetIntoExtent
-
+            let physicalOffset = try Self.checkedByteOffset(block: extent.physicalBlock, blockSize: blockSize, offset: overlapStart - logicalStart)
             do {
-                try self.handle.seek(toOffset: absoluteByteOffset)
-            } catch {
-                if bytesWritten > 0 {
-                    return bytesWritten
-                }
-                throw EXT4.PathIOError.invalidPath("failed to seek to offset \(absoluteByteOffset): \(error)")
-            }
-
-            while remaining > 0 && bytesWritten < desiredBytes {
-                let chunk = min(desiredBytes - bytesWritten, Int(min(remaining, UInt64(1 << 20))))
-                let dest = UnsafeMutableRawBufferPointer(
-                    start: base.advanced(by: bytesWritten),
-                    count: chunk
-                )
-
-                do {
-                    guard let data = try self.handle.read(upToCount: chunk) else {
-                        return bytesWritten
+                try handle.seek(toOffset: physicalOffset)
+                while remaining > 0 {
+                    let chunk = Int(min(remaining, 1 << 20))
+                    guard let data = try handle.read(upToCount: chunk), !data.isEmpty else {
+                        if bytesWritten > 0 { return bytesWritten }
+                        throw EXT4.Error.couldNotReadBlock(UInt32(truncatingIfNeeded: extent.physicalBlock))
                     }
-
-                    if data.count == 0 {
-                        return bytesWritten
+                    data.withUnsafeBytes { bytes in
+                        UnsafeMutableRawBufferPointer(start: base.advanced(by: bytesWritten), count: data.count).copyMemory(from: bytes)
                     }
-
-                    // Copy the data to the destination buffer
-                    data.withUnsafeBytes { sourceBytes in
-                        dest.copyMemory(from: UnsafeRawBufferPointer(sourceBytes))
-                    }
-
                     bytesWritten += data.count
                     remaining -= UInt64(data.count)
-
-                    if data.count < chunk && remaining > 0 {
-                        return bytesWritten
-                    }
-                } catch {
-                    if bytesWritten > 0 {
-                        return bytesWritten
-                    }
-                    throw error
+                    if data.count < chunk { return bytesWritten }
                 }
-            }
-
-            logicalOffset = logicalEnd
-            if bytesWritten >= desiredBytes {
-                break
+            } catch {
+                if bytesWritten > 0 { return bytesWritten }
+                throw error
             }
         }
-
+        zeros(desiredBytes - bytesWritten)
         return bytesWritten
     }
 
@@ -273,7 +217,8 @@ extension EXT4.EXT4Reader {
         let inode: EXT4.Inode
     }
 
-    /// Resolve a path to an inode (optionally following symlinks).
+    /// Resolve a path to an inode, following symlinks in parent components and
+    /// optionally following a symlink in the final component.
     /// Paths may be absolute ("/...") or relative (from "/").
     public func resolvePath(_ path: FilePath, followSymlinks: Bool, maxSymlinks: Int = 40) throws -> ResolvedPath {
         var components: [String] = normalize(path: path)
@@ -328,7 +273,8 @@ extension EXT4.EXT4Reader {
 
             // Check if child is a symlink
             let childInode = try getInode(number: child.1)
-            if childInode.mode.isLink() && followSymlinks {
+            let isFinalComponent = componentIndex == components.count - 1
+            if childInode.mode.isLink() && (followSymlinks || !isFinalComponent) {
                 // Enforce max symlink depth
                 symlinkHops += 1
                 if symlinkHops > maxSymlinks {
@@ -395,91 +341,25 @@ extension EXT4.EXT4Reader {
             return blockData.prefix(Int(size))
         }
 
-        return try readFileBytesFromExtents(inodeNum: inodeNum, offset: 0, count: size)
+        let data = try readFileBytesFromExtents(inodeNum: inodeNum, offset: 0, count: size)
+        guard UInt64(data.count) == size else {
+            throw EXT4.Error.invalidExtents
+        }
+        return data
     }
 
-    /// Low-level read using extents, with explicit offset & length (in bytes).
-    private func readFileBytesFromExtents(inodeNum: EXT4.InodeNumber, offset: UInt64, count: UInt64) throws -> Data {
-        guard let extents = try self.getExtents(inode: inodeNum), !extents.isEmpty else {
-            return Data()
+    /// Common logical-range reader for file data, long symlinks and archive export.
+    func readFileBytesFromExtents(inodeNum: EXT4.InodeNumber, offset: UInt64, count: UInt64) throws -> Data {
+        let size = inodeFileSize(try getInode(number: inodeNum))
+        let start = min(offset, size)
+        let wanted = min(count, size - start)
+        guard let length = Int(exactly: wanted) else { throw EXT4.Error.invalidExtents }
+        var data = Data(count: length)
+        let read = try data.withUnsafeMutableBytes {
+            try performRead(inodeNumber: inodeNum, start: start, wantedBytes: wanted, into: $0)
         }
-
-        // Validate all extent blocks are within device bounds
-        for (startBlk, endBlk) in extents {
-            try validateBlockAddress(startBlk)
-            if endBlk > startBlk {
-                try validateBlockAddress(endBlk - 1)
-            }
-        }
-
-        var out = Data(capacity: Int(count))
-        var logicalOffset: UInt64 = 0
-        var bytesReadSuccessfully: Int = 0
-        let reqStart = offset
-        let reqEnd = offset + count
-        let bs = self.blockSize
-
-        for (startBlk, endBlk) in extents {
-            let extentBytes = UInt64(endBlk - startBlk) * bs
-            let logicalEnd = logicalOffset + extentBytes
-            if logicalEnd <= reqStart {
-                logicalOffset = logicalEnd
-                continue
-            }
-            if logicalOffset >= reqEnd { break }
-
-            let ovlStart = max(logicalOffset, reqStart)
-            let ovlEnd = min(logicalEnd, reqEnd)
-            let ovlLen = ovlEnd - ovlStart
-            if ovlLen == 0 {
-                logicalOffset = logicalEnd
-                continue
-            }
-
-            let offsetIntoExtent = ovlStart - logicalOffset
-            let absByteOffset = UInt64(startBlk) * bs + offsetIntoExtent
-
-            do {
-                try self.handle.seek(toOffset: absByteOffset)
-            } catch {
-                if bytesReadSuccessfully > 0 {
-                    // Return partial data that was successfully read
-                    return out
-                }
-                throw EXT4.PathIOError.invalidPath("failed to seek to offset \(absByteOffset): \(error)")
-            }
-
-            var left = ovlLen
-            while left > 0 {
-                let chunk = Int(min(left, 1 << 20))
-
-                do {
-                    guard let data = try self.handle.read(upToCount: chunk) else {
-                        let blk = UInt32(absByteOffset / bs)
-                        throw EXT4.Error.couldNotReadBlock(blk)
-                    }
-
-                    out.append(data)
-                    bytesReadSuccessfully += data.count
-                    left -= UInt64(data.count)
-
-                    if data.count < chunk && left > 0 {
-                        // Partial read - return what we have
-                        return out
-                    }
-                } catch {
-                    if bytesReadSuccessfully > 0 {
-                        // Return partial data on error
-                        return out
-                    }
-                    throw error
-                }
-            }
-            logicalOffset = logicalEnd
-            if out.count >= Int(count) { break }
-        }
-        if out.count > Int(count) { out.removeSubrange(Int(count)..<out.count) }
-        return out
+        if read < length { data.removeSubrange(read..<length) }
+        return data
     }
 
     /// Compute 64-bit file size from the inode fields (i_size).

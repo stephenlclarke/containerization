@@ -21,8 +21,11 @@ WARNINGS_AS_ERRORS ?= true
 # The `linux_run` target exports SCRATCH_ROOT inside of the container
 SCRATCH_ROOT ?=
 SCRATCH_PATH ?= $(if $(SCRATCH_ROOT),$(SCRATCH_ROOT)/build-containerization)
-SWIFT_SCRATCH_FLAGS := $(if $(SCRATCH_PATH),--scratch-path $(SCRATCH_PATH))
-SWIFT_CONFIGURATION := $(if $(filter-out false,$(WARNINGS_AS_ERRORS)),-Xswiftc -warnings-as-errors) --disable-automatic-resolution $(SWIFT_SCRATCH_FLAGS)
+SWIFT_SCRATCH_FLAGS := $(if $(SCRATCH_PATH),--scratch-path "$(SCRATCH_PATH)")
+# Extra swift build flags, appended last so callers can add to (rather than
+# replace) the configuration above.
+SWIFT_CONFIGURATION_EXTRA ?=
+SWIFT_CONFIGURATION := $(if $(filter-out false,$(WARNINGS_AS_ERRORS)),-Xswiftc -warnings-as-errors) --disable-automatic-resolution $(SWIFT_SCRATCH_FLAGS) $(SWIFT_CONFIGURATION_EXTRA)
 
 # Commonly used locations
 UNAME_S := $(shell uname -s)
@@ -84,7 +87,7 @@ RUNC_SHA256 := $(RUNC_SHA256_$(RUNC_ASSET_ARCH))
 # Staged into the initfs at /sbin/runc when present. Opt-in: `make fetch-runc`.
 RUNC_BIN := bin/runc-$(KERNEL_ARCH)
 
-SWIFT_VERSION := $(shell cat $(ROOT_DIR)/.swift-version)
+SWIFT_VERSION := $(shell cat "$(ROOT_DIR)/.swift-version")
 SWIFT_SDK_URL := $(shell grep '^SWIFT_SDK_URL' vminitd/Makefile | head -1 | sed 's/.*:= *//')
 SWIFT_SDK_CHECKSUM := $(shell grep '^SWIFT_SDK_CHECKSUM' vminitd/Makefile | head -1 | sed 's/.*:= *//')
 LINUX_DEV_IMAGE := containerization-dev:$(SWIFT_VERSION)
@@ -578,6 +581,6 @@ clean:
 	@rm -rf bin/
 	@rm -rf _site/
 	@rm -rf _serve/
-	@rm -f $(COV_REPORT_FILE)
+	@rm -rf $(COV_REPORT_FILE)
 	@$(SWIFT) package clean
 	@"$(MAKE)" -C vminitd clean

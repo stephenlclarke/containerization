@@ -30,4 +30,12 @@ public struct RegistryInfo: Sendable {
     public let modifiedDate: Date
     /// The date the registry was created.
     public let createdDate: Date
+
+    /// Creates registry attributes without accessing the keychain.
+    public init(hostname: String, username: String, modifiedDate: Date, createdDate: Date) {
+        self.hostname = hostname
+        self.username = username
+        self.modifiedDate = modifiedDate
+        self.createdDate = createdDate
+    }
 }

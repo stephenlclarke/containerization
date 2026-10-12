@@ -896,6 +896,14 @@ struct ArchiveReaderTests {
         chainTarget.size = 0
         try writer.writeEntry(entry: chainTarget, data: nil)
 
+        let absolute = WriteEntry()
+        absolute.path = "/inside/absolute-link"
+        absolute.fileType = .regular
+        absolute.permissions = 0o644
+        absolute.hardlink = "/inside/target"
+        absolute.size = 0
+        try writer.writeEntry(entry: absolute, data: nil)
+
         let escaped = WriteEntry()
         escaped.path = "inside/escaped"
         escaped.fileType = .regular
@@ -916,6 +924,8 @@ struct ArchiveReaderTests {
         #expect(lstat(extractDir.appendingPathComponent("inside/link").path, &linkStat) == 0)
         #expect(targetStat.st_ino == linkStat.st_ino)
         #expect(lstat(extractDir.appendingPathComponent("inside/chained").path, &linkStat) == 0)
+        #expect(targetStat.st_ino == linkStat.st_ino)
+        #expect(lstat(extractDir.appendingPathComponent("inside/absolute-link").path, &linkStat) == 0)
         #expect(targetStat.st_ino == linkStat.st_ino)
     }
 

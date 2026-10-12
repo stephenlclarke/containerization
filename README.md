@@ -23,6 +23,7 @@
 <!-- markdownlint-enable MD033 -->
 
 The Containerization package allows applications to use Linux containers.
+The [October 2026 upstream synchronization handoff](docs/PR-apple-main-sync-20261011.md) records the adopted traversal, authentication and EXT4 changes, preserved fork behavior, successful focused host/e2fsck validation and remaining full release qualification.
 Containerization is written in [Swift](https://www.swift.org) and uses [Virtualization.framework](https://developer.apple.com/documentation/virtualization) on Apple silicon.
 
 > **Looking for command line binaries for running containers?**\
@@ -44,11 +45,14 @@ mode; pull-request validation retains debug guests. See the [performance change]
 
 The guest command helper links shared OS, network and cgroup contracts directly, so guest server changes no longer rebuild it. This reduces its optimized ARM64 binary size by 16%; runtime latency is unchanged in the paired tests. See the [dependency change](docs/PR-vmexec-dependencies.md).
 
+The public `RegistryInfo` initializer constructs registry metadata without a Keychain operation, including when clients consume the optimized SDK release. See the [public API boundary repair](docs/PR-registry-public-construction.md).
+
 Containerization provides APIs to:
 
 - [Manage OCI images](./Sources/ContainerizationOCI/).
 - [Interact with remote registries](./Sources/ContainerizationOCI/Client/).
 - [Create and populate ext4 file systems](./Sources/ContainerizationEXT4/).
+- Export one selected regular file or symbolic link with `EXT4.EXT4Reader.export(archive:selectedPath:followSymlink:)`; archive entries retain the requested basename, optional final-link following, ownership and metadata, and regular-file bytes stream in bounded chunks. `export(archive:subtree:)` continues to export a directory's contents at archive root. Offline readers can request `requireCleanJournal` to reject ext4 images marked for recovery before tree traversal. Metadata decoding accepts unaligned raw buffers through `loadUnaligned`; the [alignment repair](docs/upstream/PR-ext4-unaligned-load.md) records the original trap, 24 passing parameter cases and focused instrumented coverage.
 - [Interact with the Netlink socket family](./Sources/ContainerizationNetlink/).
 - [Create an optimized Linux kernel for fast boot times](./kernel/).
 - [Spawn lightweight virtual machines and manage the runtime environment](./Sources/Containerization/LinuxContainer.swift).
@@ -62,6 +66,7 @@ Containerization provides APIs to:
   kernel does not expose `/dev/dri/renderD128`; unit tests still cover the
   graphics configuration contract independently of the guest kernel artifact.
 - [Spawn and interact with containerized processes](./Sources/Containerization/LinuxProcess.swift).
+- Copy files and tar archives through `LinuxContainer.copyIn` and `copyOut` after `create()` has prepared the VM, without starting the container's initial process. Copy operations accept the created and started states; initialized, stopped, paused, and errored containers remain unavailable. Default `copyOut` preserves a standalone symbolic link; setting `followSymlink` (the CLI's `-L` behavior) follows the final link and copies its target. The host extracts standalone-link archives into a private sibling staging directory, accepts exactly one safe top-level symlink, then installs it with an atomic rename. File `copyIn` applies its requested mode exactly (default `0644`), including `0000`; the SDK encodes explicit zero as a regular-file mode while raw guest RPC zero retains its legacy `0644` default. Callers that want source-mode preservation pass the source permissions explicitly. File `copyOut` preserves guest mode, including `0000`, independently of the opt-in ownership preservation flag. The [copy-out confinement fixture](docs/upstream/PR-copyout-confinement-fixture.md) checks preserved-link identity separately from explicit confined target following; default link preservation must not be mistaken for a regular-file copy. The [transfer cleanup refactor](docs/upstream/PR-copy-transfer-closures.md) separates guest RPC and queued I/O from coordination while preserving cleanup order.
 - Use Rosetta 2 for running linux/amd64 containers on Apple silicon.
 
 View the fork's [DocC API reference](https://stephenlclarke.github.io/api/containerization/) for information on the Swift packages that Containerization provides. The [Apple upstream API reference](https://apple.github.io/containerization/documentation/) remains available for comparison.
@@ -171,6 +176,8 @@ make all
 
 ## Test the package
 
+Directory cleanup regressions check file identity so concurrent descriptor reuse cannot produce a false leak report. The directory-creation helper documents why its optional default callback performs no descriptor operation; see the [descriptor test handoff](docs/upstream/PR-descriptor-cleanup-test.md).
+
 After building, run basic and integration tests:
 
 ```bash
@@ -224,10 +231,18 @@ open http://localhost:8000/containerization/documentation/
 
 Contributions to Containerization are welcomed and encouraged. Please see [CONTRIBUTING.md](/CONTRIBUTING.md) for more information.
 
-`make coverage-sonar` runs the instrumented Swift package suite and emits project-confined LCOV plus SonarQube generic XML. Coverage includes every test executable emitted by SwiftPM, supporting both the historical aggregate test bundle and the split per-target bundles produced by current Xcode releases. `make sonar-scan` submits that evidence with the exact current commit as the previous-version baseline; the hosted workflow performs both steps for pull requests and `main`.
+`make coverage-sonar` runs the instrumented Swift package suite and emits project-confined LCOV plus SonarQube generic XML. Coverage includes every test executable emitted by SwiftPM, supporting both the historical aggregate test bundle and the split per-target bundles produced by current Xcode releases. `make sonar-scan` submits that evidence with the exact current commit as the previous-version baseline. The hosted SonarQube workflow also runs instrumented Linux tests, then combines macOS and Linux line hits from the same commit, source tree, and dependency lock before scanning. It fails if the Linux guest coverage or source identity is missing or inconsistent.
 
 ## Project Status
 
 Containerization is under active development. Source stability is guaranteed
 within a minor release line; use SwiftPM's `upToNextMinor` requirement when a
 consumer must avoid potentially source-breaking minor upgrades.
+
+VSOCK descriptor handoff closes the original descriptor after duplication so closing the returned handle propagates EOF. See [the ownership correction](docs/PR-105.md).
+
+The host SDK and separate vminitd resolved graphs select the validated SSL and gRPC fork corrections by immutable revision; see the [lower-fork selection handoff](docs/upstream/PR-lower-fork-selection.md). Existing release artifacts remain bound to their original source graphs.
+
+EXT4 reads and tar export preserve logical sparse holes and unwritten extents, including hardlinks; malformed extent ranges and short export reads fail safely. See the [sparse EXT4 correctness handoff](docs/upstream/PR-958.md).
+
+Guest-agent clients retain the configured gRPC channel until socket activation completes and close the transport directly before awaiting the connection runner. Immediate shutdown works before the runner starts, with an open or disconnected peer; see the [guest connection lifetime handoff](docs/upstream/PR-guest-connection-lifetime.md).

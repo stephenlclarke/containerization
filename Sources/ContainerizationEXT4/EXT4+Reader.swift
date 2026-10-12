@@ -41,7 +41,15 @@ extension EXT4 {
             return UInt16(MemoryLayout<EXT4.GroupDescriptor>.size)
         }
 
-        public init(blockDevice: FilePath) throws {
+        /// Opens and indexes an ext4 block device.
+        ///
+        /// - Parameters:
+        ///   - blockDevice: Path to the ext4 block device.
+        ///   - requireCleanJournal: When true, rejects a filesystem marked for
+        ///     journal recovery before reading group descriptors.
+        /// - Throws: An `EXT4.Error` when the device is unavailable or invalid,
+        ///   or when clean-journal mode finds pending recovery.
+        public init(blockDevice: FilePath, requireCleanJournal: Bool = false) throws {
             guard FileManager.default.fileExists(atPath: blockDevice.description) else {
                 throw EXT4.Error.notFound(blockDevice.description)
             }
@@ -53,14 +61,17 @@ extension EXT4 {
             try handle.seek(toOffset: EXT4.SuperBlockOffset)
 
             let superBlockSize = MemoryLayout<EXT4.SuperBlock>.size
-            guard let data = try? self.handle.read(upToCount: superBlockSize) else {
+            guard let data = try? self.handle.read(upToCount: superBlockSize), data.count == superBlockSize else {
                 throw EXT4.Error.couldNotReadSuperBlock(blockDevice.description, EXT4.SuperBlockOffset, superBlockSize)
             }
             let sb = data.withUnsafeBytes { ptr in
                 ptr.loadLittleEndian(as: EXT4.SuperBlock.self)
             }
-            guard sb.magic == EXT4.SuperBlockMagic else {
+            guard sb.magic == EXT4.SuperBlockMagic, sb.logBlockSize <= 6 else {
                 throw EXT4.Error.invalidSuperBlock
+            }
+            if requireCleanJournal, sb.featureIncompat & EXT4.IncompatFeature.recover.rawValue != 0 {
+                throw EXT4.Error.journalRecoveryRequired
             }
             self._superBlock = sb
             var items: [(item: Ptr<EXT4.FileTree.FileTreeNode>, inode: InodeNumber)] = [
@@ -212,6 +223,52 @@ extension EXT4 {
             return try self.decodeExtents(inodeBlock: inodeBlock)
         }
 
+        /// Convert untrusted block coordinates without trapping on malformed geometry.
+        static func checkedByteOffset(block: UInt64, blockSize: UInt64, offset: UInt64 = 0) throws -> UInt64 {
+            let (base, multiplicationOverflow) = block.multipliedReportingOverflow(by: blockSize)
+            let (result, additionOverflow) = base.addingReportingOverflow(offset)
+            guard !multiplicationOverflow, !additionOverflow else { throw Error.invalidExtents }
+            return result
+        }
+
+        struct LogicalExtent {
+            let logicalBlock: UInt64
+            let physicalBlock: UInt64
+            let blockCount: UInt64
+            let unwritten: Bool
+        }
+
+        func getLogicalExtents(inode: InodeNumber) throws -> [LogicalExtent] {
+            let inode = try self.getInode(number: inode)
+            let block = Data(tupleToArray(inode.block))
+            guard inode.flags & InodeFlag.extents.rawValue != 0,
+                block.withUnsafeBytes({ $0.loadLittleEndian(as: ExtentHeader.self) }).magic == EXT4.ExtentHeaderMagic
+            else { throw Error.invalidExtents }
+            return try decodeLogicalExtents(inodeBlock: block)
+        }
+
+        internal func decodeExtents(inodeBlock: Data) throws -> [(start: UInt32, end: UInt32)] {
+            try decodeLogicalExtents(inodeBlock: inodeBlock).map { extent in
+                guard let start = UInt32(exactly: extent.physicalBlock),
+                    let end = UInt32(exactly: extent.physicalBlock + extent.blockCount)
+                else { throw Error.invalidExtents }
+                return (start, end)
+            }
+        }
+
+        private func logicalExtent(_ leaf: ExtentLeaf) throws -> LogicalExtent {
+            // ee_len == 0x8000 is an initialized 32768-block extent; only
+            // values greater than 0x8000 encode unwritten extents.
+            let unwritten = leaf.length > 0x8000
+            let count = UInt64(unwritten ? leaf.length - 0x8000 : leaf.length)
+            let logical = UInt64(leaf.block)
+            let physical = UInt64(leaf.startLow) | (UInt64(leaf.startHigh) << 32)
+            guard count > 0, logical + count <= UInt64(UInt32.max) + 1 else {
+                throw Error.invalidExtents
+            }
+            return LogicalExtent(logicalBlock: logical, physicalBlock: physical, blockCount: count, unwritten: unwritten)
+        }
+
         /// Decode the extent tree rooted in an inode's block region.
         ///
         /// `inodeBlock` is untrusted (it comes from an ext4 image), so the entry
@@ -219,9 +276,9 @@ extension EXT4 {
         /// available before every fixed-size read. Without these checks a crafted
         /// `entries` count drives `subdata` past the end of the buffer and traps
         /// the process.
-        internal func decodeExtents(inodeBlock: Data) throws -> [(start: UInt32, end: UInt32)] {
+        internal func decodeLogicalExtents(inodeBlock: Data) throws -> [LogicalExtent] {
             var offset = 0
-            var extents: [(start: UInt32, end: UInt32)] = []
+            var extents: [LogicalExtent] = []
 
             let extentHeaderSize = MemoryLayout<ExtentHeader>.size
             let extentIndexSize = MemoryLayout<ExtentIndex>.size
@@ -236,6 +293,7 @@ extension EXT4 {
             guard header.magic == EXT4.ExtentHeaderMagic else {
                 return []
             }
+            guard header.entries <= header.max else { throw Error.invalidExtents }
             offset += extentHeaderSize  // Jump to entries
             switch header.depth {
             case 0:
@@ -247,7 +305,7 @@ extension EXT4 {
                     let leaf = inodeBlock.subdata(in: offset..<offset + extentLeafSize).withUnsafeBytes {
                         $0.loadLittleEndian(as: ExtentLeaf.self)
                     }
-                    extents.append((leaf.startLow, leaf.startLow + UInt32(leaf.length)))
+                    extents.append(try logicalExtent(leaf))
                     offset += extentLeafSize
                 }
             case 1:
@@ -259,7 +317,10 @@ extension EXT4 {
                     let indexNode = inodeBlock.subdata(in: offset..<offset + extentIndexSize).withUnsafeBytes {
                         $0.loadLittleEndian(as: ExtentIndex.self)
                     }
-                    try self.seek(block: indexNode.leafLow)
+                    let indexBlock = UInt64(indexNode.leafLow) | (UInt64(indexNode.leafHigh) << 32)
+                    let totalBlocks = UInt64(_superBlock.blocksCountLow) | (UInt64(_superBlock.blocksCountHigh) << 32)
+                    guard indexBlock < totalBlocks else { throw Error.invalidExtents }
+                    try self.handle.seek(toOffset: Self.checkedByteOffset(block: indexBlock, blockSize: self.blockSize))
                     guard let block = try self.handle.read(upToCount: Int(self.blockSize)) else {
                         throw EXT4.Error.couldNotReadBlock(indexNode.leafLow)
                     }
@@ -270,7 +331,9 @@ extension EXT4 {
                     let leafHeader = block.subdata(in: blockOffset..<blockOffset + extentHeaderSize).withUnsafeBytes {
                         $0.loadLittleEndian(as: ExtentHeader.self)
                     }
-                    guard leafHeader.magic == EXT4.ExtentHeaderMagic else {
+                    guard leafHeader.magic == EXT4.ExtentHeaderMagic, leafHeader.depth == 0,
+                        leafHeader.entries <= leafHeader.max
+                    else {
                         throw Error.invalidExtents
                     }
                     blockOffset += extentHeaderSize
@@ -281,13 +344,18 @@ extension EXT4 {
                         let leaf = block.subdata(in: blockOffset..<blockOffset + extentLeafSize).withUnsafeBytes {
                             $0.loadLittleEndian(as: ExtentLeaf.self)
                         }
-                        extents.append((leaf.startLow, leaf.startLow + UInt32(leaf.length)))
+                        extents.append(try logicalExtent(leaf))
                         blockOffset += extentLeafSize
                     }
                     offset += extentIndexSize
                 }
             default:
                 throw Error.deepExtentsUnimplemented
+            }
+            var previousEnd: UInt64 = 0
+            for extent in extents {
+                guard extent.logicalBlock >= previousEnd else { throw Error.invalidExtents }
+                previousEnd = extent.logicalBlock + extent.blockCount
             }
             return extents
         }

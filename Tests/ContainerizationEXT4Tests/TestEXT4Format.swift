@@ -218,6 +218,200 @@ struct Ext4FormatTests: ~Copyable {
         #expect(regFile.mode.isReg())
         #expect(regFile.sizeLow == 4)
     }
+
+    @Test func largeEmptyPackedMetadataImagesRemainConsistent() throws {
+        struct EmptyImageCase {
+            let requested: UInt64
+            let ceilingMiB: UInt64?
+        }
+        let testCases: [EmptyImageCase] = [
+            // .init(requested: 32.kib(), ceilingMiB: nil), // out of scope
+            // .init(requested: 64.mib(), ceilingMiB: nil), // out of scope
+            .init(requested: 128.mib(), ceilingMiB: nil),
+            .init(requested: 128.mib() + 4.kib(), ceilingMiB: nil),
+            .init(requested: 130.mib() + 8.kib(), ceilingMiB: nil),
+            .init(requested: 160.mib(), ceilingMiB: nil),
+            .init(requested: 160.mib() + 4.kib(), ceilingMiB: nil),
+            .init(requested: 256.mib(), ceilingMiB: nil),
+            .init(requested: 1.gib(), ceilingMiB: nil),
+            .init(requested: 4.gib(), ceilingMiB: 32),
+            .init(requested: 63 * 128.mib(), ceilingMiB: 32),
+            .init(requested: 63 * 128.mib() + 4.kib(), ceilingMiB: 32),
+            .init(requested: 8.gib(), ceilingMiB: 32),
+            .init(requested: 16.gib(), ceilingMiB: 32),
+        ]
+
+        for testCase in testCases {
+            let requested = testCase.requested
+            let fsPath = FilePath(
+                FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: false)
+            )
+            defer { try? FileManager.default.removeItem(at: fsPath.url) }
+
+            let formatter = try EXT4.Formatter(fsPath, minDiskSize: requested)
+            try formatter.close()
+
+            let file = try FileHandle(forReadingFrom: fsPath.url)
+            fsync(file.fileDescriptor)
+
+            let fileSize = try file.seekToEnd()
+
+            let ext4 = try EXT4.EXT4Reader(blockDevice: fsPath)
+            let sb = ext4.superBlock
+            let blocksCount = UInt64(sb.blocksCountLow) | (UInt64(sb.blocksCountHigh) << 32)
+
+            #expect(fileSize == requested)
+            #expect(fileSize == blocksCount * UInt64(sb.blockSize))
+            #expect(blocksCount == fileSize / UInt64(sb.blockSize))
+
+            if let ceilingMiB = testCase.ceilingMiB {
+                var fileStat = stat()
+                let result = stat(fsPath.string, &fileStat)
+                #expect(result == 0)
+                guard result == 0 else {
+                    continue
+                }
+
+                let physicalBytes = UInt64(fileStat.st_blocks) * 512
+                let ceilingBytes = ceilingMiB * 1024 * 1024
+
+                #expect(
+                    physicalBytes <= ceilingBytes,
+                    "physicalBytes <= ceilingBytes = false; physicalBytes = \(physicalBytes); ceilingBytes = \(ceilingBytes)"
+                )
+            }
+
+            let groupCount = (blocksCount + UInt64(sb.blocksPerGroup) - 1) / UInt64(sb.blocksPerGroup)
+            if groupCount > 1 {
+                let gd1 = try ext4.getGroupDescriptor(1)
+                #expect(UInt64(gd1.inodeTableLow) < blocksCount)
+                #expect(UInt64(gd1.blockBitmapLow) < blocksCount)
+                #expect(UInt64(gd1.inodeBitmapLow) < blocksCount)
+            }
+        }
+    }
+
+    @Test func largeContentPackedMetadataImagesRemainConsistent() throws {
+        let cases: [(requested: UInt64, contentBytes: UInt64)] = [
+            (requested: 160.mib(), contentBytes: 10.mib()),
+            (requested: 128.mib(), contentBytes: 50.mib()),
+            (requested: 128.mib() + 160.kib(), contentBytes: 124.mib()),  // Large content size
+            (requested: 132.mib(), contentBytes: 125.mib() + 218 * 4.kib()),  // Large content size
+            (requested: 128.mib() + 60.kib(), contentBytes: 177 * 4.kib()),
+            (requested: 160.mib(), contentBytes: 126.mib()),
+            (requested: 256.mib(), contentBytes: 130.mib()),
+            (requested: 1.gib(), contentBytes: 200.mib()),
+            (requested: 4.gib(), contentBytes: 260.mib()),
+            (requested: 63 * 128.mib(), contentBytes: 500.mib()),
+        ]
+
+        for (requested, contentBytes) in cases {
+            let fsPath = FilePath(
+                FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: false)
+            )
+            defer { try? FileManager.default.removeItem(at: fsPath.url) }
+
+            let formatter = try EXT4.Formatter(fsPath, minDiskSize: requested)
+            let payload = Data(repeating: 0x41, count: Int(contentBytes))
+            let inputStream = InputStream(data: payload)
+            inputStream.open()
+            try formatter.create(path: FilePath("/content"), mode: EXT4.Inode.Mode(.S_IFREG, 0o755), buf: inputStream)
+            inputStream.close()
+            try formatter.close()
+
+            let file = try FileHandle(forReadingFrom: fsPath.url)
+            fsync(file.fileDescriptor)
+
+            let fileSize = try file.seekToEnd()
+
+            let ext4 = try EXT4.EXT4Reader(blockDevice: fsPath)
+            let sb = ext4.superBlock
+            let blocksCount = UInt64(sb.blocksCountLow) | (UInt64(sb.blocksCountHigh) << 32)
+            #expect(fileSize == requested)
+            #expect(fileSize == blocksCount * UInt64(sb.blockSize))
+            let groupCount = (blocksCount + UInt64(sb.blocksPerGroup) - 1) / UInt64(sb.blocksPerGroup)
+            if groupCount > 1 {
+                let gd1 = try ext4.getGroupDescriptor(1)
+                #expect(UInt64(gd1.inodeTableLow) < blocksCount)
+                #expect(UInt64(gd1.blockBitmapLow) < blocksCount)
+                #expect(UInt64(gd1.inodeBitmapLow) < blocksCount)
+            }
+        }
+    }
+
+    @Test func emptyFilesystemRoundsUpToMinimumGeometry() throws {
+        let fsPath = FilePath(
+            FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: false)
+        )
+        defer { try? FileManager.default.removeItem(at: fsPath.url) }
+
+        let formatter = try EXT4.Formatter(fsPath, minDiskSize: 32.kib())
+        try formatter.close()
+
+        let file = try FileHandle(forReadingFrom: fsPath.url)
+        #expect(try file.seekToEnd() == 128.mib())
+    }
+
+    @Test func closeRoundsUpToFilesystemBlockBoundary() throws {
+        let requested = 128.mib() + 100
+        let fsPath = FilePath(
+            FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: false)
+        )
+        defer { try? FileManager.default.removeItem(at: fsPath.url) }
+
+        let formatter = try EXT4.Formatter(fsPath, minDiskSize: requested)
+        try formatter.close()
+
+        let fileSize = try FileHandle(forReadingFrom: fsPath.url).seekToEnd()
+        let superblock = try EXT4.EXT4Reader(blockDevice: fsPath).superBlock
+        let blocksCount = UInt64(superblock.blocksCountLow) | (UInt64(superblock.blocksCountHigh) << 32)
+        let filesystemSize = blocksCount * UInt64(superblock.blockSize)
+
+        #expect(fileSize >= requested)
+        #expect(fileSize == 128.mib() + 4.kib())
+        #expect(fileSize == filesystemSize)
+        #expect(fileSize.isMultiple(of: 512))
+    }
+
+    @Test func closeDropsOrGrowsTrailingPartialGroupsAsNeeded() throws {
+        let cases: [(requested: UInt64, contentBytes: UInt64, expectedToGrow: Bool)] = [
+            (requested: 128.mib() + 4.kib(), contentBytes: 124.mib(), expectedToGrow: false),
+            (requested: 128.mib() + 4.kib(), contentBytes: 125.mib() + 218 * 4.kib(), expectedToGrow: false),
+            (requested: 128.mib() + 4.kib(), contentBytes: 129.mib(), expectedToGrow: true),
+        ]
+
+        for (requested, contentBytes, expectedToGrow) in cases {
+            let fsPath = FilePath(
+                FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: false)
+            )
+            defer { try? FileManager.default.removeItem(at: fsPath.url) }
+
+            let formatter = try EXT4.Formatter(fsPath, minDiskSize: requested)
+            let payload = Data(repeating: 0x41, count: Int(contentBytes))
+            let inputStream = InputStream(data: payload)
+            inputStream.open()
+            defer { inputStream.close() }
+            try formatter.create(path: FilePath("/content"), mode: EXT4.Inode.Mode(.S_IFREG, 0o755), buf: inputStream)
+
+            try formatter.close()
+
+            let file = try FileHandle(forReadingFrom: fsPath.url)
+            let fileSize = try file.seekToEnd()
+            let ext4 = try EXT4.EXT4Reader(blockDevice: fsPath)
+            let sb = ext4.superBlock
+            let blocksCount = UInt64(sb.blocksCountLow) | (UInt64(sb.blocksCountHigh) << 32)
+
+            #expect(expectedToGrow ? fileSize > requested : fileSize < requested)
+            #expect(fileSize == blocksCount * UInt64(sb.blockSize))
+
+            let groupCount = (blocksCount + UInt64(sb.blocksPerGroup) - 1) / UInt64(sb.blocksPerGroup)
+            let lastGroup = try ext4.getGroupDescriptor(UInt32(groupCount - 1))
+            #expect(UInt64(lastGroup.inodeTableLow) < blocksCount)
+            #expect(UInt64(lastGroup.blockBitmapLow) < blocksCount)
+            #expect(UInt64(lastGroup.inodeBitmapLow) < blocksCount)
+        }
+    }
+
 }
 
 @Suite(.serialized)
@@ -276,10 +470,13 @@ struct Ext4FormatEmptyRangeTests {
         #expect(ext4.superBlock.blocksCountLow == 40_960)
 
         let partialGroup = try ext4.getGroupDescriptor(1)
-        #expect(partialGroup.freeBlocksCountLow == 7_678)
+        let partialGroupBlocks = ext4.superBlock.blocksCountLow - ext4.superBlock.blocksPerGroup
+        // Packed metadata belongs to group zero; the partial group is entirely free.
+        #expect(UInt32(partialGroup.freeBlocksCountLow) == partialGroupBlocks)
+        try verifyAllocationAccounting(ext4: ext4, file: file, filesystemBlocks: UInt64(ext4.superBlock.blocksCountLow))
     }
 
-    @Test func tinyLastBlockGroupIsRoundedForMetadata() throws {
+    @Test func tinyLastBlockGroupUsesPackedMetadata() throws {
         let fsPath = FilePath(
             FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: false))
@@ -292,8 +489,9 @@ struct Ext4FormatEmptyRangeTests {
         let filesystemBlocks = UInt64(ext4.superBlock.blocksCountLow)
         let inodeTableBlocks =
             UInt64(ext4.superBlock.inodesPerGroup) * UInt64(EXT4.InodeSize) / ext4.blockSize
-        let minimumPartialGroupBlocks = inodeTableBlocks + 2
-        let expectedBlocks = UInt64(ext4.superBlock.blocksPerGroup) + minimumPartialGroupBlocks
+        // Extra-group metadata is packed into earlier blocks, so the final one-block
+        // group does not need to grow to accommodate its own inode table.
+        let expectedBlocks = UInt64(ext4.superBlock.blocksPerGroup) + 1
 
         let file = try FileHandle(forReadingFrom: fsPath.url)
         #expect(try file.seekToEnd() == expectedBlocks * ext4.blockSize)
@@ -303,5 +501,49 @@ struct Ext4FormatEmptyRangeTests {
         #expect(UInt64(partialGroup.inodeTableLow) + inodeTableBlocks <= filesystemBlocks)
         #expect(UInt64(partialGroup.blockBitmapLow) < filesystemBlocks)
         #expect(UInt64(partialGroup.inodeBitmapLow) < filesystemBlocks)
+        #expect(partialGroup.freeBlocksCountLow == 1)
+        try verifyAllocationAccounting(ext4: ext4, file: file, filesystemBlocks: filesystemBlocks)
+    }
+
+    private func verifyAllocationAccounting(ext4: EXT4.EXT4Reader, file: FileHandle, filesystemBlocks: UInt64) throws {
+        let blocksPerGroup = UInt64(ext4.superBlock.blocksPerGroup)
+        let inodeTableBlocks = UInt64(ext4.superBlock.inodesPerGroup) * UInt64(EXT4.InodeSize) / ext4.blockSize
+        let groupCount = (filesystemBlocks + blocksPerGroup - 1) / blocksPerGroup
+        var totalFreeBlocks: UInt64 = 0
+        var allocatedMetadata: [UInt64] = []
+        for group in 0..<groupCount {
+            let descriptor = try ext4.getGroupDescriptor(UInt32(group))
+            let blockBitmap = UInt64(descriptor.blockBitmapLow)
+            let inodeBitmap = UInt64(descriptor.inodeBitmapLow)
+            let inodeTable = UInt64(descriptor.inodeTableLow)
+            #expect(blockBitmap < filesystemBlocks)
+            #expect(inodeBitmap < filesystemBlocks)
+            #expect(inodeTable + inodeTableBlocks <= filesystemBlocks)
+            allocatedMetadata += [blockBitmap, inodeBitmap]
+            allocatedMetadata += Array(inodeTable..<(inodeTable + inodeTableBlocks))
+
+            try file.seek(toOffset: blockBitmap * ext4.blockSize)
+            let bitmap = try #require(try file.read(upToCount: Int(ext4.blockSize)))
+            #expect(bitmap.count == Int(ext4.blockSize))
+            let validBlocks = min(blocksPerGroup, filesystemBlocks - group * blocksPerGroup)
+            var freeBlocks: UInt64 = 0
+            for block in 0..<blocksPerGroup {
+                let allocated = bitmap[Int(block / 8)] & (1 << (block % 8)) != 0
+                if block < validBlocks {
+                    if !allocated { freeBlocks += 1 }
+                } else {
+                    #expect(allocated)
+                }
+            }
+            #expect(freeBlocks == UInt64(descriptor.freeBlocksCountLow))
+            totalFreeBlocks += freeBlocks
+        }
+        #expect(totalFreeBlocks == UInt64(ext4.superBlock.freeBlocksCountLow))
+        for block in allocatedMetadata {
+            let owner = try ext4.getGroupDescriptor(UInt32(block / blocksPerGroup))
+            try file.seek(toOffset: UInt64(owner.blockBitmapLow) * ext4.blockSize + (block % blocksPerGroup) / 8)
+            let byte = try #require(try file.read(upToCount: 1)?.first)
+            #expect(byte & (1 << (block % 8)) != 0)
+        }
     }
 }

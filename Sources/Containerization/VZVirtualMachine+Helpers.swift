@@ -174,6 +174,8 @@ extension VZVirtioSocketConnection {
         if fd == -1 {
             throw POSIXError.fromErrno()
         }
+        // Transfer descriptor ownership while keeping the connection object alive.
+        self.close()
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
         retainConnectionOwner(self, for: handle)
         return handle

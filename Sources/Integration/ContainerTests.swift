@@ -2576,9 +2576,18 @@ extension IntegrationSuite {
             }
             try await setup.delete()
 
+            // Default copy-out preserves the link instead of reading its target.
             try await container.copyOut(from: URL(filePath: "/tmp/leak"), to: hostDestination)
+            let link = try FileManager.default.destinationOfSymbolicLink(atPath: hostDestination.path)
+            guard link == "/target" else {
+                throw IntegrationError.assert(msg: "copyOut changed the preserved symbolic link: '\(link)'")
+            }
 
-            let copied = try String(contentsOf: hostDestination, encoding: .utf8)
+            // Following is explicit and must remain confined to the container rootfs.
+            // Use a fresh destination so the host never follows the preserved link.
+            let followedDestination = hostDestination.deletingLastPathComponent().appendingPathComponent("followed.txt")
+            try await container.copyOut(from: URL(filePath: "/tmp/leak"), to: followedDestination, followSymlink: true)
+            let copied = try String(contentsOf: followedDestination, encoding: .utf8)
             guard copied == "CONTAINED" else {
                 throw IntegrationError.assert(msg: "copyOut did not stay within the rootfs: got '\(copied)'")
             }
