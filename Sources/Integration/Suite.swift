@@ -539,6 +539,8 @@ struct IntegrationSuite: AsyncParsableCommand {
             Test("container stat", testStat),
             Test("container copy in", testCopyIn),
             Test("container copy in file to existing directory", testCopyInFileToExistingDirectory),
+            Test("container startup copy with four CPUs and 512 MiB", testCopyInFileToExistingDirectoryFourCPU512MiB),
+            Test("container startup copy with one CPU and 1024 MiB", testCopyInFileToExistingDirectoryOneCPU1024MiB),
             Test("container copy in file to missing directory fails", testCopyInFileToMissingDirectoryFails),
             Test("container copy in directory over existing file fails", testCopyInDirectoryOverExistingFileFails),
             Test("container copy out", testCopyOut),

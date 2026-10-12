@@ -2602,8 +2602,18 @@ extension IntegrationSuite {
     }
 
     func testCopyInFileToExistingDirectory() async throws {
-        let id = "test-copy-in-file-to-dir"
+        try await copyInFileToExistingDirectory(id: "test-copy-in-file-to-dir", vm: .default)
+    }
 
+    func testCopyInFileToExistingDirectoryFourCPU512MiB() async throws {
+        try await copyInFileToExistingDirectory(id: "test-copy-in-four-cpu-512-mib", vm: VMResources(cpus: 4, memoryInBytes: 512.mib()))
+    }
+
+    func testCopyInFileToExistingDirectoryOneCPU1024MiB() async throws {
+        try await copyInFileToExistingDirectory(id: "test-copy-in-one-cpu-1024-mib", vm: VMResources(cpus: 1, memoryInBytes: 1024.mib()))
+    }
+
+    private func copyInFileToExistingDirectory(id: String, vm: VMResources) async throws {
         let bs = try await bootstrap(id)
 
         let testContent = "copy into an existing guest directory"
@@ -2611,7 +2621,7 @@ extension IntegrationSuite {
             .appendingPathComponent("host-file.txt")
         try testContent.write(to: hostFile, atomically: true, encoding: .utf8)
 
-        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm, logger: log) { config in
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm, vm: vm, logger: log) { config in
             config.process.arguments = ["sleep", "100"]
             config.bootLog = bs.bootLog
         }
