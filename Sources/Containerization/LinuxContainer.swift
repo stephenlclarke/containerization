@@ -1282,6 +1282,15 @@ extension LinuxContainer {
     public func create() async throws {
         try await self.state.withLock { state in
             try state.validateForCreate()
+            var timings = StartupTimings(phase: "mount-preparation")
+            var outcome = "failure"
+            defer {
+                if let logger = self.logger, logger.logLevel <= .debug {
+                    var metadata = timings.metadata(outcome: outcome)
+                    metadata["id"] = "\(self.id)"
+                    logger.debug("container creation timings", metadata: metadata)
+                }
+            }
 
             // This is a bit of an annoyance, but because the type we use for the rootfs is simply
             // the same Mount type we use for non-rootfs mounts, it's possible someone passed 'ro'
@@ -1319,14 +1328,27 @@ extension LinuxContainer {
                 graphics: self.config.graphics
             )
             let creationConfig = StandardVMConfig(configuration: vmConfig)
+            timings.begin("virtual-machine-create")
             let vm = try await self.vmm.create(config: creationConfig)
             let relayManager = UnixSocketRelayManager(vm: vm, log: self.logger)
 
             do {
+                timings.begin("virtual-machine-start")
                 try await vm.start()
                 let mountsForAgent = preparedContainerMounts
+                timings.begin("guest-setup")
                 try await vm.withAgent { agent in
+                    var guestTimings = StartupTimings(phase: "standard-setup")
+                    var guestOutcome = "failure"
+                    defer {
+                        if let logger = self.logger, logger.logLevel <= .debug {
+                            var metadata = guestTimings.metadata(outcome: guestOutcome)
+                            metadata["id"] = "\(self.id)"
+                            logger.debug("container guest setup timings", metadata: metadata)
+                        }
+                    }
                     try await agent.standardSetup()
+                    guestTimings.begin("virtiofs")
 
                     // Mount the unified virtiofs share at /run/virtiofs only
                     // when at least one of the container's mounts is virtiofs
@@ -1376,11 +1398,13 @@ extension LinuxContainer {
                         }
                     }
 
+                    guestTimings.begin("rootfs-mount")
                     guard let attachments = vm.mounts[self.id] else {
                         throw ContainerizationError(.notFound, message: "rootfs mount not found")
                     }
                     let rootfsPath = Self.guestRootfsPath(self.id)
                     try await self.mountRootfs(attachments: attachments, rootfsPath: rootfsPath, agent: agent)
+                    guestTimings.begin("subpath-mounts")
                     let stagedSubpathMounts = try await self.stageSubpathMounts(
                         mounts: preparedContainerMounts,
                         attachments: attachments,
@@ -1389,6 +1413,7 @@ extension LinuxContainer {
                     stagedSubpathMountsHolder.withLock { $0 = stagedSubpathMounts }
 
                     // Mount file mount holding directories under /run.
+                    guestTimings.begin("file-mounts")
                     if fileMountContext.hasFileMounts {
                         let containerMounts = vm.mounts[self.id] ?? []
                         var ctx = fileMountContextHolder.withLock { $0 }
@@ -1401,6 +1426,7 @@ extension LinuxContainer {
                     }
 
                     // Start up our friendly unix socket relays.
+                    guestTimings.begin("socket-relays")
                     for socket in self.config.sockets {
                         try await self.relayUnixSocket(
                             socket: socket,
@@ -1413,6 +1439,7 @@ extension LinuxContainer {
                     // 1. Add the address requested
                     // 2. Online the adapter
                     // 3. For the first interface, add the default route
+                    guestTimings.begin("network-interfaces")
                     var defaultRouteSet = false
                     let interfaceNames = try resolveGuestInterfaceNames(self.interfaces)
                     for (index, i) in self.interfaces.enumerated() {
@@ -1428,14 +1455,16 @@ extension LinuxContainer {
                     }
 
                     // Setup /etc/resolv.conf and /etc/hosts if asked for.
+                    guestTimings.begin("resolver-files")
                     if let dns = self.config.dns {
                         try await agent.configureDNS(config: dns, location: rootfsPath)
                     }
                     if let hosts = self.config.hosts {
                         try await agent.configureHosts(config: hosts, location: rootfsPath)
                     }
-
+                    guestOutcome = "success"
                 }
+                timings.begin("state-commit")
                 state = .created(
                     .init(
                         vm: vm,
@@ -1443,7 +1472,9 @@ extension LinuxContainer {
                         fileMountContext: fileMountContextHolder.withLock { $0 },
                         stagedSubpathMounts: stagedSubpathMountsHolder.withLock { $0 }
                     ))
+                outcome = "success"
             } catch {
+                timings.beginCleanup()
                 try? await relayManager.stopAll()
                 try? await vm.stop()
                 state.setErrored(error: error)

@@ -43,6 +43,8 @@ components during secure traversal. Sparse files and deferred directory metadata
 remain supported. Main-branch publication builds the Linux guest in release
 mode; pull-request validation retains debug guests. See the [performance change](docs/PR-runtime-performance.md).
 
+Debug startup logs report monotonic phase durations for VM creation, Virtualization.framework startup, agent readiness and guest setup. Nested VM and guest breakdowns explain their parent spans; they must not be added to the parent total. See the [startup timing handoff](docs/PR-stopped-copy-startup-timings.md).
+
 The guest command helper links shared OS, network and cgroup contracts directly, so guest server changes no longer rebuild it. This reduces its optimized ARM64 binary size by 16%; runtime latency is unchanged in the paired tests. See the [dependency change](docs/PR-vmexec-dependencies.md).
 
 Containerization provides APIs to:

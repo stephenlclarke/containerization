@@ -265,28 +265,39 @@ extension VZVirtualMachineInstance: VirtualMachineInstance {
                 )
             }
 
+            var timings = StartupTimings(phase: "prestart")
+            var outcome = "failure"
+            defer {
+                self.logger?.debug("virtual machine startup timings", metadata: timings.metadata(outcome: outcome))
+            }
+
             // Do any necessary setup needed prior to starting the guest.
             try await self.prestart()
 
+            timings.begin("virtualization-start")
             try await self.vm.start(queue: self.queue)
 
-            let agent = try await Vminitd(
-                connection: try await self.vm.waitForAgent(queue: self.queue),
-                group: self.group
-            )
+            timings.begin("agent-connect")
+            let connection = try await self.vm.waitForAgent(queue: self.queue)
+            timings.begin("agent-handshake")
+            let agent = try await Vminitd(connection: connection, group: self.group)
 
+            timings.begin("rosetta")
             do {
                 if self.config.rosetta {
                     try await agent.enableRosetta()
                 }
             } catch {
+                timings.beginCleanup()
                 try await agent.close()
                 throw error
             }
 
             // Don't close our remote context as we are providing
             // it to our time sync routine.
+            timings.begin("time-sync")
             await self.timeSyncer.start(context: agent)
+            outcome = "success"
         }
     }
 
