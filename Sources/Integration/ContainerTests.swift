@@ -2611,7 +2611,7 @@ extension IntegrationSuite {
             .appendingPathComponent("host-file.txt")
         try testContent.write(to: hostFile, atomically: true, encoding: .utf8)
 
-        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm, logger: log) { config in
             config.process.arguments = ["sleep", "100"]
             config.bootLog = bs.bootLog
         }

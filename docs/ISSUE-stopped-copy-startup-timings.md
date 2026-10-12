@@ -13,3 +13,5 @@ Record non-overlapping monotonic phases at the VMM and guest-setup boundaries so
 ## Environment and evidence
 
 The diagnostic candidate starts from SDK `518f92a006c94c55e21422f3cf2f93c2f039d053`, using the local MBP and the existing guest and kernel artifacts. Focused source tests and the next candidate runtime capture are retained under `ContainerFamily/retained/workflow/performance-parity-20261011T150042Z/candidate-container-startup-timings`. This local handoff does not create an upstream submission or claim a measured speedup.
+
+The first retained diagnostic VM trial passed its functional copy assertion but correctly failed diagnostic acceptance because the integration fixture supplied no logger. The integration VMM and selected copy fixture now receive the suite debug logger, allowing the existing opt-in startup records to be captured without changing production defaults. The failed raw run and complete host/binary restoration remain retained.

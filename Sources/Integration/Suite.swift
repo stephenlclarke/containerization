@@ -403,7 +403,8 @@ struct IntegrationSuite: AsyncParsableCommand {
         return VZVirtualMachineManager(
             kernel: kernel,
             initialFilesystem: initialFilesystem,
-            group: Self.eventLoop
+            group: Self.eventLoop,
+            logger: log
         )
         #elseif os(Linux)
         return try CHVirtualMachineManager(
