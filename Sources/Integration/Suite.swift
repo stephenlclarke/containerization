@@ -454,6 +454,7 @@ struct IntegrationSuite: AsyncParsableCommand {
                 Test("container interface custom MTU", requiresExclusiveExecution: true, testInterfaceMTU),
                 Test("container networking disabled", requiresExclusiveExecution: true, testNetworkingDisabled),
                 Test("container networking enabled", requiresExclusiveExecution: true, testNetworkingEnabled),
+                Test("container network interface statistics", requiresExclusiveExecution: true, testContainerNetworkInterfaceStatistics),
                 Test("container networking enabled ipv6", requiresExclusiveExecution: true, testNetworkingEnabledIPv6),
                 Test("container IPv6 address", requiresExclusiveExecution: true, testIPv6AddressAdd),
                 Test("container IPv6 default route", requiresExclusiveExecution: true, testIPv6DefaultRoute),
@@ -503,6 +504,7 @@ struct IntegrationSuite: AsyncParsableCommand {
 
             // Statistics / cgroups / memory
             Test("container statistics", testContainerStatistics),
+            Test("container network protocol statistics", testContainerNetworkProtocolStatistics),
             Test("container cgroup limits", testCgroupLimits),
             Test("container cgroup unlimited CPU quota", testUnlimitedCgroupCPUQuota),
             Test("container cgroup CPU share weight", testCgroupCPUShareWeight),
@@ -680,6 +682,8 @@ struct IntegrationSuite: AsyncParsableCommand {
             Test("runc pod seccomp container override", testRuncPodSeccompContainerOverride),
             Test("runc pod shared PID namespace", testRuncPodSharedPIDNamespace),
             Test("runc pod process tty ensure TERM", testRuncPodProcessTty),
+            Test("runc pod kill after exit", testRuncPodKillAfterExit),
+            Test("runc pod network sysctl", testRuncPodNetworkSysctl),
         ]
 
         #if os(macOS)

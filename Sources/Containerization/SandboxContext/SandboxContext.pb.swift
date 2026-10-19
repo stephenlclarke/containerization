@@ -1791,6 +1791,15 @@ public nonisolated struct Com_Apple_Containerization_Sandbox_V3_ContainerStats: 
     set {_uniqueStorage()._filesystem = newValue}
   }
 
+  public var networkProtocols: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats {
+    get {_storage._networkProtocols ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats()}
+    set {_uniqueStorage()._networkProtocols = newValue}
+  }
+  /// Returns true if `networkProtocols` has been explicitly set.
+  public var hasNetworkProtocols: Bool {_storage._networkProtocols != nil}
+  /// Clears the value of `networkProtocols`. Subsequent reads from it will return its default value.
+  public mutating func clearNetworkProtocols() {_uniqueStorage()._networkProtocols = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1982,9 +1991,195 @@ public nonisolated struct Com_Apple_Containerization_Sandbox_V3_NetworkStats: Se
 
   public var transmittedErrors: UInt64 = 0
 
+  /// Packets the device dropped (e.g. full rx ring or tx queue), from rtnl_link_stats64.
+  public var receivedDropped: UInt64 = 0
+
+  public var transmittedDropped: UInt64 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
+}
+
+/// Packet and byte counters for one protocol.
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var receivedPackets: UInt64 = 0
+
+  public var transmittedPackets: UInt64 = 0
+
+  /// Unset when the protocol has no byte counter (Linux only has one for IP as a whole).
+  public var receivedBytes: UInt64 {
+    get {_receivedBytes ?? 0}
+    set {_receivedBytes = newValue}
+  }
+  /// Returns true if `receivedBytes` has been explicitly set.
+  public var hasReceivedBytes: Bool {self._receivedBytes != nil}
+  /// Clears the value of `receivedBytes`. Subsequent reads from it will return its default value.
+  public mutating func clearReceivedBytes() {self._receivedBytes = nil}
+
+  public var transmittedBytes: UInt64 {
+    get {_transmittedBytes ?? 0}
+    set {_transmittedBytes = newValue}
+  }
+  /// Returns true if `transmittedBytes` has been explicitly set.
+  public var hasTransmittedBytes: Bool {self._transmittedBytes != nil}
+  /// Clears the value of `transmittedBytes`. Subsequent reads from it will return its default value.
+  public mutating func clearTransmittedBytes() {self._transmittedBytes = nil}
+
+  /// Drops and errors. The kernel attributes these to different causes for each
+  /// protocol, so they are comparable over time for one protocol but not across
+  /// protocols. A drop is a packet the stack discarded for lack of resources or a
+  /// destination; an error is a packet that was malformed or failed processing.
+  /// Unset when the protocol has no matching counter, so unset means "not
+  /// supported" while zero means "none happened". Sources, from /proc/net/snmp
+  /// and /proc/net/netstat:
+  ///   tcp:  received_drops    = TcpExt ListenDrops + TCPBacklogDrop + TCPRcvQDrop
+  ///         received_errors   = Tcp InErrs (bad checksum or header)
+  ///         transmitted_*     = unset (unsupported)
+  ///   udp:  received_drops    = Udp RcvbufErrors + NoPorts (socket buffer full, or no socket)
+  ///         received_errors   = Udp InErrors minus RcvbufErrors (e.g. bad checksum)
+  ///         transmitted_drops = Udp SndbufErrors
+  ///         transmitted_errors = unset (unsupported)
+  ///   icmp: received_errors   = Icmp InErrors
+  ///         transmitted_errors = Icmp OutErrors
+  ///         *_drops           = unset (unsupported)
+  ///   ip:   received_drops    = Ip InDiscards + IpExt InNoRoutes
+  ///         received_errors   = Ip InHdrErrors + InAddrErrors + InUnknownProtos
+  ///         transmitted_drops = Ip OutDiscards + OutNoRoutes
+  ///         transmitted_errors = Ip FragFails
+  public var receivedDrops: UInt64 {
+    get {_receivedDrops ?? 0}
+    set {_receivedDrops = newValue}
+  }
+  /// Returns true if `receivedDrops` has been explicitly set.
+  public var hasReceivedDrops: Bool {self._receivedDrops != nil}
+  /// Clears the value of `receivedDrops`. Subsequent reads from it will return its default value.
+  public mutating func clearReceivedDrops() {self._receivedDrops = nil}
+
+  public var transmittedDrops: UInt64 {
+    get {_transmittedDrops ?? 0}
+    set {_transmittedDrops = newValue}
+  }
+  /// Returns true if `transmittedDrops` has been explicitly set.
+  public var hasTransmittedDrops: Bool {self._transmittedDrops != nil}
+  /// Clears the value of `transmittedDrops`. Subsequent reads from it will return its default value.
+  public mutating func clearTransmittedDrops() {self._transmittedDrops = nil}
+
+  public var receivedErrors: UInt64 {
+    get {_receivedErrors ?? 0}
+    set {_receivedErrors = newValue}
+  }
+  /// Returns true if `receivedErrors` has been explicitly set.
+  public var hasReceivedErrors: Bool {self._receivedErrors != nil}
+  /// Clears the value of `receivedErrors`. Subsequent reads from it will return its default value.
+  public mutating func clearReceivedErrors() {self._receivedErrors = nil}
+
+  public var transmittedErrors: UInt64 {
+    get {_transmittedErrors ?? 0}
+    set {_transmittedErrors = newValue}
+  }
+  /// Returns true if `transmittedErrors` has been explicitly set.
+  public var hasTransmittedErrors: Bool {self._transmittedErrors != nil}
+  /// Clears the value of `transmittedErrors`. Subsequent reads from it will return its default value.
+  public mutating func clearTransmittedErrors() {self._transmittedErrors = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _receivedBytes: UInt64? = nil
+  fileprivate var _transmittedBytes: UInt64? = nil
+  fileprivate var _receivedDrops: UInt64? = nil
+  fileprivate var _transmittedDrops: UInt64? = nil
+  fileprivate var _receivedErrors: UInt64? = nil
+  fileprivate var _transmittedErrors: UInt64? = nil
+}
+
+/// Per-protocol traffic for the container's network namespace (not per interface;
+/// includes loopback). Containers sharing a namespace, as all containers in a VM do
+/// by default, report identical values. Part of the network category.
+public nonisolated struct Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var tcp: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+    get {_storage._tcp ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters()}
+    set {_uniqueStorage()._tcp = newValue}
+  }
+  /// Returns true if `tcp` has been explicitly set.
+  public var hasTcp: Bool {_storage._tcp != nil}
+  /// Clears the value of `tcp`. Subsequent reads from it will return its default value.
+  public mutating func clearTcp() {_uniqueStorage()._tcp = nil}
+
+  public var udp: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+    get {_storage._udp ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters()}
+    set {_uniqueStorage()._udp = newValue}
+  }
+  /// Returns true if `udp` has been explicitly set.
+  public var hasUdp: Bool {_storage._udp != nil}
+  /// Clears the value of `udp`. Subsequent reads from it will return its default value.
+  public mutating func clearUdp() {_uniqueStorage()._udp = nil}
+
+  public var icmp: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+    get {_storage._icmp ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters()}
+    set {_uniqueStorage()._icmp = newValue}
+  }
+  /// Returns true if `icmp` has been explicitly set.
+  public var hasIcmp: Bool {_storage._icmp != nil}
+  /// Clears the value of `icmp`. Subsequent reads from it will return its default value.
+  public mutating func clearIcmp() {_uniqueStorage()._icmp = nil}
+
+  /// All IP traffic. Whatever is not tcp/udp/icmp (raw IP, other protocols) is the remainder.
+  public var ip: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+    get {_storage._ip ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters()}
+    set {_uniqueStorage()._ip = newValue}
+  }
+  /// Returns true if `ip` has been explicitly set.
+  public var hasIp: Bool {_storage._ip != nil}
+  /// Clears the value of `ip`. Subsequent reads from it will return its default value.
+  public mutating func clearIp() {_uniqueStorage()._ip = nil}
+
+  /// IPv6 counterparts of udp, icmp and ip, from /proc/net/snmp6. The IPv4 fields
+  /// above do not include IPv6 traffic. There is no tcp6: the kernel shares its TCP
+  /// counters between both families, so tcp already covers IPv6. Unset when the
+  /// guest has no IPv6 statistics.
+  public var udp6: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+    get {_storage._udp6 ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters()}
+    set {_uniqueStorage()._udp6 = newValue}
+  }
+  /// Returns true if `udp6` has been explicitly set.
+  public var hasUdp6: Bool {_storage._udp6 != nil}
+  /// Clears the value of `udp6`. Subsequent reads from it will return its default value.
+  public mutating func clearUdp6() {_uniqueStorage()._udp6 = nil}
+
+  public var icmp6: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+    get {_storage._icmp6 ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters()}
+    set {_uniqueStorage()._icmp6 = newValue}
+  }
+  /// Returns true if `icmp6` has been explicitly set.
+  public var hasIcmp6: Bool {_storage._icmp6 != nil}
+  /// Clears the value of `icmp6`. Subsequent reads from it will return its default value.
+  public mutating func clearIcmp6() {_uniqueStorage()._icmp6 = nil}
+
+  public var ip6: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+    get {_storage._ip6 ?? Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters()}
+    set {_uniqueStorage()._ip6 = newValue}
+  }
+  /// Returns true if `ip6` has been explicitly set.
+  public var hasIp6: Bool {_storage._ip6 != nil}
+  /// Clears the value of `ip6`. Subsequent reads from it will return its default value.
+  public mutating func clearIp6() {_uniqueStorage()._ip6 = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 /// Memory event counters from cgroup2's memory.events file.
@@ -4849,7 +5044,7 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStatisticsR
 
 nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContainerStats"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}container_id\0\u{1}process\0\u{1}memory\0\u{1}cpu\0\u{3}block_io\0\u{1}networks\0\u{3}memory_events\0\u{1}filesystem\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}container_id\0\u{1}process\0\u{1}memory\0\u{1}cpu\0\u{3}block_io\0\u{1}networks\0\u{3}memory_events\0\u{1}filesystem\0\u{3}network_protocols\0")
 
   fileprivate class _StorageClass {
     var _containerID: String = String()
@@ -4860,6 +5055,7 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: Swif
     var _networks: [Com_Apple_Containerization_Sandbox_V3_NetworkStats] = []
     var _memoryEvents: Com_Apple_Containerization_Sandbox_V3_MemoryEventStats? = nil
     var _filesystem: [Com_Apple_Containerization_Sandbox_V3_FilesystemStats] = []
+    var _networkProtocols: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -4878,6 +5074,7 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: Swif
       _networks = source._networks
       _memoryEvents = source._memoryEvents
       _filesystem = source._filesystem
+      _networkProtocols = source._networkProtocols
     }
   }
 
@@ -4904,6 +5101,7 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: Swif
         case 6: try { try decoder.decodeRepeatedMessageField(value: &_storage._networks) }()
         case 7: try { try decoder.decodeSingularMessageField(value: &_storage._memoryEvents) }()
         case 8: try { try decoder.decodeRepeatedMessageField(value: &_storage._filesystem) }()
+        case 9: try { try decoder.decodeSingularMessageField(value: &_storage._networkProtocols) }()
         default: break
         }
       }
@@ -4940,6 +5138,9 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: Swif
       if !_storage._filesystem.isEmpty {
         try visitor.visitRepeatedMessageField(value: _storage._filesystem, fieldNumber: 8)
       }
+      try { if let v = _storage._networkProtocols {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -4957,6 +5158,7 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_ContainerStats: Swif
         if _storage._networks != rhs_storage._networks {return false}
         if _storage._memoryEvents != rhs_storage._memoryEvents {return false}
         if _storage._filesystem != rhs_storage._filesystem {return false}
+        if _storage._networkProtocols != rhs_storage._networkProtocols {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -5378,7 +5580,7 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_BlockIOEntry: SwiftP
 
 nonisolated extension Com_Apple_Containerization_Sandbox_V3_NetworkStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".NetworkStats"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}receivedPackets\0\u{1}transmittedPackets\0\u{1}receivedBytes\0\u{1}transmittedBytes\0\u{1}receivedErrors\0\u{1}transmittedErrors\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}interface\0\u{1}receivedPackets\0\u{1}transmittedPackets\0\u{1}receivedBytes\0\u{1}transmittedBytes\0\u{1}receivedErrors\0\u{1}transmittedErrors\0\u{1}receivedDropped\0\u{1}transmittedDropped\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -5393,6 +5595,8 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_NetworkStats: SwiftP
       case 5: try { try decoder.decodeSingularUInt64Field(value: &self.transmittedBytes) }()
       case 6: try { try decoder.decodeSingularUInt64Field(value: &self.receivedErrors) }()
       case 7: try { try decoder.decodeSingularUInt64Field(value: &self.transmittedErrors) }()
+      case 8: try { try decoder.decodeSingularUInt64Field(value: &self.receivedDropped) }()
+      case 9: try { try decoder.decodeSingularUInt64Field(value: &self.transmittedDropped) }()
       default: break
       }
     }
@@ -5420,6 +5624,12 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_NetworkStats: SwiftP
     if self.transmittedErrors != 0 {
       try visitor.visitSingularUInt64Field(value: self.transmittedErrors, fieldNumber: 7)
     }
+    if self.receivedDropped != 0 {
+      try visitor.visitSingularUInt64Field(value: self.receivedDropped, fieldNumber: 8)
+    }
+    if self.transmittedDropped != 0 {
+      try visitor.visitSingularUInt64Field(value: self.transmittedDropped, fieldNumber: 9)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -5431,6 +5641,189 @@ nonisolated extension Com_Apple_Containerization_Sandbox_V3_NetworkStats: SwiftP
     if lhs.transmittedBytes != rhs.transmittedBytes {return false}
     if lhs.receivedErrors != rhs.receivedErrors {return false}
     if lhs.transmittedErrors != rhs.transmittedErrors {return false}
+    if lhs.receivedDropped != rhs.receivedDropped {return false}
+    if lhs.transmittedDropped != rhs.transmittedDropped {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".NetworkProtocolCounters"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}received_packets\0\u{3}transmitted_packets\0\u{3}received_bytes\0\u{3}transmitted_bytes\0\u{3}received_drops\0\u{3}transmitted_drops\0\u{3}received_errors\0\u{3}transmitted_errors\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularUInt64Field(value: &self.receivedPackets) }()
+      case 2: try { try decoder.decodeSingularUInt64Field(value: &self.transmittedPackets) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self._receivedBytes) }()
+      case 4: try { try decoder.decodeSingularUInt64Field(value: &self._transmittedBytes) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self._receivedDrops) }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self._transmittedDrops) }()
+      case 7: try { try decoder.decodeSingularUInt64Field(value: &self._receivedErrors) }()
+      case 8: try { try decoder.decodeSingularUInt64Field(value: &self._transmittedErrors) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if self.receivedPackets != 0 {
+      try visitor.visitSingularUInt64Field(value: self.receivedPackets, fieldNumber: 1)
+    }
+    if self.transmittedPackets != 0 {
+      try visitor.visitSingularUInt64Field(value: self.transmittedPackets, fieldNumber: 2)
+    }
+    try { if let v = self._receivedBytes {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 3)
+    } }()
+    try { if let v = self._transmittedBytes {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 4)
+    } }()
+    try { if let v = self._receivedDrops {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 5)
+    } }()
+    try { if let v = self._transmittedDrops {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 6)
+    } }()
+    try { if let v = self._receivedErrors {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 7)
+    } }()
+    try { if let v = self._transmittedErrors {
+      try visitor.visitSingularUInt64Field(value: v, fieldNumber: 8)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters, rhs: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters) -> Bool {
+    if lhs.receivedPackets != rhs.receivedPackets {return false}
+    if lhs.transmittedPackets != rhs.transmittedPackets {return false}
+    if lhs._receivedBytes != rhs._receivedBytes {return false}
+    if lhs._transmittedBytes != rhs._transmittedBytes {return false}
+    if lhs._receivedDrops != rhs._receivedDrops {return false}
+    if lhs._transmittedDrops != rhs._transmittedDrops {return false}
+    if lhs._receivedErrors != rhs._receivedErrors {return false}
+    if lhs._transmittedErrors != rhs._transmittedErrors {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".NetworkProtocolStats"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}tcp\0\u{1}udp\0\u{1}icmp\0\u{1}ip\0\u{1}udp6\0\u{1}icmp6\0\u{1}ip6\0")
+
+  fileprivate class _StorageClass {
+    var _tcp: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters? = nil
+    var _udp: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters? = nil
+    var _icmp: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters? = nil
+    var _ip: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters? = nil
+    var _udp6: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters? = nil
+    var _icmp6: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters? = nil
+    var _ip6: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _tcp = source._tcp
+      _udp = source._udp
+      _icmp = source._icmp
+      _ip = source._ip
+      _udp6 = source._udp6
+      _icmp6 = source._icmp6
+      _ip6 = source._ip6
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._tcp) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._udp) }()
+        case 3: try { try decoder.decodeSingularMessageField(value: &_storage._icmp) }()
+        case 4: try { try decoder.decodeSingularMessageField(value: &_storage._ip) }()
+        case 5: try { try decoder.decodeSingularMessageField(value: &_storage._udp6) }()
+        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._icmp6) }()
+        case 7: try { try decoder.decodeSingularMessageField(value: &_storage._ip6) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._tcp {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      try { if let v = _storage._udp {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      try { if let v = _storage._icmp {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+      } }()
+      try { if let v = _storage._ip {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+      } }()
+      try { if let v = _storage._udp6 {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      } }()
+      try { if let v = _storage._icmp6 {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      } }()
+      try { if let v = _storage._ip6 {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 7)
+      } }()
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats, rhs: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._tcp != rhs_storage._tcp {return false}
+        if _storage._udp != rhs_storage._udp {return false}
+        if _storage._icmp != rhs_storage._icmp {return false}
+        if _storage._ip != rhs_storage._ip {return false}
+        if _storage._udp6 != rhs_storage._udp6 {return false}
+        if _storage._icmp6 != rhs_storage._icmp6 {return false}
+        if _storage._ip6 != rhs_storage._ip6 {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

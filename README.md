@@ -64,6 +64,8 @@ Containerization provides APIs to:
 - [Spawn and interact with containerized processes](./Sources/Containerization/LinuxProcess.swift).
 - Use Rosetta 2 for running linux/amd64 containers on Apple silicon.
 
+The [October upstream synchronization](docs/upstream/PR-upstream-sync-20261019.md) adopts Apple's packed ext4 metadata and safe descriptor operations while retaining the fork's runtime contracts.
+
 View the fork's [DocC API reference](https://stephenlclarke.github.io/api/containerization/) for information on the Swift packages that Containerization provides. The [Apple upstream API reference](https://apple.github.io/containerization/documentation/) remains available for comparison.
 
 ## Design

@@ -206,7 +206,9 @@ extension Vminitd: VirtualMachineAgent {
                             receivedBytes: network.receivedBytes,
                             transmittedBytes: network.transmittedBytes,
                             receivedErrors: network.receivedErrors,
-                            transmittedErrors: network.transmittedErrors
+                            transmittedErrors: network.transmittedErrors,
+                            receivedDropped: network.receivedDropped,
+                            transmittedDropped: network.transmittedDropped
                         )
                     } : nil,
                 memoryEvents: categories.contains(.memoryEvents) && protoStats.hasMemoryEvents
@@ -228,7 +230,9 @@ extension Vminitd: VirtualMachineAgent {
                             inodes: entry.inodes,
                             freeInodes: entry.freeInodes
                         )
-                    } : nil
+                    } : nil,
+                networkProtocols: categories.contains(.network) && protoStats.hasNetworkProtocols
+                    ? .init(protoStats.networkProtocols) : nil
             )
         }
     }
@@ -846,5 +850,34 @@ extension FilesystemOperation {
                     $0.oneShot = .init()
                 })
         }
+    }
+}
+
+extension ContainerStatistics.NetworkProtocolCounters {
+    init(_ proto: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters) {
+        self.init(
+            receivedPackets: proto.receivedPackets,
+            transmittedPackets: proto.transmittedPackets,
+            receivedBytes: proto.hasReceivedBytes ? proto.receivedBytes : nil,
+            transmittedBytes: proto.hasTransmittedBytes ? proto.transmittedBytes : nil,
+            receivedDrops: proto.hasReceivedDrops ? proto.receivedDrops : nil,
+            transmittedDrops: proto.hasTransmittedDrops ? proto.transmittedDrops : nil,
+            receivedErrors: proto.hasReceivedErrors ? proto.receivedErrors : nil,
+            transmittedErrors: proto.hasTransmittedErrors ? proto.transmittedErrors : nil
+        )
+    }
+}
+
+extension ContainerStatistics.NetworkProtocolStatistics {
+    init(_ proto: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats) {
+        self.init(
+            tcp: .init(proto.tcp),
+            udp: .init(proto.udp),
+            icmp: .init(proto.icmp),
+            ip: .init(proto.ip),
+            udp6: proto.hasUdp6 ? .init(proto.udp6) : nil,
+            icmp6: proto.hasIcmp6 ? .init(proto.icmp6) : nil,
+            ip6: proto.hasIp6 ? .init(proto.ip6) : nil
+        )
     }
 }

@@ -1060,6 +1060,237 @@ extension IntegrationSuite {
         }
     }
 
+    func testContainerNetworkProtocolStatistics() async throws {
+        let id = "test-container-network-protocol-statistics"
+
+        let bs = try await bootstrap(id)
+        let container = try LinuxContainer(id, rootfs: bs.rootfs, vmm: bs.vmm) { config in
+            config.process.arguments = ["sleep", "infinity"]
+            config.bootLog = bs.bootLog
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+
+            // Protocol counters are only reported with the network category.
+            let nonNetwork = try await container.statistics(categories: .memory)
+            guard nonNetwork.networkProtocols == nil else {
+                throw IntegrationError.assert(msg: "networkProtocols should be nil when .network is not requested")
+            }
+
+            guard let before = try await container.statistics(categories: .network).networkProtocols else {
+                throw IntegrationError.assert(msg: "expected networkProtocols to be present when .network is requested")
+            }
+
+            // Loopback traffic counts toward the namespace's protocol counters.
+            let pings: UInt64 = 5
+            let exec = try await container.exec("ping-loopback") { config in
+                config.arguments = ["ping", "-c", "\(pings)", "127.0.0.1"]
+            }
+            try await exec.start()
+            let status = try await exec.wait()
+            try await exec.delete()
+            guard status.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "ping failed with exit code \(status.exitCode)")
+            }
+
+            guard let after = try await container.statistics(categories: .network).networkProtocols else {
+                throw IntegrationError.assert(msg: "expected networkProtocols to be present after traffic")
+            }
+
+            // Each ping sends an echo request and receives a reply on loopback.
+            let icmpRx = after.icmp.receivedPackets - before.icmp.receivedPackets
+            let icmpTx = after.icmp.transmittedPackets - before.icmp.transmittedPackets
+            guard icmpRx >= pings, icmpTx >= pings else {
+                throw IntegrationError.assert(msg: "expected icmp rx/tx >= \(pings), got rx=\(icmpRx) tx=\(icmpTx)")
+            }
+
+            let ipRx = after.ip.receivedPackets - before.ip.receivedPackets
+            let ipTx = after.ip.transmittedPackets - before.ip.transmittedPackets
+            guard ipRx >= icmpRx, ipTx >= icmpTx else {
+                throw IntegrationError.assert(msg: "ip packets should cover icmp, got ip rx=\(ipRx) tx=\(ipTx), icmp rx=\(icmpRx) tx=\(icmpTx)")
+            }
+
+            guard
+                let ipRxBefore = before.ip.receivedBytes, let ipTxBefore = before.ip.transmittedBytes,
+                let ipRxAfter = after.ip.receivedBytes, let ipTxAfter = after.ip.transmittedBytes,
+                ipRxAfter > ipRxBefore, ipTxAfter > ipTxBefore
+            else {
+                throw IntegrationError.assert(
+                    msg:
+                        "ip bytes should increase, got rx \(String(describing: before.ip.receivedBytes))->\(String(describing: after.ip.receivedBytes)) tx \(String(describing: before.ip.transmittedBytes))->\(String(describing: after.ip.transmittedBytes))"
+                )
+            }
+
+            // A loopback TCP connection exchanges at least a handshake, data and a close in each direction.
+            let tcpServer = try await container.exec("tcp-loopback") { config in
+                config.arguments = ["sh", "-c", "nc -l -p 9100 >/dev/null & sleep 1; echo hello | nc -w 1 127.0.0.1 9100; wait; true"]
+            }
+            try await tcpServer.start()
+            let tcpStatus = try await tcpServer.wait()
+            try await tcpServer.delete()
+            guard tcpStatus.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "tcp loopback exec failed with exit code \(tcpStatus.exitCode)")
+            }
+
+            guard let afterTcp = try await container.statistics(categories: .network).networkProtocols else {
+                throw IntegrationError.assert(msg: "expected networkProtocols to be present after tcp traffic")
+            }
+
+            let tcpSegments: UInt64 = 3
+            let tcpRx = afterTcp.tcp.receivedPackets - after.tcp.receivedPackets
+            let tcpTx = afterTcp.tcp.transmittedPackets - after.tcp.transmittedPackets
+            guard tcpRx >= tcpSegments, tcpTx >= tcpSegments else {
+                throw IntegrationError.assert(msg: "expected tcp rx/tx >= \(tcpSegments), got rx=\(tcpRx) tx=\(tcpTx)")
+            }
+
+            // The kernel keeps no per-protocol byte counter for TCP, but does count its drops and receive errors.
+            guard afterTcp.tcp.receivedBytes == nil, afterTcp.tcp.transmittedBytes == nil else {
+                throw IntegrationError.assert(msg: "tcp bytes should be unset, got \(afterTcp.tcp)")
+            }
+            guard afterTcp.tcp.receivedDrops != nil, afterTcp.tcp.receivedErrors != nil else {
+                throw IntegrationError.assert(msg: "tcp receivedDrops/receivedErrors should be set, got \(afterTcp.tcp)")
+            }
+            guard afterTcp.tcp.transmittedDrops == nil, afterTcp.tcp.transmittedErrors == nil else {
+                throw IntegrationError.assert(msg: "tcp transmittedDrops/transmittedErrors should be unset, got \(afterTcp.tcp)")
+            }
+
+            // Datagrams to a closed loopback port have no socket to land on, which
+            // the kernel counts as a UDP receive drop (Udp NoPorts).
+            let datagrams: UInt64 = 3
+            let send = try await container.exec("udp-closed-port") { config in
+                config.arguments = ["sh", "-c", "for i in $(seq \(datagrams)); do echo x | nc -u -w 1 127.0.0.1 9; done; true"]
+            }
+            try await send.start()
+            let sendStatus = try await send.wait()
+            try await send.delete()
+            guard sendStatus.exitCode == 0 else {
+                throw IntegrationError.assert(msg: "udp send failed with exit code \(sendStatus.exitCode)")
+            }
+
+            guard let last = try await container.statistics(categories: .network).networkProtocols else {
+                throw IntegrationError.assert(msg: "expected networkProtocols to be present after udp traffic")
+            }
+
+            guard let udpDropsAfter = after.udp.receivedDrops, let udpDropsLast = last.udp.receivedDrops, udpDropsLast - udpDropsAfter >= datagrams else {
+                throw IntegrationError.assert(
+                    msg:
+                        "expected udp receivedDrops to grow by >= \(datagrams), got \(String(describing: after.udp.receivedDrops)) -> \(String(describing: last.udp.receivedDrops))"
+                )
+            }
+
+            // Drop and error counters are cumulative, so none may go backwards.
+            let pairs: [(String, ContainerStatistics.NetworkProtocolCounters, ContainerStatistics.NetworkProtocolCounters)] = [
+                ("tcp", before.tcp, last.tcp), ("udp", before.udp, last.udp), ("icmp", before.icmp, last.icmp), ("ip", before.ip, last.ip),
+            ]
+            for (name, old, new) in pairs {
+                // Unsupported counters are nil on both sides; a counter must not flip between nil and a value.
+                func monotonic(_ old: UInt64?, _ new: UInt64?) -> Bool {
+                    switch (old, new) {
+                    case (nil, nil): true
+                    case (let o?, let n?): n >= o
+                    default: false
+                    }
+                }
+                guard
+                    monotonic(old.receivedDrops, new.receivedDrops), monotonic(old.transmittedDrops, new.transmittedDrops),
+                    monotonic(old.receivedErrors, new.receivedErrors), monotonic(old.transmittedErrors, new.transmittedErrors)
+                else {
+                    throw IntegrationError.assert(msg: "\(name) drop/error counters decreased: \(old) -> \(new)")
+                }
+            }
+
+            // IPv6 traffic lands in udp6/icmp6/ip6 and must not touch the IPv4 counters. The guest brings
+            // lo up, which gives it ::1. TCP has no IPv6 counterpart: the kernel's tcp counters cover both families.
+            guard last.udp6 != nil, last.icmp6 != nil, last.ip6 != nil else {
+                throw IntegrationError.assert(msg: "expected udp6/icmp6/ip6 to be present in a guest with IPv6, got \(last)")
+            }
+
+            func runInGuest(_ name: String, _ arguments: [String]) async throws {
+                let exec = try await container.exec(name) { config in
+                    config.arguments = arguments
+                }
+                try await exec.start()
+                let status = try await exec.wait()
+                try await exec.delete()
+                guard status.exitCode == 0 else {
+                    throw IntegrationError.assert(msg: "\(name) failed with exit code \(status.exitCode)")
+                }
+            }
+
+            try await runInGuest("ping6-loopback", ["ping", "-6", "-c", "\(pings)", "::1"])
+            try await runInGuest("udp6-closed-port", ["sh", "-c", "for i in $(seq \(datagrams)); do echo x | nc -u -w 1 ::1 9; done; true"])
+            try await runInGuest("tcp6-loopback", ["sh", "-c", "nc -l -p 9101 -s ::1 >/dev/null & sleep 1; echo hello | nc -w 1 ::1 9101; wait; true"])
+
+            guard let v6 = try await container.statistics(categories: .network).networkProtocols,
+                let oldUDP6 = last.udp6, let oldICMP6 = last.icmp6, let oldIP6 = last.ip6,
+                let udp6 = v6.udp6, let icmp6 = v6.icmp6, let ip6 = v6.ip6
+            else {
+                throw IntegrationError.assert(msg: "expected udp6/icmp6/ip6 to be present after ipv6 traffic")
+            }
+
+            // Each ping6 sends an echo request and receives a reply on loopback. The guest may also send
+            // neighbor discovery and MLD messages, so these are lower bounds.
+            let icmp6Rx = icmp6.receivedPackets - oldICMP6.receivedPackets
+            let icmp6Tx = icmp6.transmittedPackets - oldICMP6.transmittedPackets
+            guard icmp6Rx >= pings, icmp6Tx >= pings else {
+                throw IntegrationError.assert(msg: "expected icmp6 rx/tx >= \(pings), got rx=\(icmp6Rx) tx=\(icmp6Tx)")
+            }
+
+            let udp6Tx = udp6.transmittedPackets - oldUDP6.transmittedPackets
+            guard udp6Tx >= datagrams else {
+                throw IntegrationError.assert(msg: "expected udp6 tx >= \(datagrams), got \(udp6Tx)")
+            }
+            // As for IPv4, a datagram to a closed port counts as a receive drop (Udp6 NoPorts).
+            guard let udp6Drops = udp6.receivedDrops, let oldUDP6Drops = oldUDP6.receivedDrops, udp6Drops - oldUDP6Drops >= datagrams else {
+                throw IntegrationError.assert(
+                    msg: "expected udp6 receivedDrops to grow by >= \(datagrams), got \(String(describing: oldUDP6.receivedDrops)) -> \(String(describing: udp6.receivedDrops))")
+            }
+
+            // ip6 covers the ping6, the datagrams and the tcp6 connection, and counts bytes.
+            let ip6Rx = ip6.receivedPackets - oldIP6.receivedPackets
+            let ip6Tx = ip6.transmittedPackets - oldIP6.transmittedPackets
+            guard ip6Rx >= icmp6Rx + datagrams, ip6Tx >= icmp6Tx + udp6Tx else {
+                throw IntegrationError.assert(
+                    msg: "ip6 packets should cover icmp6 and udp6, got ip6 rx=\(ip6Rx) tx=\(ip6Tx), icmp6 rx=\(icmp6Rx) tx=\(icmp6Tx), udp6 tx=\(udp6Tx)")
+            }
+            guard let ip6RxBytes = ip6.receivedBytes, let ip6TxBytes = ip6.transmittedBytes,
+                let oldRxBytes = oldIP6.receivedBytes, let oldTxBytes = oldIP6.transmittedBytes,
+                ip6RxBytes > oldRxBytes, ip6TxBytes > oldTxBytes
+            else {
+                throw IntegrationError.assert(msg: "ip6 bytes should increase, got \(oldIP6) -> \(ip6)")
+            }
+
+            // The TCP connection over ::1 shows up in the shared tcp counters, which cover both families.
+            let tcp6Rx = v6.tcp.receivedPackets - last.tcp.receivedPackets
+            let tcp6Tx = v6.tcp.transmittedPackets - last.tcp.transmittedPackets
+            guard tcp6Rx >= tcpSegments, tcp6Tx >= tcpSegments else {
+                throw IntegrationError.assert(msg: "expected tcp rx/tx >= \(tcpSegments) over ipv6, got rx=\(tcp6Rx) tx=\(tcp6Tx)")
+            }
+
+            // None of that is IPv4 traffic: the loopback ping6 and udp6 datagrams must not move the IPv4 counters.
+            guard v6.icmp.receivedPackets == last.icmp.receivedPackets, v6.icmp.transmittedPackets == last.icmp.transmittedPackets else {
+                throw IntegrationError.assert(msg: "icmp (ipv4) changed after ipv6 traffic: \(last.icmp) -> \(v6.icmp)")
+            }
+            guard v6.udp.transmittedPackets == last.udp.transmittedPackets, v6.udp.receivedDrops == last.udp.receivedDrops else {
+                throw IntegrationError.assert(msg: "udp (ipv4) changed after ipv6 traffic: \(last.udp) -> \(v6.udp)")
+            }
+
+            // The IPv6 counters have the same unsupported fields as their IPv4 counterparts.
+            guard udp6.receivedBytes == nil, udp6.transmittedErrors == nil, icmp6.receivedBytes == nil, icmp6.receivedDrops == nil, icmp6.transmittedDrops == nil else {
+                throw IntegrationError.assert(msg: "expected unsupported udp6/icmp6 counters to be unset, got udp6=\(udp6) icmp6=\(icmp6)")
+            }
+
+            try await container.kill(.kill)
+            try await container.wait()
+            try await container.stop()
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
     func testCgroupLimits() async throws {
         let id = "test-cgroup-limits"
 
@@ -5630,6 +5861,71 @@ extension IntegrationSuite {
             guard interfaces.contains("eth0") else {
                 throw IntegrationError.assert(msg: "expected 'eth0' interface, got: \(interfaces)")
             }
+        } catch {
+            try? await container.stop()
+            throw error
+        }
+    }
+
+    @available(macOS 26.0, *)
+    func testContainerNetworkInterfaceStatistics() async throws {
+        let id = "test-container-network-interface-statistics"
+        let bs = try await bootstrap(id)
+
+        let network = try VmnetNetwork()
+        var manager = try ContainerManager(vmm: bs.vmm, network: network)
+        defer {
+            try? manager.delete(id)
+        }
+
+        let container = try await manager.create(
+            id,
+            image: bs.image,
+            rootfs: bs.rootfs
+        ) { config in
+            config.process.arguments = ["sleep", "infinity"]
+            config.bootLog = bs.bootLog
+        }
+
+        do {
+            try await container.create()
+            try await container.start()
+
+            func eth0(_ stats: ContainerStatistics) throws -> ContainerStatistics.NetworkStatistics {
+                guard let eth0 = stats.networks?.first(where: { $0.interface == "eth0" }) else {
+                    throw IntegrationError.assert(msg: "expected eth0 in network statistics, got \(stats.networks?.map(\.interface) ?? [])")
+                }
+                return eth0
+            }
+
+            let before = try eth0(try await container.statistics(categories: .network))
+
+            // Generate some traffic across the interface. The gateway may not answer
+            // ping, so the exit code is ignored; the packets still go out eth0.
+            let exec = try await container.exec("ping-gateway") { config in
+                config.arguments = ["sh", "-c", "ping -c 3 -W 1 $(ip route | awk '/default/ {print $3; exit}'); true"]
+            }
+            try await exec.start()
+            _ = try await exec.wait()
+            try await exec.delete()
+
+            let after = try eth0(try await container.statistics(categories: .network))
+
+            guard after.transmittedPackets > before.transmittedPackets else {
+                throw IntegrationError.assert(msg: "expected eth0 transmittedPackets to grow, got \(before.transmittedPackets) -> \(after.transmittedPackets)")
+            }
+
+            // Drop counters are cumulative, so they must never go backwards.
+            guard after.receivedDropped >= before.receivedDropped, after.transmittedDropped >= before.transmittedDropped else {
+                throw IntegrationError.assert(
+                    msg:
+                        "eth0 dropped counters decreased: rx \(before.receivedDropped)->\(after.receivedDropped) tx \(before.transmittedDropped)->\(after.transmittedDropped)"
+                )
+            }
+
+            try await container.kill(.kill)
+            try await container.wait()
+            try await container.stop()
         } catch {
             try? await container.stop()
             throw error

@@ -590,6 +590,25 @@ public struct Cgroup2Manager: Sendable {
         if !cpu.cpus.isEmpty {
             try Self.writeValue(path: self.path, value: cpu.cpus, fileName: "cpuset.cpus")
         }
+
+        // `unified` goes last, so a key in it wins over the typed fields above, as in runc.
+        // Each key is a file in the cgroup directory and its value is written as is.
+        // For example `memory.oom.group: "1"` makes an OOM kill take every process of the
+        // container, so the container exits as a whole instead of losing one process.
+        // Sorted, so the write order (and the first failure) does not depend on hashing.
+        for key in unified.keys.sorted() {
+            try Self.writeValue(
+                path: self.path,
+                value: unified[key]!,
+                fileName: key
+            )
+        }
+    }
+
+    /// Whether `key` names a file directly in the cgroup directory: not empty, not `.`
+    /// or `..`, and without a `/`, so a spec cannot write outside the container's cgroup.
+    package static func isUnifiedFileName(_ key: String) -> Bool {
+        !key.isEmpty && key != "." && key != ".." && !key.contains("/")
     }
 
     package func setMemoryHigh(bytes: UInt64) throws {
@@ -1138,9 +1157,12 @@ extension Cgroup2Manager {
         case cgroup1
         case errno(errno: Int32, message: String)
         case notExist(path: String)
+        case invalidUnifiedKey(key: String)
 
         package var description: String {
             switch self {
+            case .invalidUnifiedKey(let key):
+                return "linux.resources.unified key '\(key)' is not a cgroup file name (empty, '.', '..' or contains '/')"
             case .errno(let errno, let message):
                 return "failed with errno \(errno): \(message)"
             case .notExist(let path):
