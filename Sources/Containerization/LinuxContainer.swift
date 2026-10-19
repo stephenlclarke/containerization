@@ -246,6 +246,11 @@ public final class LinuxContainer: Container, Sendable {
                 }
             }
         }
+        /// cgroup v2 files to write in the container's cgroup, as OCI
+        /// `linux.resources.unified`: file name to value, for example
+        /// `["memory.oom.group": "1"]`. The guest writes them after the limits
+        /// above, so a key here wins over them, as in runc.
+        public var unified: [String: String] = [:]
 
         public init() {}
 
@@ -706,6 +711,9 @@ public final class LinuxContainer: Container, Sendable {
             pids: config.pidsLimit.map(LinuxPids.init(limit:)),
             blockIO: config.blockIO?.toOCI()
         )
+        if !config.unified.isEmpty {
+            spec.linux?.resources?.unified = config.unified
+        }
 
         var namespaces: [LinuxNamespace] = []
         if !config.hostCgroupNamespace {

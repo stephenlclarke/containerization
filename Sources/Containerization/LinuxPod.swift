@@ -231,6 +231,11 @@ public final class LinuxPod: Sendable {
         /// A private root permits this workload's guest process setup to overlap
         /// setup for other private roots. The default preserves exclusive setup.
         public var rootFilesystemSharing: RootFilesystemSharing = .potentiallyShared
+        /// cgroup v2 files to write in the container's cgroup, as OCI
+        /// `linux.resources.unified`: file name to value, for example
+        /// `["memory.oom.group": "1"]`. The guest writes them after the limits
+        /// above, so a key here wins over them, as in runc.
+        public var unified: [String: String] = [:]
 
         public init() {}
     }
@@ -652,6 +657,9 @@ public final class LinuxPod: Sendable {
             )
             spec.linux?.uidMappings = [mapping]
             spec.linux?.gidMappings = [mapping]
+        }
+        if !config.unified.isEmpty {
+            spec.linux?.resources?.unified = config.unified
         }
 
         // Init spec only. runc installs seccomp for `runc exec` from the
