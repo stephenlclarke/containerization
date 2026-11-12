@@ -61,6 +61,8 @@ public actor ManagedContainer {
     ) async throws {
         try Self.validate(id: id)
 
+        var spec = spec
+
         var cgroupsPath: String
         if let cgPath = spec.linux?.cgroupsPath {
             cgroupsPath = cgPath
@@ -68,17 +70,36 @@ public actor ManagedContainer {
             cgroupsPath = "/container/\(id)"
         }
 
-        let bundle = try ContainerizationOCI.Bundle.create(
-            path: Self.craftBundlePath(id: id),
-            spec: spec
-        )
-        log.debug("created bundle with spec \(spec.redactingEnvironmentValues())")
+        // When no network namespace is declared, the OCI runtime uses the VM network.
+        // Private or joined namespaces must receive their sysctls through the runtime.
+        let networkKeys = Self.vmNetworkSysctls(spec: spec, ociRuntimePath: ociRuntimePath)
+        if !networkKeys.isEmpty {
+            try Self.applyNetworkSysctls(networkKeys, log: log)
+            let remainingSysctls = spec.linux?.sysctl?.filter { !networkKeys.keys.contains($0.key) }
+            spec.linux?.sysctl = remainingSysctls
+        }
 
-        let cgManager = Cgroup2Manager(
-            group: URL(filePath: cgroupsPath),
-            logger: log
-        )
-        try cgManager.create()
+        // Subpath mounts point at staging binds from here on; delete() removes them.
+        try MountVolumeSubpaths.stage(id: id, spec: &spec, log: log)
+
+        let bundle: ContainerizationOCI.Bundle
+        let cgManager: Cgroup2Manager
+        do {
+            bundle = try ContainerizationOCI.Bundle.create(
+                path: Self.craftBundlePath(id: id),
+                spec: spec
+            )
+            log.debug("created bundle with spec \(spec.redactingEnvironmentValues())")
+
+            cgManager = Cgroup2Manager(
+                group: URL(filePath: cgroupsPath),
+                logger: log
+            )
+            try cgManager.create()
+        } catch {
+            MountVolumeSubpaths.remove(id: id, log: log)
+            throw error
+        }
 
         do {
             try cgManager.toggleAllAvailableControllers(enable: true)
@@ -125,6 +146,7 @@ public actor ManagedContainer {
             self.log = log
         } catch {
             try? cgManager.delete()
+            MountVolumeSubpaths.remove(id: id, log: log)
             throw error
         }
     }
@@ -287,6 +309,9 @@ extension ManagedContainer {
     }
 
     func delete() async throws {
+        // Runs even if a step below throws, so the staging binds never keep the volume busy.
+        defer { MountVolumeSubpaths.remove(id: self.id, log: self.log) }
+
         // Delete the init process if it's a RuncProcess
         try await self.initProcess.delete()
 
@@ -317,7 +342,7 @@ extension ManagedContainer {
 
     func filesystemStats(of mount: String) throws -> CZ_Statfs {
         var s = CZ_Statfs()
-        guard CZ_statfs(mount, &s) == 0 else {
+        guard unsafe CZ_statfs(mount, &s) == 0 else {
             throw ContainerizationError(
                 .internalError,
                 message: "statfs(\(mount)) failed: errno \(errno)"
@@ -368,6 +393,50 @@ extension ContainerizationOCI.Bundle {
 }
 
 extension ManagedContainer {
+    static func vmNetworkSysctls(spec: Spec, ociRuntimePath: String?) -> [String: String] {
+        guard ociRuntimePath != nil,
+            !(spec.linux?.namespaces.contains(where: { $0.type == .network }) ?? false)
+        else { return [:] }
+        return spec.linux?.sysctl?.filter { $0.key.hasPrefix("net.") } ?? [:]
+    }
+
+    /// Writes `net.*` sysctls to the VM's own `/proc/sys`.
+    ///
+    /// The caller selects only workloads that use the VM network namespace.
+    /// Private and joined namespaces receive their settings through the OCI runtime.
+    /// Repeated writes apply the same value.
+    static func applyNetworkSysctls(_ sysctls: [String: String], log: Logger) throws {
+        for (key, value) in sysctls.sorted(by: { $0.key < $1.key }) {
+            let path = "/proc/sys/" + key.replacingOccurrences(of: ".", with: "/")
+            // Raw open/write rather than Data.write(to:): procfs rejects the
+            // create-and-rename Foundation may use, and these are single-write files.
+            let fd = unsafe open(path, O_WRONLY, 0)
+            let openErrno = errno
+            if fd == -1 {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: unsafe "failed to open \(path) for sysctl \(key): \(String(cString: strerror(openErrno)))"
+                )
+            }
+            defer { close(fd) }
+
+            let bytes = Array(value.utf8)
+            #if compiler(>=6.4)
+            let written = bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #else
+            let written = unsafe bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #endif
+            let writeErrno = errno
+            if written != bytes.count {
+                throw ContainerizationError(
+                    .invalidArgument,
+                    message: unsafe "failed to set sysctl \(key)=\(value): \(String(cString: strerror(writeErrno)))"
+                )
+            }
+            log.debug("applied sysctl \(key)=\(value)")
+        }
+    }
+
     static func craftBundlePath(id: String) -> URL {
         URL(fileURLWithPath: "/run/container").appending(path: id)
     }

@@ -22,6 +22,7 @@ import Logging
 import Synchronization
 
 import struct ContainerizationOS.Terminal
+import enum ContainerizationOS.VolumeSubpath
 
 /// `LinuxPod` allows managing multiple Linux containers within a single
 /// virtual machine. Each container has its own rootfs and process, but
@@ -82,8 +83,6 @@ public final class LinuxPod: Sendable {
         /// The default keeps each workload's PID and IPC namespaces private.
         public var sharedNamespaces: NamespaceSharing = []
 
-        /// The pause process is unfiltered (vmexec), uid 0 with no capabilities,
-        /// in its own mount namespace even when a seccomp profile is selected.
         /// Compatibility accessor for sharing the PID namespace.
         ///
         /// Prefer ``sharedNamespaces`` with ``NamespaceSharing/process`` for
@@ -147,10 +146,10 @@ public final class LinuxPod: Sendable {
 
         /// Configuration for the init process of the container.
         public var process = LinuxProcessConfiguration()
-        /// The container's CPU cgroup limit, in whole cores. May exceed the pod's VM for oversubscription.
-        public var cpus: Int = 4
-        /// The container's memory cgroup limit in bytes. May exceed the pod's VM for oversubscription.
-        public var memoryInBytes: UInt64 = 1024.mib()
+        /// Optional per-container CPU limit (can exceed pod total for oversubscription).
+        public var cpus: Int? = 4
+        /// Optional per-container memory limit in bytes (can exceed pod total for oversubscription).
+        public var memoryInBytes: UInt64? = 1024.mib()
         /// Optional protected memory reservation for the workload cgroup.
         public var memoryReservationInBytes: Int64?
         /// Optional combined memory and swap limit for the workload cgroup.
@@ -231,6 +230,11 @@ public final class LinuxPod: Sendable {
         /// A private root permits this workload's guest process setup to overlap
         /// setup for other private roots. The default preserves exclusive setup.
         public var rootFilesystemSharing: RootFilesystemSharing = .potentiallyShared
+        /// cgroup v2 files to write in the container's cgroup, as OCI
+        /// `linux.resources.unified`: file name to value, for example
+        /// `["memory.oom.group": "1"]`. The guest writes them after the limits
+        /// above, so a key here wins over them, as in runc.
+        public var unified: [String: String] = [:]
 
         public init() {}
     }
@@ -621,7 +625,9 @@ public final class LinuxPod: Sendable {
         // We let the OCI runtime remount as ro, instead of doing it originally.
         spec.root?.readonly = rootfs.options.contains("ro")
 
-        let legacyCPUQuota = config.cpus > 0 ? Int64(config.cpus * 100_000) : nil
+        let legacyCPUQuota = config.cpus.flatMap { cpus in
+            cpus > 0 ? Int64(cpus * 100_000) : nil
+        }
         let cpuQuota =
             config.cpuQuotaInMicroseconds
             ?? (config.cpuPeriodInMicroseconds == nil ? legacyCPUQuota : nil)
@@ -631,7 +637,9 @@ public final class LinuxPod: Sendable {
         spec.linux?.resources = LinuxResources(
             devices: config.deviceCgroupRules,
             memory: LinuxMemory(
-                limit: config.memoryInBytes > 0 ? Int64(config.memoryInBytes) : nil,
+                limit: config.memoryInBytes.flatMap {
+                    $0 > 0 ? Int64($0) : nil
+                },
                 reservation: config.memoryReservationInBytes,
                 swap: config.memorySwapLimitInBytes
             ),
@@ -652,6 +660,9 @@ public final class LinuxPod: Sendable {
             )
             spec.linux?.uidMappings = [mapping]
             spec.linux?.gidMappings = [mapping]
+        }
+        if !config.unified.isEmpty {
+            spec.linux?.resources?.unified = config.unified
         }
 
         // Init spec only. runc installs seccomp for `runc exec` from the
@@ -1525,13 +1536,7 @@ extension LinuxPod {
                         endpoints: container.config.networkEndpoints
                     )
                 }
-                var spec = try self.generateRuntimeSpec(
-                    containerID: containerID,
-                    config: container.config,
-                    rootfs: container.rootfs,
-                    seccomp: container.seccomp,
-                    purpose: .containerInit
-                )
+                var spec = try self.generateRuntimeSpec(containerID: containerID, config: container.config, rootfs: container.rootfs, seccomp: container.seccomp, purpose: .containerInit)
                 try await LinuxContainer.addGuestDevices(
                     container.config.guestDevices,
                     to: &spec,
@@ -1585,16 +1590,25 @@ extension LinuxPod {
                 }
 
                 // Bind mount pod volumes into the container.
+                // A subpath travels as a mount option; the guest agent resolves it
+                // beneath the volume and replaces the source (see `VolumeSubpath`).
                 for mount in container.config.mounts {
-                    if case .shared = mount.runtimeOptions {
-                        mounts.append(
-                            ContainerizationOCI.Mount(
-                                type: "none",
-                                source: Self.guestVolumePath(mount.source),
-                                destination: mount.destination,
-                                options: ["bind"] + mount.options
-                            ))
+                    guard case .shared(let subpath) = mount.runtimeOptions else {
+                        continue
                     }
+
+                    var options = ["bind"] + mount.options
+                    if let subpath {
+                        options.append(VolumeSubpath.toMountOption(subpath))
+                    }
+
+                    mounts.append(
+                        ContainerizationOCI.Mount(
+                            type: "none",
+                            source: Self.guestVolumePath(mount.source),
+                            destination: mount.destination,
+                            options: options
+                        ))
                 }
 
                 spec.mounts = cleanAndSortMounts(mounts)
@@ -1658,7 +1672,7 @@ extension LinuxPod {
                     spec: spec,
                     io: stdio,
                     portAllocator: self.hostVsockPorts,
-                    ociRuntimePath: container.config.ociRuntimePath ?? self.config.ociRuntimePath,
+                    ociRuntimePath: container.config.ociRuntimePath,
                     agent: agent,
                     vm: createdState.vm,
                     logger: self.logger
@@ -2075,13 +2089,7 @@ extension LinuxPod {
                 )
             }
 
-            var spec = try self.generateRuntimeSpec(
-                containerID: containerID,
-                config: container.config,
-                rootfs: container.rootfs,
-                seccomp: container.seccomp,
-                purpose: .exec
-            )
+            var spec = try self.generateRuntimeSpec(containerID: containerID, config: container.config, rootfs: container.rootfs, seccomp: container.seccomp, purpose: .exec)
             let donorPIDs = state.containers.reduce(
                 into: [String: Int32]()
             ) { result, entry in
@@ -2120,7 +2128,7 @@ extension LinuxPod {
                 spec: spec,
                 io: stdio,
                 portAllocator: self.hostVsockPorts,
-                ociRuntimePath: container.config.ociRuntimePath ?? self.config.ociRuntimePath,
+                ociRuntimePath: container.config.ociRuntimePath,
                 agent: agent,
                 vm: createdState.vm,
                 logger: self.logger

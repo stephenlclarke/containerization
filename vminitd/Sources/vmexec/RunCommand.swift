@@ -79,7 +79,7 @@ struct RunCommand: ParsableCommand {
     private func applyMaskedPaths(_ paths: [String]) throws {
         for path in paths {
             var st = stat()
-            if stat(path, &st) != 0 {
+            if unsafe stat(path, &st) != 0 {
                 if errno == ENOENT {
                     continue
                 }
@@ -91,11 +91,11 @@ struct RunCommand: ParsableCommand {
                 // is what actually prevents writes into the masked dir; a
                 // `size=0k` option would be a no-op (the kernel treats tmpfs
                 // size=0 as "no limit", not an empty filesystem).
-                guard mount("tmpfs", path, "tmpfs", UInt(MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC), nil) == 0 else {
+                guard unsafe mount("tmpfs", path, "tmpfs", UInt(MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC), nil) == 0 else {
                     throw App.Errno(stage: "mount(tmpfs mask \(path))")
                 }
             } else {
-                guard mount("/dev/null", path, "bind", UInt(MS_BIND), nil) == 0 else {
+                guard unsafe mount("/dev/null", path, "bind", UInt(MS_BIND), nil) == 0 else {
                     throw App.Errno(stage: "mount(bind /dev/null -> \(path))")
                 }
             }
@@ -110,29 +110,29 @@ struct RunCommand: ParsableCommand {
     private func applyReadonlyPaths(_ paths: [String]) throws {
         for path in paths {
             var st = stat()
-            if stat(path, &st) != 0 {
+            if unsafe stat(path, &st) != 0 {
                 if errno == ENOENT {
                     continue
                 }
                 throw App.Errno(stage: "stat(\(path)) for readonly")
             }
 
-            guard mount(path, path, "", UInt(MS_BIND | MS_REC), nil) == 0 else {
+            guard unsafe mount(path, path, "", UInt(MS_BIND | MS_REC), nil) == 0 else {
                 throw App.Errno(stage: "mount(bind \(path))")
             }
 
             var flags = UInt(MS_BIND | MS_REMOUNT | MS_RDONLY)
-            if mount("", path, "", flags, "") == 0 {
+            if unsafe mount("", path, "", flags, "") == 0 {
                 continue
             }
 
             var s = statfs()
-            guard statfs(path, &s) == 0 else {
+            guard unsafe statfs(path, &s) == 0 else {
                 throw App.Errno(stage: "statfs(\(path))")
             }
             flags |= UInt(s.f_flags)
 
-            guard mount("", path, "", flags, "") == 0 else {
+            guard unsafe mount("", path, "", flags, "") == 0 else {
                 throw App.Errno(stage: "mount remount-ro \(path)")
             }
         }
@@ -141,18 +141,18 @@ struct RunCommand: ParsableCommand {
     private func remountRootfsReadOnly() throws {
         var flags = UInt(MS_BIND | MS_REMOUNT | MS_RDONLY)
 
-        let ret = mount("", "/", "", flags, "")
+        let ret = unsafe mount("", "/", "", flags, "")
         if ret == 0 {
             return
         }
 
         var s = statfs()
-        guard statfs("/", &s) == 0 else {
+        guard unsafe statfs("/", &s) == 0 else {
             throw App.Errno(stage: "statfs(/)")
         }
         flags |= UInt(s.f_flags)
 
-        guard mount("", "/", "", flags, "") == 0 else {
+        guard unsafe mount("", "/", "", flags, "") == 0 else {
             throw App.Errno(stage: "mount rootfs ro")
         }
     }
@@ -175,9 +175,15 @@ struct RunCommand: ParsableCommand {
         var pidAckBuffer = [UInt8](repeating: 0, count: App.ackPid.count)
         let pidAckBytesRead: Int
         do {
+            #if compiler(>=6.4)
             pidAckBytesRead = try pidAckBuffer.withUnsafeMutableBytes { buffer in
-                try ackPipe.read(into: buffer)
+                unsafe try ackPipe.read(into: buffer)
             }
+            #else
+            pidAckBytesRead = unsafe try pidAckBuffer.withUnsafeMutableBytes { buffer in
+                unsafe try ackPipe.read(into: buffer)
+            }
+            #endif
         } catch {
             throw App.Failure(message: "read process acknowledgement: \(error)")
         }
@@ -208,16 +214,28 @@ struct RunCommand: ParsableCommand {
 
         do {
             let rootReady = Array(App.rootReady.utf8)
+            #if compiler(>=6.4)
             let rootReadyBytesWritten = try rootReady.withUnsafeBytes { buffer in
-                try syncPipe.write(buffer)
+                unsafe try syncPipe.write(buffer)
             }
+            #else
+            let rootReadyBytesWritten = unsafe try rootReady.withUnsafeBytes { buffer in
+                unsafe try syncPipe.write(buffer)
+            }
+            #endif
             guard rootReadyBytesWritten == rootReady.count else {
                 throw App.Failure(message: "write root readiness")
             }
             var rootAckBuffer = [UInt8](repeating: 0, count: App.ackRoot.count)
+            #if compiler(>=6.4)
             let rootAckBytesRead = try rootAckBuffer.withUnsafeMutableBytes { buffer in
-                try ackPipe.read(into: buffer)
+                unsafe try ackPipe.read(into: buffer)
             }
+            #else
+            let rootAckBytesRead = unsafe try rootAckBuffer.withUnsafeMutableBytes { buffer in
+                unsafe try ackPipe.read(into: buffer)
+            }
+            #endif
             guard rootAckBytesRead > 0 else {
                 throw App.Failure(message: "read root acknowledgement")
             }
@@ -234,15 +252,27 @@ struct RunCommand: ParsableCommand {
             try pty.configureStdIO()
             var masterFD = pty.master
 
+            #if compiler(>=6.4)
             try withUnsafeBytes(of: &masterFD) { bytes in
-                _ = try syncPipe.write(bytes)
+                _ = unsafe try syncPipe.write(bytes)
             }
+            #else
+            unsafe try withUnsafeBytes(of: &masterFD) { bytes in
+                _ = unsafe try syncPipe.write(bytes)
+            }
+            #endif
 
             // Wait for the grandparent to tell us that they acked our console.
             var consoleAckBuffer = [UInt8](repeating: 0, count: App.ackConsole.count)
+            #if compiler(>=6.4)
             let consoleAckBytesRead = try consoleAckBuffer.withUnsafeMutableBytes { buffer in
-                try ackPipe.read(into: buffer)
+                unsafe try ackPipe.read(into: buffer)
             }
+            #else
+            let consoleAckBytesRead = unsafe try consoleAckBuffer.withUnsafeMutableBytes { buffer in
+                unsafe try ackPipe.read(into: buffer)
+            }
+            #endif
             guard consoleAckBytesRead > 0 else {
                 throw App.Failure(message: "read ack pipe")
             }
@@ -261,9 +291,15 @@ struct RunCommand: ParsableCommand {
         }
 
         if !spec.hostname.isEmpty {
+            #if compiler(>=6.4)
             let errCode = spec.hostname.withCString { ptr in
-                sethostname(ptr, spec.hostname.count)
+                unsafe sethostname(ptr, spec.hostname.count)
             }
+            #else
+            let errCode = unsafe spec.hostname.withCString { ptr in
+                unsafe sethostname(ptr, spec.hostname.count)
+            }
+            #endif
             guard errCode == 0 else {
                 throw App.Errno(stage: "sethostname()")
             }
@@ -273,13 +309,13 @@ struct RunCommand: ParsableCommand {
         if let sysctls = spec.linux?.sysctl {
             for (key, value) in sysctls {
                 let path = "/proc/sys/" + key.replacingOccurrences(of: ".", with: "/")
-                let fd = open(path, O_WRONLY)
+                let fd = unsafe open(path, O_WRONLY)
                 guard fd >= 0 else {
                     throw App.Errno(stage: "sysctl open(\(path))")
                 }
                 defer { close(fd) }
                 let bytes = Array(value.utf8)
-                let written = write(fd, bytes, bytes.count)
+                let written = unsafe write(fd, bytes, bytes.count)
                 guard written == bytes.count else {
                     throw App.Errno(stage: "sysctl write(\(key)=\(value))")
                 }
@@ -437,16 +473,22 @@ struct RunCommand: ParsableCommand {
     private func writeInterfaceSysctl(interface: String, key: String, value: String) throws {
         let resolvedKey = key.replacingOccurrences(of: "IFNAME", with: interface)
         let path = "/proc/sys/" + resolvedKey.replacingOccurrences(of: ".", with: "/")
-        let descriptor = open(path, O_WRONLY | O_CLOEXEC)
+        let descriptor = unsafe open(path, O_WRONLY | O_CLOEXEC)
         guard descriptor >= 0 else {
             throw App.Errno(stage: "open(\(path))")
         }
         defer { close(descriptor) }
 
         let bytes = Array(value.utf8)
+        #if compiler(>=6.4)
         let count = bytes.withUnsafeBytes { buffer in
-            write(descriptor, buffer.baseAddress, buffer.count)
+            unsafe write(descriptor, buffer.baseAddress, buffer.count)
         }
+        #else
+        let count = unsafe bytes.withUnsafeBytes { buffer in
+            unsafe write(descriptor, buffer.baseAddress, buffer.count)
+        }
+        #endif
         guard count == bytes.count else {
             throw App.Errno(stage: "write(\(path))")
         }
@@ -489,7 +531,7 @@ struct RunCommand: ParsableCommand {
             if ns.path.isEmpty {
                 unshareFlags |= flag
             } else {
-                let fd = open(ns.path, O_RDONLY | O_CLOEXEC)
+                let fd = unsafe open(ns.path, O_RDONLY | O_CLOEXEC)
                 guard fd >= 0 else {
                     throw App.Errno(stage: "open(\(ns.path))")
                 }
@@ -505,14 +547,14 @@ struct RunCommand: ParsableCommand {
     }
 
     private func writeUserNamespaceFile(path: String, contents: String) throws {
-        let fd = open(path, O_WRONLY | O_CLOEXEC)
+        let fd = unsafe open(path, O_WRONLY | O_CLOEXEC)
         guard fd >= 0 else {
             throw App.Errno(stage: "open(\(path))")
         }
         defer { close(fd) }
 
         let bytes = Array(contents.utf8)
-        let bytesWritten = write(fd, bytes, bytes.count)
+        let bytesWritten = unsafe write(fd, bytes, bytes.count)
         guard bytesWritten == bytes.count else {
             throw App.Errno(stage: "write(\(path))")
         }
@@ -563,9 +605,15 @@ struct RunCommand: ParsableCommand {
 
     private func sendUserNamespaceMappingSignal(_ signal: UInt8, to descriptor: Int32) throws {
         var signal = signal
+        #if compiler(>=6.4)
         let count = withUnsafeBytes(of: &signal) { bytes in
-            write(descriptor, bytes.baseAddress, bytes.count)
+            unsafe write(descriptor, bytes.baseAddress, bytes.count)
         }
+        #else
+        let count = unsafe withUnsafeBytes(of: &signal) { bytes in
+            unsafe write(descriptor, bytes.baseAddress, bytes.count)
+        }
+        #endif
         guard count == 1 else {
             throw App.Errno(stage: "write(user namespace mapping signal)")
         }
@@ -573,9 +621,15 @@ struct RunCommand: ParsableCommand {
 
     private func waitForUserNamespaceMappingSignal(from descriptor: Int32, expected: UInt8) throws {
         var signal: UInt8 = 0
+        #if compiler(>=6.4)
         let count = withUnsafeMutableBytes(of: &signal) { bytes in
-            read(descriptor, bytes.baseAddress, bytes.count)
+            unsafe read(descriptor, bytes.baseAddress, bytes.count)
         }
+        #else
+        let count = unsafe withUnsafeMutableBytes(of: &signal) { bytes in
+            unsafe read(descriptor, bytes.baseAddress, bytes.count)
+        }
+        #endif
         guard count >= 0 else {
             throw App.Errno(stage: "read(user namespace mapping signal)")
         }
@@ -619,9 +673,15 @@ struct RunCommand: ParsableCommand {
 
             // Send our child's pid before we exit.
             var childPid = processID
+            #if compiler(>=6.4)
             try withUnsafeBytes(of: &childPid) { bytes in
-                _ = try syncPipe.write(bytes)
+                _ = unsafe try syncPipe.write(bytes)
             }
+            #else
+            unsafe try withUnsafeBytes(of: &childPid) { bytes in
+                _ = unsafe try syncPipe.write(bytes)
+            }
+            #endif
         }
     }
 
@@ -655,9 +715,15 @@ struct RunCommand: ParsableCommand {
         }
 
         var childPID = processID
+        #if compiler(>=6.4)
         let count = withUnsafeBytes(of: &childPID) { bytes in
-            write(mappingProcessDescriptor, bytes.baseAddress, bytes.count)
+            unsafe write(mappingProcessDescriptor, bytes.baseAddress, bytes.count)
         }
+        #else
+        let count = unsafe withUnsafeBytes(of: &childPID) { bytes in
+            unsafe write(mappingProcessDescriptor, bytes.baseAddress, bytes.count)
+        }
+        #endif
         guard count == MemoryLayout<Int32>.size else {
             throw App.Errno(stage: "write(user namespace container process ID)")
         }
@@ -671,19 +737,19 @@ struct RunCommand: ParsableCommand {
         linux: ContainerizationOCI.Linux
     ) throws {
         var readyDescriptors: [Int32] = [0, 0]
-        guard pipe(&readyDescriptors) == 0 else {
+        guard unsafe pipe(&readyDescriptors) == 0 else {
             throw App.Errno(stage: "pipe(user namespace ready)")
         }
 
         var mappedDescriptors: [Int32] = [0, 0]
-        guard pipe(&mappedDescriptors) == 0 else {
+        guard unsafe pipe(&mappedDescriptors) == 0 else {
             close(readyDescriptors[0])
             close(readyDescriptors[1])
             throw App.Errno(stage: "pipe(user namespace mapped)")
         }
 
         var processDescriptors: [Int32] = [0, 0]
-        guard pipe(&processDescriptors) == 0 else {
+        guard unsafe pipe(&processDescriptors) == 0 else {
             close(readyDescriptors[0])
             close(readyDescriptors[1])
             close(mappedDescriptors[0])
@@ -737,9 +803,15 @@ struct RunCommand: ParsableCommand {
         }
 
         var containerProcessID: Int32 = 0
+        #if compiler(>=6.4)
         let count = withUnsafeMutableBytes(of: &containerProcessID) { bytes in
-            read(processDescriptors[0], bytes.baseAddress, bytes.count)
+            unsafe read(processDescriptors[0], bytes.baseAddress, bytes.count)
         }
+        #else
+        let count = unsafe withUnsafeMutableBytes(of: &containerProcessID) { bytes in
+            unsafe read(processDescriptors[0], bytes.baseAddress, bytes.count)
+        }
+        #endif
         guard count == MemoryLayout<Int32>.size else {
             _ = kill(runnerPID, SIGKILL)
             throw App.Failure(message: "read user namespace container process ID")
@@ -761,9 +833,15 @@ struct RunCommand: ParsableCommand {
 
             var childPID = containerProcessID
             do {
+                #if compiler(>=6.4)
                 try withUnsafeBytes(of: &childPID) { bytes in
-                    _ = try syncPipe.write(bytes)
+                    _ = unsafe try syncPipe.write(bytes)
                 }
+                #else
+                unsafe try withUnsafeBytes(of: &childPID) { bytes in
+                    _ = unsafe try syncPipe.write(bytes)
+                }
+                #endif
             } catch {
                 throw App.Failure(message: "signal private user namespace container PID: \(error)")
             }
@@ -818,11 +896,11 @@ struct RunCommand: ParsableCommand {
     }
 
     private func prepareRoot(rootfs: String) throws {
-        guard mount("", "/", "", UInt(MS_SLAVE | MS_REC), nil) == 0 else {
+        guard unsafe mount("", "/", "", UInt(MS_SLAVE | MS_REC), nil) == 0 else {
             throw App.Errno(stage: "mount(slave|rec)")
         }
 
-        guard mount(rootfs, rootfs, "bind", UInt(MS_BIND | MS_REC), nil) == 0 else {
+        guard unsafe mount(rootfs, rootfs, "bind", UInt(MS_BIND | MS_REC), nil) == 0 else {
             throw App.Errno(stage: "mount(bind|rec)")
         }
     }
@@ -839,7 +917,7 @@ struct RunCommand: ParsableCommand {
         let rootfsURL = URL(fileURLWithPath: rootfs)
         for (src, dst) in links {
             let dest = rootfsURL.appendingPathComponent(dst)
-            guard symlink(src, dest.path) == 0 else {
+            guard unsafe symlink(src, dest.path) == 0 else {
                 if errno == EEXIST {
                     continue
                 }
@@ -849,26 +927,42 @@ struct RunCommand: ParsableCommand {
     }
 
     private func reOpenDevNull() throws {
-        let file = open("/dev/null", O_RDWR)
+        let file = unsafe open("/dev/null", O_RDWR)
         guard file != -1 else {
             throw App.Errno(stage: "open(/dev/null)")
         }
         defer { close(file) }
 
         var devNullStat = stat()
+        #if compiler(>=6.4)
         try withUnsafeMutablePointer(to: &devNullStat) { pointer in
-            guard fstat(file, pointer) == 0 else {
+            guard unsafe fstat(file, pointer) == 0 else {
                 throw App.Errno(stage: "fstat(/dev/null)")
             }
         }
+        #else
+        unsafe try withUnsafeMutablePointer(to: &devNullStat) { pointer in
+            guard unsafe fstat(file, pointer) == 0 else {
+                throw App.Errno(stage: "fstat(/dev/null)")
+            }
+        }
+        #endif
 
         for fd: Int32 in 0...2 {
             var fdStat = stat()
+            #if compiler(>=6.4)
             try withUnsafeMutablePointer(to: &fdStat) { pointer in
-                guard fstat(fd, pointer) == 0 else {
+                guard unsafe fstat(fd, pointer) == 0 else {
                     throw App.Errno(stage: "fstat(fd)")
                 }
             }
+            #else
+            unsafe try withUnsafeMutablePointer(to: &fdStat) { pointer in
+                guard unsafe fstat(fd, pointer) == 0 else {
+                    throw App.Errno(stage: "fstat(fd)")
+                }
+            }
+            #endif
 
             if fdStat.st_rdev == devNullStat.st_rdev {
                 guard dup3(file, fd, 0) != -1 else {
@@ -885,13 +979,13 @@ struct RunCommand: ParsableCommand {
     /// as runc's pivot root implementation in:
     /// https://github.com/opencontainers/runc/blob/main/libcontainer/rootfs_linux.go
     private func pivotRoot(rootfs: String) throws {
-        let oldRoot = open("/", O_RDONLY | O_DIRECTORY)
+        let oldRoot = unsafe open("/", O_RDONLY | O_DIRECTORY)
         if oldRoot <= 0 {
             throw App.Errno(stage: "open(oldroot)")
         }
         defer { close(oldRoot) }
 
-        let newRoot = open(rootfs, O_RDONLY | O_DIRECTORY)
+        let newRoot = unsafe open(rootfs, O_RDONLY | O_DIRECTORY)
         if newRoot <= 0 {
             throw App.Errno(stage: "open(newroot)")
         }
@@ -901,7 +995,7 @@ struct RunCommand: ParsableCommand {
         guard fchdir(newRoot) == 0 else {
             throw App.Errno(stage: "fchdir(newroot)")
         }
-        guard CZ_pivot_root(toCString("."), toCString(".")) == 0 else {
+        guard unsafe CZ_pivot_root(".", ".") == 0 else {
             throw App.Errno(stage: "pivot_root()")
         }
         // change cwd to the old root
@@ -910,37 +1004,30 @@ struct RunCommand: ParsableCommand {
         }
         // mount old root rslave so that unmount doesn't propagate back to outside
         // the namespace
-        guard mount("", ".", "", UInt(MS_SLAVE | MS_REC), nil) == 0 else {
+        guard unsafe mount("", ".", "", UInt(MS_SLAVE | MS_REC), nil) == 0 else {
             throw App.Errno(stage: "mount(., slave|rec)")
         }
         // unmount old root
-        guard umount2(".", Int32(MNT_DETACH)) == 0 else {
+        guard unsafe umount2(".", Int32(MNT_DETACH)) == 0 else {
             throw App.Errno(stage: "umount(.)")
         }
         // switch cwd to the new root
-        guard chdir("/") == 0 else {
+        guard unsafe chdir("/") == 0 else {
             throw App.Errno(stage: "chdir(/)")
         }
     }
 
-    private func toCString(_ str: String) -> UnsafeMutablePointer<CChar>? {
-        let cString = str.utf8CString
-        let cStringCopy = UnsafeMutableBufferPointer<CChar>.allocate(capacity: cString.count)
-        _ = cStringCopy.initialize(from: cString)
-        return UnsafeMutablePointer(cStringCopy.baseAddress)
-    }
-
     private func mountConsole(path: String) throws {
         let console = "/dev/console"
-        if access(console, F_OK) != 0 {
-            let fd = open(console, O_RDWR | O_CREAT, mode_t(UInt16(0o600)))
+        if unsafe access(console, F_OK) != 0 {
+            let fd = unsafe open(console, O_RDWR | O_CREAT, mode_t(UInt16(0o600)))
             guard fd != -1 else {
                 throw App.Errno(stage: "open(/dev/console)")
             }
             close(fd)
         }
 
-        guard mount(path, console, "bind", UInt(MS_BIND), nil) == 0 else {
+        guard unsafe mount(path, console, "bind", UInt(MS_BIND), nil) == 0 else {
             throw App.Errno(stage: "mount(console)")
         }
     }

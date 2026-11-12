@@ -29,6 +29,23 @@ public struct Vminitd: Sendable {
     // Default vsock port that the agent and client use.
     public static let port: UInt32 = 1024
 
+    /// The `:authority` sent with every request to the guest agent.
+    ///
+    /// The connection is an already-connected vsock, so grpc-swift has no target address to
+    /// derive an authority from and would send none. The guest agent does not require one, but
+    /// gRPC-Go v1.82.2, v1.83.2 and v1.84.0 or later reject requests without an `:authority`
+    /// (grpc-go #9365), so sending one keeps this client working against servers that enforce it.
+    /// The agent does not route on the authority, so any valid host name works.
+    static let grpcAuthority = "vminitd"
+
+    /// The transport configuration for the connection to the guest agent.
+    static func transportConfig() -> HTTP2ClientTransport.WrappedChannel.Config {
+        .defaults {
+            $0.connection.maxIdleTime = nil
+            $0.http2.authority = grpcAuthority
+        }
+    }
+
     let client: Com_Apple_Containerization_Sandbox_V3_SandboxContext.Client<HTTP2ClientTransport.WrappedChannel>
     public let grpcClient: GRPCClient<HTTP2ClientTransport.WrappedChannel>
     // The FileHandle retains the Virtualization connection that owns this descriptor.
@@ -37,7 +54,7 @@ public struct Vminitd: Sendable {
 
     public init(connection: FileHandle, group: any EventLoopGroup) async throws {
         let transport = try await HTTP2ClientTransport.WrappedChannel.wrapping(
-            config: .defaults { $0.connection.maxIdleTime = nil },
+            config: Vminitd.transportConfig(),
             serviceConfig: .init()
         ) { configure in
             try await withCheckedThrowingContinuation { continuation in
@@ -206,7 +223,9 @@ extension Vminitd: VirtualMachineAgent {
                             receivedBytes: network.receivedBytes,
                             transmittedBytes: network.transmittedBytes,
                             receivedErrors: network.receivedErrors,
-                            transmittedErrors: network.transmittedErrors
+                            transmittedErrors: network.transmittedErrors,
+                            receivedDropped: network.receivedDropped,
+                            transmittedDropped: network.transmittedDropped
                         )
                     } : nil,
                 memoryEvents: categories.contains(.memoryEvents) && protoStats.hasMemoryEvents
@@ -228,7 +247,9 @@ extension Vminitd: VirtualMachineAgent {
                             inodes: entry.inodes,
                             freeInodes: entry.freeInodes
                         )
-                    } : nil
+                    } : nil,
+                networkProtocols: categories.contains(.network) && protoStats.hasNetworkProtocols
+                    ? .init(protoStats.networkProtocols) : nil
             )
         }
     }
@@ -846,5 +867,34 @@ extension FilesystemOperation {
                     $0.oneShot = .init()
                 })
         }
+    }
+}
+
+extension ContainerStatistics.NetworkProtocolCounters {
+    init(_ proto: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters) {
+        self.init(
+            receivedPackets: proto.receivedPackets,
+            transmittedPackets: proto.transmittedPackets,
+            receivedBytes: proto.hasReceivedBytes ? proto.receivedBytes : nil,
+            transmittedBytes: proto.hasTransmittedBytes ? proto.transmittedBytes : nil,
+            receivedDrops: proto.hasReceivedDrops ? proto.receivedDrops : nil,
+            transmittedDrops: proto.hasTransmittedDrops ? proto.transmittedDrops : nil,
+            receivedErrors: proto.hasReceivedErrors ? proto.receivedErrors : nil,
+            transmittedErrors: proto.hasTransmittedErrors ? proto.transmittedErrors : nil
+        )
+    }
+}
+
+extension ContainerStatistics.NetworkProtocolStatistics {
+    init(_ proto: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats) {
+        self.init(
+            tcp: .init(proto.tcp),
+            udp: .init(proto.udp),
+            icmp: .init(proto.icmp),
+            ip: .init(proto.ip),
+            udp6: proto.hasUdp6 ? .init(proto.udp6) : nil,
+            icmp6: proto.hasIcmp6 ? .init(proto.icmp6) : nil,
+            ip6: proto.hasIp6 ? .init(proto.ip6) : nil
+        )
     }
 }

@@ -43,9 +43,9 @@ struct ContainerMount {
     func configureConsole() throws {
         let ptmx = rootfs + "/dev/ptmx"
         let temporaryPtmx = try createTemporaryConsoleSymlink()
-        defer { unlink(temporaryPtmx) }
+        defer { unsafe unlink(temporaryPtmx) }
 
-        guard rename(temporaryPtmx, ptmx) == 0 else {
+        guard unsafe rename(temporaryPtmx, ptmx) == 0 else {
             throw App.Errno(stage: "rename(temporary pts/ptmx)")
         }
     }
@@ -53,7 +53,7 @@ struct ContainerMount {
     private func createTemporaryConsoleSymlink() throws -> String {
         for _ in 0..<16 {
             let path = rootfs + "/dev/.ptmx-\(UUID().uuidString)"
-            if symlink("pts/ptmx", path) == 0 {
+            if unsafe symlink("pts/ptmx", path) == 0 {
                 return path
             }
             guard errno == EEXIST else {

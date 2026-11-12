@@ -51,7 +51,7 @@ struct LoopbackDevice: Sendable {
             )
         }
 
-        let rootDescriptor = open(
+        let rootDescriptor = unsafe open(
             trustedPath.root,
             CZ_O_PATH | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
         )
@@ -97,7 +97,7 @@ struct LoopbackDevice: Sendable {
         defer { _ = close(backingDescriptor) }
 
         var info = stat()
-        guard fstat(backingDescriptor, &info) == 0 else {
+        guard unsafe fstat(backingDescriptor, &info) == 0 else {
             throw posixError("stat loop backing file")
         }
         guard (info.st_mode & S_IFMT) == S_IFREG else {
@@ -107,7 +107,7 @@ struct LoopbackDevice: Sendable {
             )
         }
 
-        let controlDescriptor = open("/dev/loop-control", O_RDWR | O_CLOEXEC)
+        let controlDescriptor = unsafe open("/dev/loop-control", O_RDWR | O_CLOEXEC)
         guard controlDescriptor >= 0 else {
             throw posixError("open loop control")
         }
@@ -120,7 +120,7 @@ struct LoopbackDevice: Sendable {
         }
 
         let path = "/dev/loop\(index)"
-        let descriptor = open(path, O_RDWR | O_CLOEXEC)
+        let descriptor = unsafe open(path, O_RDWR | O_CLOEXEC)
         guard descriptor >= 0 else {
             throw posixError("open loop device")
         }
@@ -212,6 +212,7 @@ struct LoopbackDevice: Sendable {
         rootDescriptor: Int32,
         relativePath: String
     ) throws -> Int32 {
+        #if compiler(>=6.4)
         let descriptor = relativePath.withCString { relativePath in
             var how = cz_open_how(
                 flags: UInt64(O_RDWR | O_CLOEXEC | O_NOFOLLOW),
@@ -223,13 +224,33 @@ struct LoopbackDevice: Sendable {
                         | RESOLVE_NO_XDEV
                 )
             )
-            return CZ_openat2(
+            return unsafe CZ_openat2(
                 rootDescriptor,
                 relativePath,
                 &how,
                 MemoryLayout<cz_open_how>.size
             )
         }
+        #else
+        let descriptor = unsafe relativePath.withCString { relativePath in
+            var how = cz_open_how(
+                flags: UInt64(O_RDWR | O_CLOEXEC | O_NOFOLLOW),
+                mode: 0,
+                resolve: UInt64(
+                    RESOLVE_BENEATH
+                        | RESOLVE_NO_MAGICLINKS
+                        | RESOLVE_NO_SYMLINKS
+                        | RESOLVE_NO_XDEV
+                )
+            )
+            return unsafe CZ_openat2(
+                rootDescriptor,
+                relativePath,
+                &how,
+                MemoryLayout<cz_open_how>.size
+            )
+        }
+        #endif
         guard descriptor >= 0 else {
             throw posixError("open loop backing file")
         }

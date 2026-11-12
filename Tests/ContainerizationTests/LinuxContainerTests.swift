@@ -16,6 +16,7 @@
 
 import ContainerizationError
 import ContainerizationExtras
+import ContainerizationOCI
 import ContainerizationOS
 import Foundation
 import Synchronization
@@ -25,8 +26,6 @@ import struct ContainerizationOCI.ImageConfig
 import struct ContainerizationOCI.LinuxDevice
 import struct ContainerizationOCI.LinuxDeviceCgroup
 import enum ContainerizationOCI.LinuxNamespaceType
-import struct ContainerizationOCI.LinuxSeccomp
-import struct ContainerizationOCI.LinuxSyscall
 import struct ContainerizationOCI.Mount
 import struct ContainerizationOCI.Spec
 
@@ -134,7 +133,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(arguments: ["/bin/sh"], oomScoreAdj: -250))
         )
 
-        let process = try #require(try container.generateRuntimeSpec(for: .containerInit).process)
+        let process = try #require(container.generateRuntimeSpec(for: .containerInit).process)
         #expect(process.oomScoreAdj == -250)
     }
 
@@ -208,19 +207,19 @@ struct LinuxContainerTests {
             weight: 500,
             leafWeight: 300,
             weightDevice: [
-                LinuxWeightDevice(major: 8, minor: 0, weight: 700, leafWeight: 400)
+                Containerization.LinuxWeightDevice(major: 8, minor: 0, weight: 700, leafWeight: 400)
             ],
             throttleReadBpsDevice: [
-                LinuxThrottleDevice(major: 8, minor: 16, rate: 1_048_576)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 16, rate: 1_048_576)
             ],
             throttleWriteBpsDevice: [
-                LinuxThrottleDevice(major: 8, minor: 32, rate: 2_097_152)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 32, rate: 2_097_152)
             ],
             throttleReadIOPSDevice: [
-                LinuxThrottleDevice(major: 8, minor: 48, rate: 1_000)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 48, rate: 1_000)
             ],
             throttleWriteIOPSDevice: [
-                LinuxThrottleDevice(major: 8, minor: 64, rate: 2_000)
+                Containerization.LinuxThrottleDevice(major: 8, minor: 64, rate: 2_000)
             ]
         )
 
@@ -231,7 +230,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), blockIO: blockIO)
         )
 
-        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
+        let resources = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources)
         let specBlockIO = try #require(resources.blockIO)
 
         #expect(specBlockIO.weight == 500)
@@ -254,7 +253,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), memoryReservationInBytes: Int64(512.mib()))
         )
 
-        let memory = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory)
+        let memory = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory)
         let limit = try #require(memory.limit)
         let reservation = try #require(memory.reservation)
 
@@ -270,7 +269,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), memoryReservationInBytes: .max)
         )
 
-        let reservation = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory?.reservation)
+        let reservation = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory?.reservation)
 
         #expect(reservation == .max)
     }
@@ -286,7 +285,7 @@ struct LinuxContainerTests {
             )
         )
 
-        let memory = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory)
+        let memory = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory)
         let limit = try #require(memory.limit)
         let swap = try #require(memory.swap)
 
@@ -302,7 +301,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), memorySwapLimitInBytes: -1)
         )
 
-        let swap = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory?.swap)
+        let swap = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources?.memory?.swap)
 
         #expect(swap == -1)
     }
@@ -315,7 +314,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), pidsLimit: 128)
         )
 
-        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
+        let resources = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.pids?.limit == 128)
     }
@@ -328,7 +327,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpuShares: 512)
         )
 
-        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
+        let resources = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.cpu?.shares == 512)
     }
@@ -341,7 +340,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpuSet: "0-1")
         )
 
-        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
+        let resources = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.cpu?.cpus == "0-1")
     }
@@ -354,7 +353,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpus: 1, cpuQuotaInMicroseconds: 25_000)
         )
 
-        let cpu = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
+        let cpu = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
 
         #expect(cpu.quota == 25_000)
         #expect(cpu.period == 100_000)
@@ -373,7 +372,7 @@ struct LinuxContainerTests {
             )
         )
 
-        let cpu = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
+        let cpu = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
 
         #expect(cpu.quota == 50_000)
         #expect(cpu.period == 200_000)
@@ -387,7 +386,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cpus: 1, cpuPeriodInMicroseconds: 200_000)
         )
 
-        let cpu = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
+        let cpu = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources?.cpu)
 
         #expect(cpu.quota == nil)
         #expect(cpu.period == 200_000)
@@ -406,7 +405,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), deviceCgroupRules: deviceRules)
         )
 
-        let resources = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.resources)
+        let resources = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.resources)
 
         #expect(resources.devices.count == 2)
         #expect(resources.devices[0].allow)
@@ -441,7 +440,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), devices: devices)
         )
 
-        let specDevices = try #require(try container.generateRuntimeSpec(for: .containerInit).linux?.devices)
+        let specDevices = try #require(container.generateRuntimeSpec(for: .containerInit).linux?.devices)
 
         #expect(specDevices.count == 1)
         #expect(specDevices[0].path == "/dev/xnull")
@@ -517,7 +516,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), cgroupParent: "build/interactive")
         )
 
-        let linux = try #require(try container.generateRuntimeSpec(for: .containerInit).linux)
+        let linux = try #require(container.generateRuntimeSpec(for: .containerInit).linux)
         #expect(linux.cgroupsPath == "/container/build/interactive/cgroup-parent-test")
     }
 
@@ -574,7 +573,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), privateUserNamespace: true)
         )
 
-        let linux = try #require(try container.generateRuntimeSpec(for: .containerInit).linux)
+        let linux = try #require(container.generateRuntimeSpec(for: .containerInit).linux)
         #expect(linux.namespaces.contains { $0.type == .user && $0.path.isEmpty })
         let uidMapping = try #require(linux.uidMappings.first)
         let gidMapping = try #require(linux.gidMappings.first)
@@ -619,10 +618,10 @@ struct LinuxContainerTests {
             "memory-target-test",
             rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
             vmm: manager,
-            vm: VMResources(cpus: 1, memoryInBytes: 576.mib()),
             configuration: .init(
                 process: .init(),
-                memoryInBytes: 512.mib()
+                memoryInBytes: 512.mib(),
+                memoryOverhead: 64.mib()
             )
         )
 
@@ -631,21 +630,6 @@ struct LinuxContainerTests {
 
         let vm = try #require(manager.vm)
         #expect(vm.memoryTargets == [320.mib()])
-    }
-
-    @Test func liveMemoryTargetWithOversubscribedWorkloadDoesNotUnderflow() async throws {
-        let manager = RecordingVirtualMachineManager()
-        let container = try LinuxContainer(
-            "oversubscribed-memory-target-test",
-            rootfs: .block(format: "ext4", source: "/tmp/rootfs.img", destination: "/"),
-            vmm: manager,
-            vm: VMResources(cpus: 1, memoryInBytes: 256.mib()),
-            configuration: .init(process: .init(), memoryInBytes: 512.mib())
-        )
-        try await container.create()
-        try await container.setMemoryTarget(128.mib())
-        let vm = try #require(manager.vm)
-        #expect(vm.memoryTargets == [128.mib()])
     }
 
     @Test func liveMemoryTargetRequiresCreatedContainer() async throws {
@@ -1613,7 +1597,8 @@ private final class RecordingVirtualMachineAgent: VirtualMachineAgent, @unchecke
     }
 }
 
-extension LinuxContainerTests {
+@Suite
+struct UpstreamLinuxContainerTests {
     /// A `VirtualMachineManager` that cannot create anything. `LinuxContainer.init`
     /// only stores the manager, so nothing below should reach `create`.
     private struct UnusableVMM: VirtualMachineManager {
@@ -1679,6 +1664,26 @@ extension LinuxContainerTests {
         }
     }
 
+    @Test func inferredVMResourcesIncludeConfiguredOverhead() throws {
+        let container = try LinuxContainer("inferred-size", rootfs: Self.testRootfs, vmm: UnusableVMM()) { config in
+            config.cpus = 2
+            config.cpuOverhead = 3
+            config.memoryInBytes = 512.mib()
+            config.memoryOverhead = 64.mib()
+        }
+        #expect(container.vm.cpus == 5)
+        #expect(container.vm.memoryInBytes == 576.mib())
+    }
+
+    @Test func inferredVMResourcesRejectCPUOverflow() throws {
+        #expect(throws: ContainerizationError.self) {
+            _ = try LinuxContainer("overflow-size", rootfs: Self.testRootfs, vmm: UnusableVMM()) { config in
+                config.cpus = Int.max
+                config.cpuOverhead = 1
+            }
+        }
+    }
+
     @Test func vmResourcesDefaults() {
         for resources in [VMResources(), VMResources.default] {
             #expect(resources.cpus == 4)
@@ -1737,6 +1742,34 @@ extension LinuxContainerTests {
         let vmConfig = try #require(vmm.capturedConfiguration)
         #expect(vmConfig.cpus == 8)
         #expect(vmConfig.memoryInBytes == 2048.mib())
+    }
+
+    @Test func runtimeSpecCarriesUnifiedResources() throws {
+        let container = try LinuxContainer(
+            "unified-test",
+            rootfs: .block(format: "ext4", source: "/dev/null", destination: "/", options: []),
+            vmm: StubVMM()
+        ) { config in
+            config.process.arguments = ["/bin/true"]
+            config.unified = ["memory.oom.group": "1"]
+        }
+
+        let spec = try container.generateRuntimeSpec(for: .containerInit)
+        #expect(spec.linux?.resources?.unified == ["memory.oom.group": "1"])
+        #expect(spec.linux?.resources?.memory?.limit == Int64(1024.mib()))
+    }
+
+    @Test func runtimeSpecOmitsEmptyUnifiedResources() throws {
+        let container = try LinuxContainer(
+            "unified-empty-test",
+            rootfs: .block(format: "ext4", source: "/dev/null", destination: "/", options: []),
+            vmm: StubVMM()
+        ) { config in
+            config.process.arguments = ["/bin/true"]
+        }
+
+        let spec = try container.generateRuntimeSpec(for: .containerInit)
+        #expect(spec.linux?.resources?.unified?.isEmpty ?? true)
     }
 
     @Test func containerConfigurationDefaultLimits() {
@@ -1799,13 +1832,6 @@ extension LinuxContainerTests {
         let unfilteredPod = try LinuxPod("pod-override-without-runtime", vmm: UnusableVMM()) { _ in }
         await #expect(throws: ContainerizationError.self) {
             try await unfilteredPod.addContainer("c", rootfs: Self.testRootfs) { config in
-                config.seccompProfile = .default
-            }
-        }
-
-        await #expect(throws: Never.self) {
-            try await unfilteredPod.addContainer("own-runtime", rootfs: Self.testRootfs) { config in
-                config.ociRuntimePath = "/sbin/runc"
                 config.seccompProfile = .default
             }
         }

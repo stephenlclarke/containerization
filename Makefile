@@ -22,7 +22,10 @@ WARNINGS_AS_ERRORS ?= true
 SCRATCH_ROOT ?=
 SCRATCH_PATH ?= $(if $(SCRATCH_ROOT),$(SCRATCH_ROOT)/build-containerization)
 SWIFT_SCRATCH_FLAGS := $(if $(SCRATCH_PATH),--scratch-path $(SCRATCH_PATH))
-SWIFT_CONFIGURATION := $(if $(filter-out false,$(WARNINGS_AS_ERRORS)),-Xswiftc -warnings-as-errors) --disable-automatic-resolution $(SWIFT_SCRATCH_FLAGS)
+# Extra swift build flags, appended last so callers can add to (rather than
+# replace) the configuration above.
+SWIFT_CONFIGURATION_EXTRA ?=
+SWIFT_CONFIGURATION := $(if $(filter-out false,$(WARNINGS_AS_ERRORS)),-Xswiftc -warnings-as-errors) --disable-automatic-resolution $(SWIFT_SCRATCH_FLAGS) $(SWIFT_CONFIGURATION_EXTRA)
 
 # Commonly used locations
 UNAME_S := $(shell uname -s)
@@ -48,6 +51,8 @@ endif
 # Comma-separated; a test is kept if its name contains ANY of the substrings.
 FILTER ?=
 linux_integration_filter = $(if $(strip $(FILTER)),--filter '$(strip $(FILTER))')
+# `make linux-test FILTER=VolumeSubpathTests` passes FILTER to `swift test --filter`.
+linux_test_filter = $(if $(strip $(FILTER)),--filter '$(strip $(FILTER))')
 ifeq ($(UNAME_S),Darwin)
 SWIFT ?= /usr/bin/swift
 else
@@ -134,7 +139,7 @@ define linux_run
 		echo "Creating Linux build volume $(LINUX_BUILD_VOLUME)..."; \
 		container volume create $(LINUX_BUILD_VOLUME) > /dev/null; \
 	fi
-	@container run --rm $(2) --memory 16gb --cpus 8 \
+	@container run --tty --rm $(2) --memory 16gb --cpus 8 \
 		--env SCRATCH_ROOT=$(LINUX_SCRATCH_ROOT) \
 		--env XDG_CACHE_HOME=$(LINUX_SHARED_CACHE) \
 		-v $(ROOT_DIR):/workspace \
@@ -162,7 +167,7 @@ endif
 ifeq ($(UNAME_S),Darwin)
 .PHONY: linux-image
 linux-image:
-	container build \
+	@container build \
 		--progress plain \
 		-f images/linux-dev/Dockerfile \
 		--build-arg SWIFT_VERSION=$(SWIFT_VERSION) \
@@ -182,7 +187,7 @@ endif
 
 .PHONY: linux-test
 linux-test:
-	$(call linux_run,swift test $(SWIFT_CONFIGURATION) --scratch-path $(LINUX_SCRATCH_ROOT)/build-containerization)
+	$(call linux_run,swift test $(SWIFT_CONFIGURATION) --scratch-path $(LINUX_SCRATCH_ROOT)/build-containerization $(linux_test_filter))
 
 .PHONY: build-cloud-hypervisor
 # Build cloud-hypervisor from the patched source at .local/cloud-hypervisor and
@@ -403,7 +408,7 @@ update-libarchive-source:
 .PHONY: test
 test:
 	@echo Testing all test targets...
-	@$(SWIFT) test $(SWIFT_CONFIGURATION)
+	@$(SWIFT) test --enable-code-coverage $(SWIFT_CONFIGURATION) $(if $(strip $(FILTER)),--filter '$(strip $(FILTER))')
 
 .PHONY: coverage-tools-test
 coverage-tools-test:
@@ -564,20 +569,18 @@ cleancontent:
 	@echo Cleaning the content...
 	@rm -rf ~/Library/Application\ Support/com.apple.containerization
 
-.PHONY: examples
-examples:
-	@echo Building examples...
-	@mkdir -p bin
-	@"$(MAKE)" -C examples/sandboxy build BUILD_CONFIGURATION=$(BUILD_CONFIGURATION)
-	@install examples/sandboxy/bin/sandboxy ./bin/
-	@codesign --force --sign - --timestamp=none --entitlements=signing/vz.entitlements bin/sandboxy
+.PHONY: cleanlinux
+cleanlinux:
+	@echo Cleaning Linux build files...
+	@container image delete --force $(LINUX_DEV_IMAGE) > /dev/null 2>&1 || true
+	@container volume delete $(LINUX_BUILD_VOLUME) > /dev/null 2>&1 || true
 
 .PHONY: clean
-clean:
+clean: cleanlinux
 	@echo Cleaning build files...
 	@rm -rf bin/
 	@rm -rf _site/
 	@rm -rf _serve/
-	@rm -f $(COV_REPORT_FILE)
+	@rm -rf $(COV_REPORT_DIR)
 	@$(SWIFT) package clean
 	@"$(MAKE)" -C vminitd clean

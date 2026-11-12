@@ -57,13 +57,13 @@ struct ExecCommand: ParsableCommand {
 
     static func userNamespaceMatchesCurrent(parentPid: Int) throws -> Bool {
         var currentNamespace = stat()
-        guard stat("/proc/self/ns/user", &currentNamespace) == 0 else {
+        guard unsafe stat("/proc/self/ns/user", &currentNamespace) == 0 else {
             throw App.Errno(stage: "stat(/proc/self/ns/user)")
         }
 
         let targetPath = "/proc/\(parentPid)/ns/user"
         var targetNamespace = stat()
-        guard stat(targetPath, &targetNamespace) == 0 else {
+        guard unsafe stat(targetPath, &targetNamespace) == 0 else {
             throw App.Errno(stage: "stat(\(targetPath))")
         }
 
@@ -126,9 +126,15 @@ struct ExecCommand: ParsableCommand {
         if processID == 0 {  // child
             // Wait for the grandparent to tell us that they acked our pid.
             var pidAckBuffer = [UInt8](repeating: 0, count: App.ackPid.count)
+            #if compiler(>=6.4)
             let pidAckBytesRead = try pidAckBuffer.withUnsafeMutableBytes { buffer in
-                try ackPipe.read(into: buffer)
+                unsafe try ackPipe.read(into: buffer)
             }
+            #else
+            let pidAckBytesRead = unsafe try pidAckBuffer.withUnsafeMutableBytes { buffer in
+                unsafe try ackPipe.read(into: buffer)
+            }
+            #endif
             guard pidAckBytesRead > 0 else {
                 throw App.Failure(message: "read ack pipe")
             }
@@ -147,15 +153,27 @@ struct ExecCommand: ParsableCommand {
                 try pty.configureStdIO()
                 var masterFD = pty.master
 
+                #if compiler(>=6.4)
                 try withUnsafeBytes(of: &masterFD) { bytes in
-                    _ = try syncPipe.write(bytes)
+                    _ = unsafe try syncPipe.write(bytes)
                 }
+                #else
+                unsafe try withUnsafeBytes(of: &masterFD) { bytes in
+                    _ = unsafe try syncPipe.write(bytes)
+                }
+                #endif
 
                 // Wait for the grandparent to tell us that they acked our console.
                 var consoleAckBuffer = [UInt8](repeating: 0, count: App.ackConsole.count)
+                #if compiler(>=6.4)
                 let consoleAckBytesRead = try consoleAckBuffer.withUnsafeMutableBytes { buffer in
-                    try ackPipe.read(into: buffer)
+                    unsafe try ackPipe.read(into: buffer)
                 }
+                #else
+                let consoleAckBytesRead = unsafe try consoleAckBuffer.withUnsafeMutableBytes { buffer in
+                    unsafe try ackPipe.read(into: buffer)
+                }
+                #endif
                 guard consoleAckBytesRead > 0 else {
                     throw App.Failure(message: "read ack pipe")
                 }
@@ -197,9 +215,15 @@ struct ExecCommand: ParsableCommand {
         } else {  // parent process
             // Send our child's pid to our parent before we exit.
             var childPid = processID
+            #if compiler(>=6.4)
             try withUnsafeBytes(of: &childPid) { bytes in
-                _ = try syncPipe.write(bytes)
+                _ = unsafe try syncPipe.write(bytes)
             }
+            #else
+            unsafe try withUnsafeBytes(of: &childPid) { bytes in
+                _ = unsafe try syncPipe.write(bytes)
+            }
+            #endif
         }
     }
 }

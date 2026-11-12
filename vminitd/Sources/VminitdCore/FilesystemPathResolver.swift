@@ -24,14 +24,25 @@ enum FilesystemPathResolver {
     /// `RESOLVE_NO_MAGICLINKS` blocks procfs links that can reference another
     /// process's filesystem context.
     static func open(root: Int32, path: String, flags: Int32) -> Int32 {
+        #if compiler(>=6.4)
         path.withCString { path in
             var how = cz_open_how(
                 flags: UInt64(flags),
                 mode: 0,
                 resolve: UInt64(RESOLVE_IN_ROOT | RESOLVE_NO_MAGICLINKS)
             )
-            return CZ_openat2(root, path, &how, MemoryLayout<cz_open_how>.size)
+            return unsafe CZ_openat2(root, path, &how, MemoryLayout<cz_open_how>.size)
         }
+        #else
+        unsafe path.withCString { path in
+            var how = cz_open_how(
+                flags: UInt64(flags),
+                mode: 0,
+                resolve: UInt64(RESOLVE_IN_ROOT | RESOLVE_NO_MAGICLINKS)
+            )
+            return unsafe CZ_openat2(root, path, &how, MemoryLayout<cz_open_how>.size)
+        }
+        #endif
     }
 }
 
