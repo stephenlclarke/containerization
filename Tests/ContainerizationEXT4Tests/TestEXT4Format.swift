@@ -252,6 +252,7 @@ struct Ext4FormatTests: ~Copyable {
             try formatter.close()
 
             let file = try FileHandle(forReadingFrom: fsPath.url)
+            defer { try? file.close() }
             fsync(file.fileDescriptor)
 
             let fileSize = try file.seekToEnd()
@@ -320,6 +321,7 @@ struct Ext4FormatTests: ~Copyable {
             try formatter.close()
 
             let file = try FileHandle(forReadingFrom: fsPath.url)
+            defer { try? file.close() }
             fsync(file.fileDescriptor)
 
             let fileSize = try file.seekToEnd()
@@ -349,6 +351,7 @@ struct Ext4FormatTests: ~Copyable {
         try formatter.close()
 
         let file = try FileHandle(forReadingFrom: fsPath.url)
+        defer { try? file.close() }
         #expect(try file.seekToEnd() == 128.mib())
     }
 
@@ -396,6 +399,7 @@ struct Ext4FormatTests: ~Copyable {
             try formatter.close()
 
             let file = try FileHandle(forReadingFrom: fsPath.url)
+            defer { try? file.close() }
             let fileSize = try file.seekToEnd()
             let ext4 = try EXT4.EXT4Reader(blockDevice: fsPath)
             let sb = ext4.superBlock
@@ -464,16 +468,17 @@ struct Ext4FormatEmptyRangeTests {
         try formatter.close()
 
         let file = try FileHandle(forReadingFrom: fsPath.url)
+        defer { try? file.close() }
         #expect(try file.seekToEnd() == 160.mib())
 
         let ext4 = try EXT4.EXT4Reader(blockDevice: fsPath)
         #expect(ext4.superBlock.blocksCountLow == 40_960)
 
         let partialGroup = try ext4.getGroupDescriptor(1)
-        #expect(partialGroup.freeBlocksCountLow == 7_678)
+        #expect(partialGroup.freeBlocksCountLow == 8_192)  // Metadata is packed into the first group.
     }
 
-    @Test func tinyLastBlockGroupIsRoundedForMetadata() throws {
+    @Test func tinyLastBlockGroupUsesPackedMetadata() throws {
         let fsPath = FilePath(
             FileManager.default.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString, isDirectory: false))
@@ -486,10 +491,12 @@ struct Ext4FormatEmptyRangeTests {
         let filesystemBlocks = UInt64(ext4.superBlock.blocksCountLow)
         let inodeTableBlocks =
             UInt64(ext4.superBlock.inodesPerGroup) * UInt64(EXT4.InodeSize) / ext4.blockSize
-        let minimumPartialGroupBlocks = inodeTableBlocks + 2
-        let expectedBlocks = UInt64(ext4.superBlock.blocksPerGroup) + minimumPartialGroupBlocks
+        // Apple now packs this group's metadata into the first group.
+        // The last group can contain only the one requested data block.
+        let expectedBlocks = UInt64(ext4.superBlock.blocksPerGroup) + 1
 
         let file = try FileHandle(forReadingFrom: fsPath.url)
+        defer { try? file.close() }
         #expect(try file.seekToEnd() == expectedBlocks * ext4.blockSize)
         #expect(filesystemBlocks == expectedBlocks)
 

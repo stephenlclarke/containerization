@@ -143,11 +143,19 @@ extension App {
     static func fixStdioPerms(user: ContainerizationOCI.User) throws {
         for i in 0...2 {
             var fdStat = stat()
+            #if compiler(>=6.4)
+            try withUnsafeMutablePointer(to: &fdStat) { pointer in
+                guard unsafe fstat(Int32(i), pointer) == 0 else {
+                    throw App.Errno(stage: "fstat(fd)")
+                }
+            }
+            #else
             unsafe try withUnsafeMutablePointer(to: &fdStat) { pointer in
                 guard unsafe fstat(Int32(i), pointer) == 0 else {
                     throw App.Errno(stage: "fstat(fd)")
                 }
             }
+            #endif
 
             let desired = uid_t(user.uid)
             if fdStat.st_uid != desired {
@@ -279,9 +287,15 @@ extension App {
         }
 
         let bytes = Array(errorMessage.utf8)
+        #if compiler(>=6.4)
+        _ = try? bytes.withUnsafeBytes { buffer in
+            unsafe try errorPipe.write(buffer)
+        }
+        #else
         _ = unsafe try? bytes.withUnsafeBytes { buffer in
             unsafe try errorPipe.write(buffer)
         }
+        #endif
         try? errorPipe.close()
     }
 }

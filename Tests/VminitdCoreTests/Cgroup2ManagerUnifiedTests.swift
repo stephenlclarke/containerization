@@ -17,6 +17,7 @@
 #if os(Linux)
 
 import Cgroup
+import ContainerizationError
 import ContainerizationOCI
 import Foundation
 import Testing
@@ -84,10 +85,11 @@ struct Cgroup2ManagerUnifiedTests {
         let (cg, dir) = try makeCgroup(files: ["memory.max"])
         defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
         #expect(!Cgroup2Manager.isUnifiedFileName(key))
-        #expect(throws: Cgroup2Manager.Error.self) {
+        let error = #expect(throws: ContainerizationError.self) {
             try cg.applyResources(
                 resources: LinuxResources(memory: LinuxMemory(limit: 1024), unified: [key: "1", "memory.oom.group": "1"]))
         }
+        #expect(error?.code == .invalidArgument)
         #expect(try read(dir, "memory.max") == "")
     }
 

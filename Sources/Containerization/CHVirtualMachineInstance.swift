@@ -635,7 +635,7 @@ extension CHVirtualMachineInstance {
                                 socketPath: socket,
                                 sharedDir: URL(fileURLWithPath: source),
                                 readonly: entry.mounts.allSatisfy { $0.options.contains("ro") },
-                                options: config.virtiofsd
+                                options: self.config.virtiofsd
                             ),
                             logger: logger
                         )

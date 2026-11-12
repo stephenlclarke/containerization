@@ -57,6 +57,15 @@ struct OSFile: Sendable {
         let capacity = buffer.count
         var bytesRead: Int = 0
         while true {
+            #if compiler(>=6.4)
+            let n = buffer.withUnsafeMutableBytes { bytes in
+                unsafe Foundation.read(
+                    self.fd,
+                    bytes.baseAddress.map { unsafe $0 + bytesRead },
+                    capacity - bytesRead
+                )
+            }
+            #else
             let n = unsafe buffer.withUnsafeMutableBytes { bytes in
                 unsafe Foundation.read(
                     self.fd,
@@ -64,6 +73,7 @@ struct OSFile: Sendable {
                     capacity - bytesRead
                 )
             }
+            #endif
             if n == -1 {
                 if errno == EAGAIN || errno == EIO {
                     return (bytesRead, .again)
@@ -91,6 +101,15 @@ struct OSFile: Sendable {
         let total = buffer.count
         var bytesWrote: Int = 0
         while true {
+            #if compiler(>=6.4)
+            let n = buffer.withUnsafeBytes { bytes in
+                unsafe Foundation.write(
+                    self.fd,
+                    bytes.baseAddress.map { unsafe $0 + bytesWrote },
+                    total - bytesWrote
+                )
+            }
+            #else
             let n = unsafe buffer.withUnsafeBytes { bytes in
                 unsafe Foundation.write(
                     self.fd,
@@ -98,6 +117,7 @@ struct OSFile: Sendable {
                     total - bytesWrote
                 )
             }
+            #endif
             if n == -1 {
                 if errno == EAGAIN || errno == EIO {
                     return (bytesWrote, .again)

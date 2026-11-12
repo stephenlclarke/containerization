@@ -149,7 +149,7 @@ struct LinuxContainerTests {
             configuration: .init(process: .init(), annotations: annotations)
         )
 
-        #expect(container.generateRuntimeSpec(for: .containerInit).annotations == annotations)
+        #expect(try container.generateRuntimeSpec(for: .containerInit).annotations == annotations)
     }
 
     @Test func defaultCapabilitiesAreRestrictedOCISet() {
@@ -1661,6 +1661,26 @@ struct UpstreamLinuxContainerTests {
         config.ociRuntimePath = "/sbin/runc"
         #expect(throws: Never.self) {
             _ = try LinuxContainer("custom-seccomp-with-runtime", rootfs: Self.testRootfs, vmm: UnusableVMM(), configuration: config)
+        }
+    }
+
+    @Test func inferredVMResourcesIncludeConfiguredOverhead() throws {
+        let container = try LinuxContainer("inferred-size", rootfs: Self.testRootfs, vmm: UnusableVMM()) { config in
+            config.cpus = 2
+            config.cpuOverhead = 3
+            config.memoryInBytes = 512.mib()
+            config.memoryOverhead = 64.mib()
+        }
+        #expect(container.vm.cpus == 5)
+        #expect(container.vm.memoryInBytes == 576.mib())
+    }
+
+    @Test func inferredVMResourcesRejectCPUOverflow() throws {
+        #expect(throws: ContainerizationError.self) {
+            _ = try LinuxContainer("overflow-size", rootfs: Self.testRootfs, vmm: UnusableVMM()) { config in
+                config.cpus = Int.max
+                config.cpuOverhead = 1
+            }
         }
     }
 

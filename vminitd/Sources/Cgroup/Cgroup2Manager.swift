@@ -172,7 +172,11 @@ public struct Cgroup2Manager: Sendable {
 
         let bytes = Array(value.utf8)
         let res = Syscall.retrying {
+            #if compiler(>=6.4)
+            bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #else
             unsafe bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #endif
         }
         if res != bytes.count {
             let errorNumber = res == -1 ? errno : EIO
@@ -490,10 +494,10 @@ public struct Cgroup2Manager: Sendable {
     }
 
     private static func userName(for uid: UInt32) -> String {
-        guard let entry = getpwuid(uid_t(uid)), let name = entry.pointee.pw_name else {
+        guard let entry = unsafe getpwuid(uid_t(uid)), let name = unsafe entry.pointee.pw_name else {
             return String(uid)
         }
-        return String(cString: name)
+        return unsafe String(cString: name)
     }
 
     private static func isMissingProcessFileError(_ error: any Swift.Error) -> Bool {
@@ -590,18 +594,6 @@ public struct Cgroup2Manager: Sendable {
             try Self.writeValue(path: self.path, value: cpu.cpus, fileName: "cpuset.cpus")
         }
 
-        // `unified` goes last, so a key in it wins over the typed fields above, as in runc.
-        // Each key is a file in the cgroup directory and its value is written as is.
-        // For example `memory.oom.group: "1"` makes an OOM kill take every process of the
-        // container, so the container exits as a whole instead of losing one process.
-        // Sorted, so the write order (and the first failure) does not depend on hashing.
-        for key in unified.keys.sorted() {
-            try Self.writeValue(
-                path: self.path,
-                value: unified[key]!,
-                fileName: key
-            )
-        }
     }
 
     /// Whether `key` names a file directly in the cgroup directory: not empty, not `.`

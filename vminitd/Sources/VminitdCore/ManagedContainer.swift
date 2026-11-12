@@ -70,17 +70,13 @@ public actor ManagedContainer {
             cgroupsPath = "/container/\(id)"
         }
 
-        // An OCI runtime refuses a `net.*` sysctl unless the container's spec owns a
-        // network namespace, which none do here — containers share the VM's, which is
-        // how they get the pod's address. Apply those keys directly instead and hand
-        // the runtime only the rest. The remaining keys are ipc- or uts-namespaced and
-        // the spec does declare those, so the runtime accepts them.
-        if ociRuntimePath != nil, let sysctls = spec.linux?.sysctl, !sysctls.isEmpty {
-            let networkKeys = sysctls.filter { $0.key.hasPrefix("net.") }
-            if !networkKeys.isEmpty {
-                try Self.applyNetworkSysctls(networkKeys, log: log)
-                spec.linux?.sysctl = sysctls.filter { !$0.key.hasPrefix("net.") }
-            }
+        // When no network namespace is declared, the OCI runtime uses the VM network.
+        // Private or joined namespaces must receive their sysctls through the runtime.
+        let networkKeys = Self.vmNetworkSysctls(spec: spec, ociRuntimePath: ociRuntimePath)
+        if !networkKeys.isEmpty {
+            try Self.applyNetworkSysctls(networkKeys, log: log)
+            let remainingSysctls = spec.linux?.sysctl?.filter { !networkKeys.keys.contains($0.key) }
+            spec.linux?.sysctl = remainingSysctls
         }
 
         // Subpath mounts point at staging binds from here on; delete() removes them.
@@ -397,12 +393,18 @@ extension ContainerizationOCI.Bundle {
 }
 
 extension ManagedContainer {
+    static func vmNetworkSysctls(spec: Spec, ociRuntimePath: String?) -> [String: String] {
+        guard ociRuntimePath != nil,
+            !(spec.linux?.namespaces.contains(where: { $0.type == .network }) ?? false)
+        else { return [:] }
+        return spec.linux?.sysctl?.filter { $0.key.hasPrefix("net.") } ?? [:]
+    }
+
     /// Writes `net.*` sysctls to the VM's own `/proc/sys`.
     ///
-    /// vminitd is PID 1 in the VM and nothing unshares a network namespace, so these
-    /// land in the namespace every container in the pod shares — the scope a pod-level
-    /// sysctl means. Values are written once per container that declares them, which is
-    /// idempotent.
+    /// The caller selects only workloads that use the VM network namespace.
+    /// Private and joined namespaces receive their settings through the OCI runtime.
+    /// Repeated writes apply the same value.
     static func applyNetworkSysctls(_ sysctls: [String: String], log: Logger) throws {
         for (key, value) in sysctls.sorted(by: { $0.key < $1.key }) {
             let path = "/proc/sys/" + key.replacingOccurrences(of: ".", with: "/")
@@ -419,7 +421,11 @@ extension ManagedContainer {
             defer { close(fd) }
 
             let bytes = Array(value.utf8)
+            #if compiler(>=6.4)
+            let written = bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #else
             let written = unsafe bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #endif
             let writeErrno = errno
             if written != bytes.count {
                 throw ContainerizationError(

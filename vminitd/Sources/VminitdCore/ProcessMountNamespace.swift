@@ -28,7 +28,7 @@ final class ProcessMountNamespace: Sendable {
     private let fileDescriptor: Int32
 
     init(pid: Int32) throws {
-        let fileDescriptor = Foundation.open("/proc/\(pid)/ns/mnt", O_RDONLY | O_CLOEXEC)
+        let fileDescriptor = unsafe Foundation.open("/proc/\(pid)/ns/mnt", O_RDONLY | O_CLOEXEC)
         guard fileDescriptor >= 0 else {
             throw POSIXError.fromErrno()
         }
@@ -54,7 +54,7 @@ final class ProcessRoot: Sendable {
     private let fileDescriptor: Int32
 
     init(pid: Int32) throws {
-        let fileDescriptor = Foundation.open("/proc/\(pid)/root", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        let fileDescriptor = unsafe Foundation.open("/proc/\(pid)/root", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard fileDescriptor >= 0 else {
             throw POSIXError.fromErrno()
         }

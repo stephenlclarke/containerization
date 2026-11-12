@@ -602,13 +602,21 @@ public final class LinuxContainer: Container, Sendable {
         }
         self.id = id
         self.vmm = vmm
-        self.vm = try vm ?? VMResources(
-            cpus: configuration.cpus + configuration.cpuOverhead,
-            memoryInBytes: Self.virtualMachineMemoryTarget(
-                workloadMemoryInBytes: configuration.memoryInBytes,
-                overheadInBytes: configuration.memoryOverhead
+        if let vm {
+            self.vm = vm
+        } else {
+            let (cpus, overflow) = configuration.cpus.addingReportingOverflow(configuration.cpuOverhead)
+            guard !overflow, cpus > 0 else {
+                throw ContainerizationError(.invalidArgument, message: "VM CPU count including overhead is out of range")
+            }
+            self.vm = try VMResources(
+                cpus: cpus,
+                memoryInBytes: Self.virtualMachineMemoryTarget(
+                    workloadMemoryInBytes: configuration.memoryInBytes,
+                    overheadInBytes: configuration.memoryOverhead
+                )
             )
-        )
+        }
         self.hostVsockPorts = VsockPortAllocator(base: 0x1000_0000)
         self.guestVsockPorts = Atomic<UInt32>(0x1000_0000)
         self.logger = logger

@@ -583,9 +583,15 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     }
                     var written = 0
                     while written < n {
+                        #if compiler(>=6.4)
+                        let w = buf.withUnsafeBytes { ptr in
+                            unsafe write(fd, ptr.baseAddress! + written, n - written)
+                        }
+                        #else
                         let w = unsafe buf.withUnsafeBytes { ptr in
                             unsafe write(fd, ptr.baseAddress! + written, n - written)
                         }
+                        #endif
                         guard w > 0 else {
                             throw RPCError(
                                 code: .internalError,
@@ -735,9 +741,15 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     }
                     var written = 0
                     while written < n {
+                        #if compiler(>=6.4)
+                        let w = buf.withUnsafeBytes { ptr in
+                            unsafe write(sock.fileDescriptor, ptr.baseAddress! + written, n - written)
+                        }
+                        #else
                         let w = unsafe buf.withUnsafeBytes { ptr in
                             unsafe write(sock.fileDescriptor, ptr.baseAddress! + written, n - written)
                         }
+                        #endif
                         guard w > 0 else {
                             throw RPCError(
                                 code: .internalError,

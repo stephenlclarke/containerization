@@ -145,7 +145,7 @@ extension VsockProxy {
         do {
             try uds.listen()
             if let udsUID, let udsGID,
-                chown(path.path, uid_t(udsUID), gid_t(udsGID)) != 0
+                unsafe chown(path.path, uid_t(udsUID), gid_t(udsGID)) != 0
             {
                 throw currentPOSIXError()
             }
@@ -155,7 +155,7 @@ extension VsockProxy {
             throw error
         }
         if let udsPerms {
-            guard chmod(path.path, mode_t(udsPerms)) == 0 else {
+            guard unsafe chmod(path.path, mode_t(udsPerms)) == 0 else {
                 let error = currentPOSIXError()
                 try? uds.close()
                 try? fm.removeItem(at: path)

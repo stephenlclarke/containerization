@@ -42,7 +42,11 @@ struct IOPairTests {
     }
 
     private func write(_ bytes: [UInt8], to fd: Int32) throws {
+        #if compiler(>=6.4)
+        try #require(bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) } == bytes.count)
+        #else
         unsafe try #require(bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) } == bytes.count)
+        #endif
     }
 
     private func fill(_ fd: Int32) throws -> Int {
@@ -53,7 +57,11 @@ struct IOPairTests {
         let bytes = [UInt8](repeating: 0xAA, count: 4096)
         var total = 0
         while true {
+            #if compiler(>=6.4)
+            let count = bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) }
+            #else
             let count = unsafe bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) }
+            #endif
             if count == -1 {
                 try #require(errno == EAGAIN)
                 return total

@@ -46,7 +46,11 @@ struct OSFileSpliceTests {
         let bytes = [UInt8](repeating: 0xAA, count: 4096)
         var total = 0
         while true {
+            #if compiler(>=6.4)
+            let count = bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) }
+            #else
             let count = unsafe bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) }
+            #endif
             if count == -1 {
                 try #require(errno == EAGAIN)
                 return total
@@ -57,7 +61,11 @@ struct OSFileSpliceTests {
     }
 
     private func write(_ bytes: [UInt8], to fd: Int32) throws {
+        #if compiler(>=6.4)
+        let count = bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) }
+        #else
         let count = unsafe bytes.withUnsafeBytes { unsafe Foundation.write(fd, $0.baseAddress, $0.count) }
+        #endif
         try #require(count == bytes.count)
     }
 
@@ -65,7 +73,11 @@ struct OSFileSpliceTests {
         var bytes = [UInt8](repeating: 0, count: 4096)
         var result: [UInt8] = []
         while true {
+            #if compiler(>=6.4)
+            let count = bytes.withUnsafeMutableBytes { unsafe Foundation.read(fd, $0.baseAddress, $0.count) }
+            #else
             let count = unsafe bytes.withUnsafeMutableBytes { unsafe Foundation.read(fd, $0.baseAddress, $0.count) }
+            #endif
             if count == -1 {
                 try #require(errno == EAGAIN)
                 return result
