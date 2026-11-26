@@ -1852,14 +1852,16 @@ extension IntegrationSuite {
             config.process.arguments = ["sleep", "infinity"]
             config.bootLog = bs.bootLog
         }
-        var connections: [FileHandle] = []
+        var clients: [FileHandle] = []
+        var peers: [FileHandle] = []
         var listener: VsockListener?
 
         func closeConnections() {
-            for connection in connections {
+            for connection in clients + peers {
                 try? connection.close()
             }
-            connections.removeAll()
+            clients.removeAll()
+            peers.removeAll()
         }
 
         func read(from connection: FileHandle, context: String) throws -> Data {
@@ -1889,23 +1891,19 @@ extension IntegrationSuite {
 
             for round in 0..<100 {
                 let silentServer = round.isMultiple(of: 10)
+                let serverCloses = silentServer || round.isMultiple(of: 2)
                 let acceptDeadline = Task {
                     try await Task.sleep(for: .seconds(20))
                     try hostListener.finish()
                 }
                 defer { acceptDeadline.cancel() }
-                var clients: [FileHandle] = []
                 for _ in 0..<16 {
-                    let client = try await vm.dial(guestPort)
-                    connections.append(client)
-                    clients.append(client)
+                    clients.append(try await vm.dial(guestPort))
                 }
-                var peers: [FileHandle] = []
                 for _ in clients {
                     guard let peer = await accepted.next() else {
                         throw IntegrationError.assert(msg: "guest did not connect to the host listener")
                     }
-                    connections.append(peer)
                     peers.append(peer)
                 }
                 acceptDeadline.cancel()
@@ -1922,12 +1920,16 @@ extension IntegrationSuite {
                     if !round.isMultiple(of: 2) {
                         guard try read(from: peer, context: "request EOF in round \(round)").isEmpty else { throw IntegrationError.assert(msg: "expected request EOF") }
                     }
-                    if silentServer {
-                        try peer.close()
-                    } else {
+                    if !silentServer {
                         try peer.write(contentsOf: request)
-                        if round.isMultiple(of: 2) { try peer.close() }
                     }
+                    if serverCloses {
+                        try peer.close()
+                    }
+                }
+                if serverCloses {
+                    // Release the original Virtualization connection as well as its duplicated descriptor.
+                    peers.removeAll()
                 }
                 for (index, client) in clients.enumerated() {
                     let expected = silentServer ? Data() : Data([UInt8(index)])
@@ -1935,7 +1937,7 @@ extension IntegrationSuite {
                         throw IntegrationError.assert(msg: "forwarded socket reply did not match its request")
                     }
                 }
-                if !round.isMultiple(of: 2) {
+                if !serverCloses {
                     for peer in peers {
                         guard shutdown(peer.fileDescriptor, Int32(SHUT_WR)) == 0 else { throw POSIXError.fromErrno() }
                     }
