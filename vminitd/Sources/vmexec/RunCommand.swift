@@ -297,7 +297,7 @@ struct RunCommand: ParsableCommand {
             }
             #else
             let errCode = unsafe spec.hostname.withCString { ptr in
-                unsafe sethostname(ptr, spec.hostname.count)
+                unsafe sethostname(ptr, spec.hostname.utf8.count)
             }
             #endif
             guard errCode == 0 else {

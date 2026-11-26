@@ -661,6 +661,16 @@ struct IntegrationSuite: AsyncParsableCommand {
             Test("container mount sort by depth", testMountsSortedByDepth),
             Test("pod single file mount", testPodSingleFileMount),
 
+            // Root-of-VM processes
+            Test("pod root process capabilities", testPodRootProcessCapabilities),
+            Test("pod root process namespaces", testPodRootProcessNamespaces),
+            Test("pod root process DNS", testPodRootProcessDNS),
+            Test("pod root process cgroup", testPodRootProcessCgroup),
+            Test("pod root process rejects invalid", testPodRootProcessRejectsInvalid),
+            Test("pod virtiofs volume read-only", testPodVirtiofsVolumeReadOnly),
+            Test("pod virtiofs volume writable", testPodVirtiofsVolumeWritable),
+            Test("pod virtiofs volume exec", testPodVirtiofsVolumeExec),
+
             // runc-backed runtime (skipped unless `make fetch-runc` was run)
             Test("runc process true", testRuncProcessTrue),
             Test("runc process false", testRuncProcessFalse),
@@ -692,6 +702,7 @@ struct IntegrationSuite: AsyncParsableCommand {
                 // ContainerManager-based tests (ContainerManager is macOS-only)
                 Test("container stop idempotency", testContainerStopIdempotency),
                 Test("container manager", testContainerManagerCreate),
+                Test("container manager snapshot", testContainerManagerCreateFromSnapshot),
                 Test("container reuse", testContainerReuse),
                 Test("container /dev/console", testContainerDevConsole),
                 Test("container virtio graphics capability classification", testVirtioGPUCapabilityClassification),
@@ -733,6 +744,7 @@ struct IntegrationSuite: AsyncParsableCommand {
                 Test("pod filesystem operation", testPodFilesystemOperation),
                 Test("pod shared disk image volume", testPodSharedDiskImageVolume),
                 Test("pod shared tmpfs volume", testPodSharedTmpfsVolume),
+                Test("pod attach volume duplicate name", testPodAttachVolumeDuplicateName),
 
                 // cctl --block CLI wiring (spawns bin/cctl; skips if unbuilt).
                 // Keep every VM-backed case out of the concurrent lane so an
@@ -789,7 +801,8 @@ struct IntegrationSuite: AsyncParsableCommand {
         // Directory-rootfs hotplug remains CH-only. Block-rootfs hotplug is
         // cross-platform through VZ's unified-share/loop attachment path.
         let linuxOnlyTests: [Test] = [
-            Test("pod hotplug virtiofs rootfs", testPodHotplugVirtiofsRootfs)
+            Test("pod hotplug virtiofs rootfs", testPodHotplugVirtiofsRootfs),
+            Test("pod attach tmpfs volume", testPodAttachTmpfsVolume),
         ]
         let tests: [Test] = crossPlatformTests + linuxOnlyTests
         #endif
