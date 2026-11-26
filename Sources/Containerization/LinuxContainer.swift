@@ -222,6 +222,13 @@ public final class LinuxContainer: Container, Sendable {
         /// UID and GID range. This isolates Linux credentials and capabilities
         /// within the guest; it does not create or join a macOS user namespace.
         public var privateUserNamespace: Bool = false
+        /// Additional CPU cores to allocate for the virtual machine on top
+        /// of the container's configured `cpus` value.
+        public var cpuOverhead: Int = 1
+        /// Additional memory in bytes to allocate for the virtual machine
+        /// on top of the container's configured `memoryInBytes` value.
+        /// The total is aligned to a 1 MiB boundary.
+        public var memoryOverhead: UInt64 = 128.mib()
         /// Virtual graphics device configuration.
         public var graphics: GraphicsConfiguration = .disabled
         /// Legacy virtio-gpu switch. Prefer ``graphics`` to avoid order-dependent configuration.
@@ -246,6 +253,11 @@ public final class LinuxContainer: Container, Sendable {
                 }
             }
         }
+        /// cgroup v2 files to write in the container's cgroup, as OCI
+        /// `linux.resources.unified`: file name to value, for example
+        /// `["memory.oom.group": "1"]`. The guest writes them after the limits
+        /// above, so a key here wins over them, as in runc.
+        public var unified: [String: String] = [:]
 
         public init() {}
 
@@ -285,6 +297,8 @@ public final class LinuxContainer: Container, Sendable {
             hostIPCNamespace: Bool = false,
             hostUTSNamespace: Bool = false,
             privateUserNamespace: Bool = false,
+            cpuOverhead: Int = 1,
+            memoryOverhead: UInt64 = 128.mib(),
             graphicsDevice: Bool = false,
             graphicsDisplay: Bool = false,
             graphics: GraphicsConfiguration? = nil
@@ -324,6 +338,8 @@ public final class LinuxContainer: Container, Sendable {
             self.hostIPCNamespace = hostIPCNamespace
             self.hostUTSNamespace = hostUTSNamespace
             self.privateUserNamespace = privateUserNamespace
+            self.cpuOverhead = cpuOverhead
+            self.memoryOverhead = memoryOverhead
             self.graphics = graphics ?? (graphicsDisplay ? .display() : (graphicsDevice ? .virtioDevice : .disabled))
         }
     }
@@ -506,7 +522,7 @@ public final class LinuxContainer: Container, Sendable {
     ///     rootfs as the lower layer and this as the upper layer. Must be a block device.
     ///     The `destination` field is ignored as mounting is handled internally.
     ///   - vmm: The virtual machine manager that will handle launching the VM for the container.
-    ///   - vm: The size of the VM the container runs in.
+    ///   - vm: The VM size. If omitted, uses the container limits plus its configured overhead.
     ///   - logger: Optional logger for container operations.
     ///   - configuration: A closure that configures the container by modifying the Configuration instance.
     public convenience init(
@@ -514,7 +530,7 @@ public final class LinuxContainer: Container, Sendable {
         rootfs: Mount,
         writableLayer: Mount? = nil,
         vmm: VirtualMachineManager,
-        vm: VMResources = .default,
+        vm: VMResources? = nil,
         logger: Logger? = nil,
         configuration: (inout Configuration) throws -> Void
     ) throws {
@@ -541,7 +557,7 @@ public final class LinuxContainer: Container, Sendable {
     ///     rootfs as the lower layer and this as the upper layer. Must be a block device.
     ///     The `destination` field is ignored as mounting is handled internally.
     ///   - vmm: The virtual machine manager that will handle launching the VM for the container.
-    ///   - vm: The size of the VM the container runs in.
+    ///   - vm: The VM size. If omitted, uses the container limits plus its configured overhead.
     ///   - configuration: The container configuration specifying process, resources, networking, and other settings.
     ///   - logger: Optional logger for container operations.
     public init(
@@ -549,7 +565,7 @@ public final class LinuxContainer: Container, Sendable {
         rootfs: Mount,
         writableLayer: Mount? = nil,
         vmm: VirtualMachineManager,
-        vm: VMResources = .default,
+        vm: VMResources? = nil,
         configuration: LinuxContainer.Configuration,
         logger: Logger? = nil
     ) throws {
@@ -586,7 +602,21 @@ public final class LinuxContainer: Container, Sendable {
         }
         self.id = id
         self.vmm = vmm
-        self.vm = vm
+        if let vm {
+            self.vm = vm
+        } else {
+            let (cpus, overflow) = configuration.cpus.addingReportingOverflow(configuration.cpuOverhead)
+            guard !overflow, cpus > 0 else {
+                throw ContainerizationError(.invalidArgument, message: "VM CPU count including overhead is out of range")
+            }
+            self.vm = try VMResources(
+                cpus: cpus,
+                memoryInBytes: Self.virtualMachineMemoryTarget(
+                    workloadMemoryInBytes: configuration.memoryInBytes,
+                    overheadInBytes: configuration.memoryOverhead
+                )
+            )
+        }
         self.hostVsockPorts = VsockPortAllocator(base: 0x1000_0000)
         self.guestVsockPorts = Atomic<UInt32>(0x1000_0000)
         self.logger = logger
@@ -706,6 +736,9 @@ public final class LinuxContainer: Container, Sendable {
             pids: config.pidsLimit.map(LinuxPids.init(limit:)),
             blockIO: config.blockIO?.toOCI()
         )
+        if !config.unified.isEmpty {
+            spec.linux?.resources?.unified = config.unified
+        }
 
         var namespaces: [LinuxNamespace] = []
         if !config.hostCgroupNamespace {
@@ -1668,9 +1701,9 @@ extension LinuxContainer {
 
     /// Request a live change to the workload memory available in the virtual machine.
     ///
-    /// `memoryInBytes` is workload-relative. The extra memory explicitly assigned to the VM
-    /// above its initial workload limit is retained. An oversubscribed workload
-    /// does not add overhead to its requested target.
+    /// `memoryInBytes` is workload-relative. The configured virtual-machine overhead is
+    /// added before forwarding the target to the VMM, matching the memory calculation
+    /// used when the virtual machine is created.
     ///
     /// - Parameter memoryInBytes: Target workload memory in bytes.
     /// - Throws: An error if the target overflows, the container has not been created,

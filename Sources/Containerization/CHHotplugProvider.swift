@@ -49,6 +49,7 @@ final class CHHotplugProvider: HotplugProvider {
     private let client: CloudHypervisor.Client
     private let workDir: URL
     private let virtiofsdBinaryOverride: URL?
+    private let virtiofsdOptions: VirtiofsdOptions
     private let allocator: any AddressAllocator<Character>
     private let _mounts: Mutex<[String: [AttachedFilesystem]]>
     private let _records: Mutex<[String: [HotplugRecord]]>
@@ -64,6 +65,7 @@ final class CHHotplugProvider: HotplugProvider {
         client: CloudHypervisor.Client,
         workDir: URL,
         virtiofsdBinary: URL?,
+        virtiofsdOptions: VirtiofsdOptions = .init(),
         allocator: any AddressAllocator<Character>,
         initialMounts: [String: [AttachedFilesystem]],
         logger: Logger?
@@ -71,6 +73,7 @@ final class CHHotplugProvider: HotplugProvider {
         self.client = client
         self.workDir = workDir
         self.virtiofsdBinaryOverride = virtiofsdBinary
+        self.virtiofsdOptions = virtiofsdOptions
         self.allocator = allocator
         self._mounts = Mutex(initialMounts)
         self._records = Mutex([:])
@@ -98,15 +101,14 @@ final class CHHotplugProvider: HotplugProvider {
         case .virtioblk:
             let letter = try allocator.allocate()
             let chId = "blk-\(id)-\(letter)"
-            let disk = CloudHypervisor.DiskConfig(
-                path: rootfs.source,
-                readonly: rootfs.options.contains("ro"),
-                id: chId,
-                imageType: .raw
-            )
 
+            // chDiskConfig applies the per-device runtime options of the mount, such as
+            // `directio`, the same as for boot disks.
             let pci: CloudHypervisor.PciDeviceInfo
             do {
+                guard let disk = rootfs.chDiskConfig(id: chId) else {
+                    throw ContainerizationError(.invalidArgument, message: "mount \(rootfs.source) is not a virtio-blk device")
+                }
                 pci = try await chCall { try await self.client.vmAddDisk(disk) }
             } catch {
                 try? allocator.release(letter)
@@ -267,7 +269,8 @@ final class CHHotplugProvider: HotplugProvider {
                     binary: virtiofsdBinary,
                     socketPath: socket,
                     sharedDir: URL(fileURLWithPath: source),
-                    readonly: readonly
+                    readonly: readonly,
+                    options: self.virtiofsdOptions
                 ),
                 logger: self.logger
             )

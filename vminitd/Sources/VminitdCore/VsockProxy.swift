@@ -145,7 +145,7 @@ extension VsockProxy {
         do {
             try uds.listen()
             if let udsUID, let udsGID,
-                chown(path.path, uid_t(udsUID), gid_t(udsGID)) != 0
+                unsafe chown(path.path, uid_t(udsUID), gid_t(udsGID)) != 0
             {
                 throw currentPOSIXError()
             }
@@ -155,7 +155,7 @@ extension VsockProxy {
             throw error
         }
         if let udsPerms {
-            guard chmod(path.path, mode_t(udsPerms)) == 0 else {
+            guard unsafe chmod(path.path, mode_t(udsPerms)) == 0 else {
                 let error = currentPOSIXError()
                 try? uds.close()
                 try? fm.removeItem(at: path)
@@ -224,8 +224,7 @@ extension VsockProxy {
     ) async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             do {
-                // `relayTo` isn't used concurrently.
-                nonisolated(unsafe) var relayTo: ContainerizationOS.Socket
+                let relayTo: ContainerizationOS.Socket
 
                 switch connType {
                 case .unix:
@@ -247,12 +246,10 @@ extension VsockProxy {
 
                 try relayTo.connect()
 
-                // `clientFile` isn't used concurrently.
-                nonisolated(unsafe) var clientFile = OSFile.SpliceFile(fd: conn.fileDescriptor)
-                nonisolated(unsafe) var eofFromClient = false
-                // `serverFile` isn't used concurrently.
-                nonisolated(unsafe) var serverFile = OSFile.SpliceFile(fd: relayTo.fileDescriptor)
-                nonisolated(unsafe) var eofFromServer = false
+                @safe nonisolated(unsafe) var clientFile = OSFile.SpliceFile(fd: conn.fileDescriptor)
+                @safe nonisolated(unsafe) var eofFromClient = false
+                @safe nonisolated(unsafe) var serverFile = OSFile.SpliceFile(fd: relayTo.fileDescriptor)
+                @safe nonisolated(unsafe) var eofFromServer = false
 
                 // A full hangup stops writes to that endpoint, but its queued reads must drain.
                 let cleanup = { @Sendable [log, port, path, action] in

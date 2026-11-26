@@ -24,6 +24,8 @@ public struct ContainerStatistics: Sendable {
     public var networks: [NetworkStatistics]?
     public var memoryEvents: MemoryEventStatistics?
     public var filesystem: [FilesystemStatistics]?
+    /// Per-protocol traffic for the network namespace. `nil` if not requested or not reported by the guest.
+    public var networkProtocols: NetworkProtocolStatistics?
 
     public init(
         id: String,
@@ -33,7 +35,8 @@ public struct ContainerStatistics: Sendable {
         blockIO: BlockIOStatistics? = nil,
         networks: [NetworkStatistics]? = nil,
         memoryEvents: MemoryEventStatistics? = nil,
-        filesystem: [FilesystemStatistics]? = nil
+        filesystem: [FilesystemStatistics]? = nil,
+        networkProtocols: NetworkProtocolStatistics? = nil
     ) {
         self.id = id
         self.process = process
@@ -43,6 +46,7 @@ public struct ContainerStatistics: Sendable {
         self.networks = networks
         self.memoryEvents = memoryEvents
         self.filesystem = filesystem
+        self.networkProtocols = networkProtocols
     }
 
     /// Process statistics for a container.
@@ -180,8 +184,11 @@ public struct ContainerStatistics: Sendable {
         public var transmittedPackets: UInt64
         public var receivedBytes: UInt64
         public var transmittedBytes: UInt64
-        public var receivedErrors: UInt64
-        public var transmittedErrors: UInt64
+        public var receivedErrors: UInt64?
+        public var transmittedErrors: UInt64?
+        /// Packets the device dropped (e.g. full rx ring or tx queue).
+        public var receivedDropped: UInt64
+        public var transmittedDropped: UInt64
 
         public init(
             interface: String,
@@ -190,7 +197,9 @@ public struct ContainerStatistics: Sendable {
             receivedBytes: UInt64,
             transmittedBytes: UInt64,
             receivedErrors: UInt64,
-            transmittedErrors: UInt64
+            transmittedErrors: UInt64,
+            receivedDropped: UInt64,
+            transmittedDropped: UInt64
         ) {
             self.interface = interface
             self.receivedPackets = receivedPackets
@@ -199,6 +208,92 @@ public struct ContainerStatistics: Sendable {
             self.transmittedBytes = transmittedBytes
             self.receivedErrors = receivedErrors
             self.transmittedErrors = transmittedErrors
+            self.receivedDropped = receivedDropped
+            self.transmittedDropped = transmittedDropped
+        }
+    }
+
+    /// Packet and byte counters for one protocol.
+    public struct NetworkProtocolCounters: Sendable {
+        public var receivedPackets: UInt64
+        public var transmittedPackets: UInt64
+        /// `nil` when the protocol has no byte counter (Linux only has one for IP as a whole).
+        public var receivedBytes: UInt64?
+        public var transmittedBytes: UInt64?
+        /// Packets the stack discarded for lack of resources or a destination.
+        ///
+        /// The kernel attributes drops and errors to different causes for each protocol, so
+        /// values are comparable over time for one protocol but not across protocols. `nil`
+        /// when the protocol has no matching counter, which is not the same as zero ("none happened").
+        /// - TCP: listen queue overflow, socket backlog and receive queue drops (receive only).
+        /// - UDP: full socket buffer or no socket on the port (receive); full send buffer (transmit).
+        /// - ICMP: no drop counters.
+        /// - IP: discarded valid packets and missing routes.
+        public var receivedDrops: UInt64?
+        public var transmittedDrops: UInt64?
+        /// Packets that were malformed or failed processing.
+        /// - TCP: bad checksum or header (receive only).
+        /// - UDP: e.g. bad checksum, excluding full-buffer drops (receive only).
+        /// - ICMP: receive and transmit errors.
+        /// - IP: bad header, bad address or unknown protocol (receive); fragmentation failures (transmit).
+        public var receivedErrors: UInt64?
+        public var transmittedErrors: UInt64?
+
+        public init(
+            receivedPackets: UInt64 = 0,
+            transmittedPackets: UInt64 = 0,
+            receivedBytes: UInt64? = nil,
+            transmittedBytes: UInt64? = nil,
+            receivedDrops: UInt64? = nil,
+            transmittedDrops: UInt64? = nil,
+            receivedErrors: UInt64? = nil,
+            transmittedErrors: UInt64? = nil
+        ) {
+            self.receivedPackets = receivedPackets
+            self.transmittedPackets = transmittedPackets
+            self.receivedBytes = receivedBytes
+            self.transmittedBytes = transmittedBytes
+            self.receivedDrops = receivedDrops
+            self.transmittedDrops = transmittedDrops
+            self.receivedErrors = receivedErrors
+            self.transmittedErrors = transmittedErrors
+        }
+    }
+
+    /// Per-protocol traffic for the container's network namespace (not per interface; includes loopback).
+    /// Containers sharing a namespace, as all containers in a VM do by default, report identical values.
+    public struct NetworkProtocolStatistics: Sendable {
+        /// Covers both IPv4 and IPv6: the kernel shares its TCP counters between the two families.
+        public var tcp: NetworkProtocolCounters
+        /// IPv4 only; see `udp6`.
+        public var udp: NetworkProtocolCounters
+        /// IPv4 only; see `icmp6`.
+        public var icmp: NetworkProtocolCounters
+        /// All IPv4 traffic. What is not tcp/udp/icmp (raw IP, other protocols) is the remainder. See `ip6` for IPv6.
+        public var ip: NetworkProtocolCounters
+        /// IPv6 UDP. `nil` when the guest has no IPv6 statistics.
+        public var udp6: NetworkProtocolCounters?
+        /// IPv6 ICMP. `nil` when the guest has no IPv6 statistics.
+        public var icmp6: NetworkProtocolCounters?
+        /// All IPv6 traffic. `nil` when the guest has no IPv6 statistics.
+        public var ip6: NetworkProtocolCounters?
+
+        public init(
+            tcp: NetworkProtocolCounters,
+            udp: NetworkProtocolCounters,
+            icmp: NetworkProtocolCounters,
+            ip: NetworkProtocolCounters,
+            udp6: NetworkProtocolCounters? = nil,
+            icmp6: NetworkProtocolCounters? = nil,
+            ip6: NetworkProtocolCounters? = nil
+        ) {
+            self.tcp = tcp
+            self.udp = udp
+            self.icmp = icmp
+            self.ip = ip
+            self.udp6 = udp6
+            self.icmp6 = icmp6
+            self.ip6 = ip6
         }
     }
 

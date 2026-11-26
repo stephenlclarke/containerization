@@ -61,11 +61,11 @@ struct FilesystemPathResolutionTests {
         defer { fixture.remove() }
         try Data("inside".utf8).write(to: fixture.root.appendingPathComponent("target"))
 
-        let root = Foundation.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        let root = unsafe Foundation.open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         try #require(root >= 0)
         defer { _ = Foundation.close(root) }
 
-        let exposedDirectory = Foundation.open(fixture.root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        let exposedDirectory = unsafe Foundation.open(fixture.root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         try #require(exposedDirectory >= 0)
         defer { _ = Foundation.close(exposedDirectory) }
 
@@ -91,7 +91,7 @@ struct FilesystemPathResolutionTests {
             self.directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             self.root = self.directory.appendingPathComponent("root")
             try FileManager.default.createDirectory(at: self.root, withIntermediateDirectories: true)
-            self.rootDescriptor = Foundation.open(self.root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+            self.rootDescriptor = unsafe Foundation.open(self.root.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
             guard self.rootDescriptor >= 0 else {
                 throw POSIXError(.EBADF)
             }

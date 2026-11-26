@@ -65,6 +65,9 @@ final class ManagedProcess: ContainerProcess, Sendable {
     private let command: Command
     private let state: Mutex<State>
     private let owningPid: Int32?
+    // For root of VM processes, we have to pass in cgroup because they cannot
+    // share the cgroup of vminit
+    private let cgroup: Cgroup2Manager?
     private let ackPipe: Pipe
     private let syncPipe: Pipe
     private let errorPipe: Pipe
@@ -102,6 +105,7 @@ final class ManagedProcess: ContainerProcess, Sendable {
         bundle: ContainerizationOCI.Bundle,
         spec: ContainerizationOCI.Spec? = nil,
         owningPid: Int32? = nil,
+        cgroup: Cgroup2Manager? = nil,
         log: Logger
     ) throws {
         self.id = id
@@ -109,6 +113,7 @@ final class ManagedProcess: ContainerProcess, Sendable {
         log[metadataKey: "id"] = "\(id)"
         self.log = log
         self.owningPid = owningPid
+        self.cgroup = cgroup
 
         let syncPipe = Pipe()
         try syncPipe.setCloexec()
@@ -217,8 +222,8 @@ extension ManagedProcess {
                     throw ContainerizationError(.internalError, message: "invalid payload")
                 }
 
-                let pid = piddata.withUnsafeBytes { ptr in
-                    ptr.load(as: Int32.self)
+                let pid = unsafe piddata.withUnsafeBytes { ptr in
+                    unsafe ptr.load(as: Int32.self)
                 }
 
                 log.info(
@@ -237,7 +242,9 @@ extension ManagedProcess {
 
                 // This should probably happen in vmexec, but we don't need to set any cgroup
                 // toggles so the problem is much simpler to just do it here.
-                if let owningPid {
+                if let cgroup {
+                    try cgroup.addProcess(pid: pid)
+                } else if let owningPid {
                     let cgManager = try Cgroup2Manager.loadFromPid(pid: owningPid)
                     try cgManager.addProcess(pid: pid)
                 }
@@ -286,8 +293,11 @@ extension ManagedProcess {
                             message: "no PTY data from sync pipe"
                         )
                     }
-                    let fd = ptyFd.withUnsafeBytes { ptr in
-                        ptr.load(as: Int32.self)
+                    guard ptyFd.count == size else {
+                        throw ContainerizationError(.internalError, message: "invalid payload")
+                    }
+                    let fd = unsafe ptyFd.withUnsafeBytes { ptr in
+                        unsafe ptr.load(as: Int32.self)
                     }
                     log.info(
                         "received PTY FD from container, attaching",

@@ -136,7 +136,7 @@ struct LoopbackDevicePathTests {
             withDestinationURL: escapedFile.deletingLastPathComponent()
         )
 
-        let rootDescriptor = open(temporaryRoot.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        let rootDescriptor = unsafe open(temporaryRoot.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         #expect(rootDescriptor >= 0)
         guard rootDescriptor >= 0 else { return }
         defer { _ = close(rootDescriptor) }

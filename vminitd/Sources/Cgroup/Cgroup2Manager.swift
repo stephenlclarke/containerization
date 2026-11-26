@@ -110,7 +110,7 @@ public struct Cgroup2Manager: Sendable {
     ) throws -> Cgroup2Manager {
         let path = mountPoint.appending(path: group.path)
         var s = statfs()
-        let res = statfs(path.path, &s)
+        let res = unsafe statfs(path.path, &s)
         if res != 0 {
             throw Error.errno(errno: errno, message: "failed to statfs \(path.path)")
         }
@@ -163,7 +163,7 @@ public struct Cgroup2Manager: Sendable {
         let file = path.appending(path: fileName)
         // errno is read immediately: callers match on ENOENT, so it decides
         // control flow, and `file.path` allocates a temporary that can clobber it.
-        let fd = open(file.path, O_WRONLY, 0)
+        let fd = unsafe open(file.path, O_WRONLY, 0)
         let openErrno = errno
         if fd == -1 {
             throw Error.errno(errno: openErrno, message: "failed to open \(file.path)")
@@ -172,11 +172,14 @@ public struct Cgroup2Manager: Sendable {
 
         let bytes = Array(value.utf8)
         let res = Syscall.retrying {
-            bytes.withUnsafeBytes { write(fd, $0.baseAddress, bytes.count) }
+            #if compiler(>=6.4)
+            bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #else
+            unsafe bytes.withUnsafeBytes { unsafe write(fd, $0.baseAddress, bytes.count) }
+            #endif
         }
-        let writeErrno = errno
         if res != bytes.count {
-            let errorNumber = res == -1 ? writeErrno : EIO
+            let errorNumber = res == -1 ? errno : EIO
             throw Error.errno(errno: errorNumber, message: "failed to write to \(file.path)")
         }
     }
@@ -491,10 +494,10 @@ public struct Cgroup2Manager: Sendable {
     }
 
     private static func userName(for uid: UInt32) -> String {
-        guard let entry = getpwuid(uid_t(uid)), let name = entry.pointee.pw_name else {
+        guard let entry = unsafe getpwuid(uid_t(uid)), let name = unsafe entry.pointee.pw_name else {
             return String(uid)
         }
-        return String(cString: name)
+        return unsafe String(cString: name)
     }
 
     private static func isMissingProcessFileError(_ error: any Swift.Error) -> Bool {
@@ -590,6 +593,13 @@ public struct Cgroup2Manager: Sendable {
         if !cpu.cpus.isEmpty {
             try Self.writeValue(path: self.path, value: cpu.cpus, fileName: "cpuset.cpus")
         }
+
+    }
+
+    /// Whether `key` names a file directly in the cgroup directory: not empty, not `.`
+    /// or `..`, and without a `/`, so a spec cannot write outside the container's cgroup.
+    package static func isUnifiedFileName(_ key: String) -> Bool {
+        !key.isEmpty && key != "." && key != ".." && !key.contains("/")
     }
 
     package func setMemoryHigh(bytes: UInt64) throws {
@@ -678,7 +688,7 @@ public struct Cgroup2Manager: Sendable {
 
         // errno read immediately; `self.path.path` allocates a temporary that
         // can clobber it.
-        let result = rmdir(self.path.path)
+        let result = unsafe rmdir(self.path.path)
         let err = errno
         if result != 0 && err != ENOENT {
             throw Error.errno(errno: err, message: "failed to remove cgroup directory \(self.path.path)")
@@ -697,7 +707,7 @@ public struct Cgroup2Manager: Sendable {
             let childPath = path.appending(path: item)
             var isDirectory: ObjCBool = false
 
-            if fileManager.fileExists(atPath: childPath.path, isDirectory: &isDirectory) && isDirectory.boolValue {
+            if unsafe fileManager.fileExists(atPath: childPath.path, isDirectory: &isDirectory) && isDirectory.boolValue {
                 if force {
                     do {
                         try Self.writeValue(
@@ -718,7 +728,7 @@ public struct Cgroup2Manager: Sendable {
                 }
 
                 try removeChildCgroups(at: childPath, force: force)
-                let result = rmdir(childPath.path)
+                let result = unsafe rmdir(childPath.path)
                 let err = errno
                 if result != 0 && err != ENOENT {
                     throw Error.errno(errno: err, message: "failed to remove child cgroup \(childPath.path)")
@@ -1138,9 +1148,12 @@ extension Cgroup2Manager {
         case cgroup1
         case errno(errno: Int32, message: String)
         case notExist(path: String)
+        case invalidUnifiedKey(key: String)
 
         package var description: String {
             switch self {
+            case .invalidUnifiedKey(let key):
+                return "linux.resources.unified key '\(key)' is not a cgroup file name (empty, '.', '..' or contains '/')"
             case .errno(let errno, let message):
                 return "failed with errno \(errno): \(message)"
             case .notExist(let path):

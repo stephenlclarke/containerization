@@ -34,24 +34,24 @@ import NIOPosix
 import SwiftProtobuf
 import SystemPackage
 
-private let _setenv = Foundation.setenv
+private let _setenv = unsafe Foundation.setenv
 
 #if canImport(Musl)
 import Musl
-private let _mount = Musl.mount
-private let _umount = Musl.umount2
+private let _mount = unsafe Musl.mount
+private let _umount = unsafe Musl.umount2
 private let _kill = Musl.kill
 private let _sync = Musl.sync
 typealias _stat_struct = Musl.stat
-private let _stat: @Sendable (UnsafePointer<CChar>, UnsafeMutablePointer<_stat_struct>) -> Int32 = stat
+private let _stat = unsafe stat
 #elseif canImport(Glibc)
 import Glibc
-private let _mount = Glibc.mount
-private let _umount = Glibc.umount2
+private let _mount = unsafe Glibc.mount
+private let _umount = unsafe Glibc.umount2
 private let _kill = Glibc.kill
 private let _sync = Glibc.sync
 typealias _stat_struct = Glibc.stat
-private let _stat: @Sendable (UnsafePointer<CChar>, UnsafeMutablePointer<_stat_struct>) -> Int32 = stat
+private let _stat = unsafe stat
 #endif
 
 extension ContainerizationError {
@@ -100,7 +100,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             ])
 
         var tv = timeval(tv_sec: time_t(request.sec), tv_usec: suseconds_t(request.usec))
-        guard settimeofday(&tv, nil) == 0 else {
+        guard unsafe settimeofday(&tv, nil) == 0 else {
             let error = swiftErrno("settimeofday")
             log.error(
                 "setTime",
@@ -351,10 +351,12 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             }
             if request.flags.append {
                 flags |= O_APPEND
+            } else {
+                flags |= O_TRUNC
             }
 
-            let mode = request.mode > 0 ? mode_t(request.mode) : mode_t(0644)
-            let fd = open(request.path, flags, mode)
+            let mode = request.mode > 0 ? mode_t(request.mode) : mode_t(0o644)
+            let fd = unsafe open(request.path, flags, mode)
             guard fd != -1 else {
                 let error = swiftErrno("open")
                 throw RPCError(
@@ -435,7 +437,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         defer { close(fd) }
 
         var s = _stat_struct()
-        guard fstat(fd, &s) == 0 else {
+        guard unsafe fstat(fd, &s) == 0 else {
             return .with { $0.error = "\(swiftErrno("fstat"))" }
         }
         return .with {
@@ -522,7 +524,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         guard !root.isEmpty else {
             throw RPCError(code: .invalidArgument, message: "missing root filesystem")
         }
-        let fd = open(root, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        let fd = unsafe open(root, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard fd != -1 else {
             throw RPCError(code: .internalError, message: "failed to open root filesystem '\(root)': \(swiftErrno("open"))")
         }
@@ -573,7 +575,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
                 var buf = [UInt8](repeating: 0, count: Self.copyChunkSize)
                 while true {
-                    let n = read(sockFd, &buf, buf.count)
+                    let n = unsafe read(sockFd, &buf, buf.count)
                     if n == 0 { break }
                     guard n > 0 else {
                         throw RPCError(
@@ -583,9 +585,15 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     }
                     var written = 0
                     while written < n {
+                        #if compiler(>=6.4)
                         let w = buf.withUnsafeBytes { ptr in
-                            write(fd, ptr.baseAddress! + written, n - written)
+                            unsafe write(fd, ptr.baseAddress! + written, n - written)
                         }
+                        #else
+                        let w = unsafe buf.withUnsafeBytes { ptr in
+                            unsafe write(fd, ptr.baseAddress! + written, n - written)
+                        }
+                        #endif
                         guard w > 0 else {
                             throw RPCError(
                                 code: .internalError,
@@ -661,7 +669,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         defer { close(fd) }
 
         var s = _stat_struct()
-        guard fstat(fd, &s) == 0 else {
+        guard unsafe fstat(fd, &s) == 0 else {
             throw RPCError(code: .internalError, message: "copy: failed to stat '\(path)': \(swiftErrno("fstat"))")
         }
         let fileType = s.st_mode & UInt32(S_IFMT)
@@ -717,7 +725,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 try writer.finishEncoding()
             } else {
                 // Reopen through the pinned fd after confirming this is a regular file.
-                let srcFd = open("/proc/self/fd/\(fd)", O_RDONLY | O_CLOEXEC)
+                let srcFd = unsafe open("/proc/self/fd/\(fd)", O_RDONLY | O_CLOEXEC)
                 guard srcFd != -1 else {
                     throw RPCError(code: .internalError, message: "copy: failed to open '\(path)': \(swiftErrno("open"))")
                 }
@@ -725,7 +733,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
                 var buf = [UInt8](repeating: 0, count: Self.copyChunkSize)
                 while true {
-                    let n = read(srcFd, &buf, buf.count)
+                    let n = unsafe read(srcFd, &buf, buf.count)
                     if n == 0 { break }
                     guard n > 0 else {
                         throw RPCError(
@@ -735,9 +743,15 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                     }
                     var written = 0
                     while written < n {
+                        #if compiler(>=6.4)
                         let w = buf.withUnsafeBytes { ptr in
-                            write(sock.fileDescriptor, ptr.baseAddress! + written, n - written)
+                            unsafe write(sock.fileDescriptor, ptr.baseAddress! + written, n - written)
                         }
+                        #else
+                        let w = unsafe buf.withUnsafeBytes { ptr in
+                            unsafe write(sock.fileDescriptor, ptr.baseAddress! + written, n - written)
+                        }
+                        #endif
                         guard w > 0 else {
                             throw RPCError(
                                 code: .internalError,
@@ -908,7 +922,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             throw RPCError(code: .invalidArgument, message: "path must be absolute")
         }
 
-        let selfMountFd = open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC)
+        let selfMountFd = unsafe open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC)
         if selfMountFd < 0 {
             let error = swiftErrno("open")
             throw RPCError(code: .internalError, message: "failed to open self mount namespace", cause: error)
@@ -917,14 +931,14 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         defer { close(selfMountFd) }
 
         var finfo = _stat_struct()
-        let selfMountStat = fstat(selfMountFd, &finfo)
+        let selfMountStat = unsafe fstat(selfMountFd, &finfo)
         if selfMountStat != 0 {
             let error = swiftErrno("fstat")
             throw RPCError(code: .internalError, message: "failed to stat self mount namespace", cause: error)
         }
         let selfInode = finfo.st_ino
 
-        let containerMountStat = fstat(containerFilesystem.mountNamespace, &finfo)
+        let containerMountStat = unsafe fstat(containerFilesystem.mountNamespace, &finfo)
         if containerMountStat != 0 {
             let error = swiftErrno("fstat")
             throw RPCError(code: .internalError, message: "failed to stat container mount namespace", cause: error)
@@ -1028,7 +1042,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
     private func trimFilesystem(fd: Int32) throws {
         let FITRIM: UInt = 0xC018_5879
         var trange = fitrim_range(start: 0, len: UInt64.max, min_len: 0)
-        let rc: CInt = ioctl(fd, FITRIM, &trange)
+        let rc: CInt = unsafe ioctl(fd, FITRIM, &trange)
         if rc != 0 {
             let error = swiftErrno("ioctl(FITRIM)")
             throw RPCError(code: .internalError, message: "trim failed", cause: error)
@@ -1049,7 +1063,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
         // Best effort EBUSY handle.
         var unmounted = false
         for _ in 0...50 {
-            let result = _umount(request.path, request.flags)
+            let result = unsafe _umount(request.path, request.flags)
             if result == -1 {
                 if errno == EBUSY {
                     try await Task.sleep(for: .milliseconds(10))
@@ -1093,7 +1107,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                 "value": "\(request.value)",
             ])
 
-        guard _setenv(request.key, request.value, 1) == 0 else {
+        guard unsafe _setenv(request.key, request.value, 1) == 0 else {
             let error = swiftErrno("setenv")
 
             log.error(
@@ -1138,17 +1152,36 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             ])
 
         do {
-            if !request.hasContainerID {
-                throw ContainerizationError(
-                    .invalidArgument,
-                    message: "processes in the root of the vm not implemented"
-                )
-            }
-
             var ociSpec = try JSONDecoder().decode(
                 ContainerizationOCI.Spec.self,
                 from: request.configuration
             )
+
+            if !request.hasContainerID {
+
+                guard let process = ociSpec.process else {
+                    throw ContainerizationError(
+                        .invalidArgument,
+                        message: "oci runtime spec missing process configuration"
+                    )
+                }
+
+                let stdioPorts = HostStdio(
+                    stdin: request.hasStdin ? request.stdin : nil,
+                    stdout: request.hasStdout ? request.stdout : nil,
+                    stderr: request.hasStderr ? request.stderr : nil,
+                    terminal: process.terminal
+                )
+
+                try await self.state.createRootProcess(
+                    id: request.id,
+                    stdio: stdioPorts,
+                    process: process,
+                    resources: ociSpec.linux?.resources,
+                    log: self.log
+                )
+                return .init()
+            }
 
             try ociAlterations(id: request.id, ociSpec: &ociSpec)
 
@@ -1242,10 +1275,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
         do {
             if !request.hasContainerID {
-                throw ContainerizationError(
-                    .invalidArgument,
-                    message: "processes in the root of the vm not implemented"
-                )
+                try await self.state.killRootProcess(id: request.id, signal: request.signal)
+                return .init()
             }
 
             let ctr = try await self.state.get(container: request.containerID)
@@ -1339,10 +1370,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
         do {
             if !request.hasContainerID {
-                throw ContainerizationError(
-                    .invalidArgument,
-                    message: "processes in the root of the vm not implemented"
-                )
+                try await self.state.deleteRootProcess(id: request.id)
+                return .init()
             }
 
             let ctr = try await self.state.get(container: request.containerID)
@@ -1393,10 +1422,8 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
         do {
             if !request.hasContainerID {
-                throw ContainerizationError(
-                    .invalidArgument,
-                    message: "processes in the root of the vm not implemented"
-                )
+                let pid = try await self.state.startRootProcess(id: request.id)
+                return .with { $0.pid = pid }
             }
 
             let ctr = try await self.state.get(container: request.containerID)
@@ -1492,15 +1519,10 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             ])
 
         do {
-            if !request.hasContainerID {
-                throw ContainerizationError(
-                    .invalidArgument,
-                    message: "processes in the root of the vm not implemented"
-                )
-            }
-
-            let ctr = try await self.state.get(container: request.containerID)
-            let exitStatus = try await ctr.wait(execID: request.id)
+            let exitStatus =
+                request.hasContainerID
+                ? try await self.state.get(container: request.containerID).wait(execID: request.id)
+                : try await self.state.waitRootProcess(id: request.id)
 
             return .with {
                 $0.exitCode = exitStatus.exitCode
@@ -1969,8 +1991,21 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                                     $0.transmittedBytes = stats.txBytes
                                     $0.receivedErrors = stats.rxErrors
                                     $0.transmittedErrors = stats.txErrors
+                                    $0.receivedDropped = stats.rxDropped
+                                    $0.transmittedDropped = stats.txDropped
                                 })
                         }
+                    }
+                }
+
+                // Protocol counters are per network namespace, so read them from the
+                // container's own (the VM's, unless the container has a private one).
+                var protocolStats: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats?
+                if wantNetwork {
+                    do {
+                        protocolStats = Self.mapProtocolStats(try ProcNetSnmp.read(pid: await container.pid))
+                    } catch {
+                        log.warning("failed to read protocol stats", metadata: ["error": "\(error)"])
                     }
                 }
 
@@ -1993,6 +2028,7 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
                         containerID: containerID,
                         cgStats: cgStats,
                         networkStats: networkStats,
+                        protocolStats: protocolStats,
                         memoryEvents: memoryEvents,
                         filesystemStats: filesystemStats,
                         wantProcess: wantProcess,
@@ -2101,10 +2137,35 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
             .filter { $0.hasPrefix("eth") }
     }
 
+    private static func mapProtocolStats(_ snmp: ProcNetSnmp) -> Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats {
+        func counters(_ c: ProcNetSnmp.Counters) -> Com_Apple_Containerization_Sandbox_V3_NetworkProtocolCounters {
+            .with {
+                $0.receivedPackets = c.receivedPackets
+                $0.transmittedPackets = c.transmittedPackets
+                if let v = c.receivedBytes { $0.receivedBytes = v }
+                if let v = c.transmittedBytes { $0.transmittedBytes = v }
+                if let v = c.receivedDrops { $0.receivedDrops = v }
+                if let v = c.transmittedDrops { $0.transmittedDrops = v }
+                if let v = c.receivedErrors { $0.receivedErrors = v }
+                if let v = c.transmittedErrors { $0.transmittedErrors = v }
+            }
+        }
+        return .with {
+            $0.tcp = counters(snmp.tcp)
+            $0.udp = counters(snmp.udp)
+            $0.icmp = counters(snmp.icmp)
+            $0.ip = counters(snmp.ip)
+            if let udp6 = snmp.udp6 { $0.udp6 = counters(udp6) }
+            if let icmp6 = snmp.icmp6 { $0.icmp6 = counters(icmp6) }
+            if let ip6 = snmp.ip6 { $0.ip6 = counters(ip6) }
+        }
+    }
+
     private func mapStatsToProto(
         containerID: String,
         cgStats: Cgroup2Stats?,
         networkStats: [Com_Apple_Containerization_Sandbox_V3_NetworkStats],
+        protocolStats: Com_Apple_Containerization_Sandbox_V3_NetworkProtocolStats?,
         memoryEvents: MemoryEvents?,
         filesystemStats: [(mountPoint: String, stat: CZ_Statfs)],
         wantProcess: Bool,
@@ -2174,6 +2235,9 @@ extension Initd: Com_Apple_Containerization_Sandbox_V3_SandboxContext.SimpleServ
 
             if wantNetwork {
                 $0.networks = networkStats
+                if let protocolStats {
+                    $0.networkProtocols = protocolStats
+                }
             }
 
             if wantMemoryEvents, let events = memoryEvents {

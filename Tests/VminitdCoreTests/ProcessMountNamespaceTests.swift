@@ -40,8 +40,8 @@ struct ProcessMountNamespaceTests {
             _ = Foundation.close(rootDuplicate)
         }
 
-        let currentNamespace = Foundation.open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC)
-        let currentRoot = Foundation.open("/proc/self/root", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        let currentNamespace = unsafe Foundation.open("/proc/self/ns/mnt", O_RDONLY | O_CLOEXEC)
+        let currentRoot = unsafe Foundation.open("/proc/self/root", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         #expect(currentNamespace >= 0)
         #expect(currentRoot >= 0)
         defer {
@@ -51,15 +51,15 @@ struct ProcessMountNamespaceTests {
 
         var namespaceDuplicateInfo = TestStat()
         var currentNamespaceInfo = TestStat()
-        #expect(fstat(namespaceDuplicate, &namespaceDuplicateInfo) == 0)
-        #expect(fstat(currentNamespace, &currentNamespaceInfo) == 0)
+        unsafe #expect(fstat(namespaceDuplicate, &namespaceDuplicateInfo) == 0)
+        unsafe #expect(fstat(currentNamespace, &currentNamespaceInfo) == 0)
         #expect(namespaceDuplicateInfo.st_dev == currentNamespaceInfo.st_dev)
         #expect(namespaceDuplicateInfo.st_ino == currentNamespaceInfo.st_ino)
 
         var rootDuplicateInfo = TestStat()
         var currentRootInfo = TestStat()
-        #expect(fstat(rootDuplicate, &rootDuplicateInfo) == 0)
-        #expect(fstat(currentRoot, &currentRootInfo) == 0)
+        unsafe #expect(fstat(rootDuplicate, &rootDuplicateInfo) == 0)
+        unsafe #expect(fstat(currentRoot, &currentRootInfo) == 0)
         #expect(rootDuplicateInfo.st_dev == currentRootInfo.st_dev)
         #expect(rootDuplicateInfo.st_ino == currentRootInfo.st_ino)
     }
@@ -78,8 +78,8 @@ struct ProcessMountNamespaceTests {
 
         var namespaceInfo = TestStat()
         var rootInfo = TestStat()
-        #expect(fstat(namespaceDuplicate, &namespaceInfo) == 0)
-        #expect(fstat(rootDuplicate, &rootInfo) == 0)
+        unsafe #expect(fstat(namespaceDuplicate, &namespaceInfo) == 0)
+        unsafe #expect(fstat(rootDuplicate, &rootInfo) == 0)
     }
 }
 
